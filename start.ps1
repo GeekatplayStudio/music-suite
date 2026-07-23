@@ -110,4 +110,5 @@ Write-Host "Music Suite is starting." -ForegroundColor Green
 Write-Host "Web: http://127.0.0.1:$WebPort"
 Write-Host "API: http://127.0.0.1:$ApiPort"
 if ($processes.Contains("comfyui")) { Write-Host "ComfyUI: http://127.0.0.1:$ComfyPort" }
-Write-Host "Process IDs were written to $processFile"
+Write-Host "Launcher process IDs: API $($processes.api), Web $($processes.web)"
+Write-Host "To stop Music Suite, double-click stop.bat or run: .\stop.ps1" -ForegroundColor Cyan

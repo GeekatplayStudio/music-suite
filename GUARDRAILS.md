@@ -31,6 +31,8 @@ These boundaries are enforced in code and covered by automated tests. Defaults a
 - Progress is clamped to 0–100 and every long-running job records stage heartbeats.
 - Runtime deletion resolves every target beneath the configured data root before removal.
 - Active jobs are preserved unless the operator explicitly requests a hard reset.
+- Shutdown reads recorded launcher IDs and current port owners, verifies Music Suite command signatures, and terminates verified descendant trees only.
+- Processes holding suite ports with an unrecognized command signature are reported but never terminated automatically.
 
 ## DSP and mastering safety
 

@@ -47,8 +47,10 @@ else
 fi
 WEB_PID=$!
 
+printf '{"api": %s, "web": %s}\n' "$API_PID" "$WEB_PID" > "$ROOT/.music-suite-processes.json"
+
 sleep 2
 open "http://127.0.0.1:3000" 2>/dev/null || true
 echo "Music Suite is running at http://127.0.0.1:3000"
-echo "Keep this window open. Press Control-C to stop."
+echo "Keep this window open. Press Control-C or run stop.command to stop."
 wait "$API_PID" "$WEB_PID"

@@ -43,6 +43,12 @@ Then launch with:
 start.bat
 ```
 
+Stop all verified Music Suite background processes with:
+
+```text
+stop.bat
+```
+
 The `.bat` files call the unified PowerShell implementation. Advanced installation flags remain available from PowerShell:
 
 ```powershell
@@ -53,13 +59,14 @@ The `.bat` files call the unified PowerShell implementation. Advanced installati
 
 ### macOS
 
-Double-click `install.command`, then double-click `start.command`. If macOS blocks the first launch, Control-click the file, choose **Open**, and confirm.
+Double-click `install.command`, then double-click `start.command`. Use `stop.command` or press Control-C in the startup terminal to shut down. If macOS blocks the first launch, Control-click the file, choose **Open**, and confirm.
 
 From Terminal, the same commands are:
 
 ```bash
 ./install.command
 ./start.command
+./stop.command
 ```
 
 Install FFmpeg with Homebrew when needed:
@@ -109,8 +116,10 @@ music-suite/
       sonic_holodeck/               bundled nodes and workflows
   tests/                            backend, security, MCP, and launcher tests
   install.bat / start.bat           simple Windows launchers
+  stop.bat                           safe Windows shutdown launcher
   install.command / start.command   simple macOS launchers
-  install.ps1 / start.ps1           unified Windows implementation
+  stop.command                       safe macOS shutdown launcher
+  install.ps1 / start.ps1 / stop.ps1 unified Windows implementation
 ```
 
 ## Validation
