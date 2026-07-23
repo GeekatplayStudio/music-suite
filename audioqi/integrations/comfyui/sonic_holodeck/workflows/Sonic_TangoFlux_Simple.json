@@ -1,0 +1,385 @@
+{
+  "id": "54ea9350-a996-46fd-af39-2fc5eece481e-flux",
+  "revision": 0,
+  "last_node_id": 101,
+  "last_link_id": 3,
+  "nodes": [
+    {
+      "id": 100,
+      "type": "Note",
+      "pos": [
+        146.0000110657233,
+        -298.0000408885925
+      ],
+      "size": [
+        720,
+        336
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "### Sonic Flux (High Quality) Setup\n\n**Usage:**\n1. set **Mode** to 'Song' or 'Instrumental'.\n2. If Song, enter **Lyrics**.\n3. **Queue Prompt**.\n\n**Note:**\n- Uses `TangoFlux` for music (High Fidelity).\n- Uses `Bark` for vocals (if enabled)."
+      ],
+      "color": "#233",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 2,
+      "type": "SonicFluxSynth",
+      "pos": [
+        940.400069867886,
+        76.39995891291926
+      ],
+      "size": [
+        720,
+        396
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          },
+          "link": 1
+        },
+        {
+          "name": "duration",
+          "type": "INT",
+          "widget": {
+            "name": "duration"
+          },
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            15
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "GeekatplayStudio/Sonic-Holodeck",
+        "ver": "e862302222d30846d756c1b9773f89eec0bf3a63",
+        "Node name for S&R": "SonicFluxSynth"
+      },
+      "widgets_values": [
+        "declare-lab/TangoFlux",
+        "",
+        20,
+        50,
+        4.5,
+        0,
+        "randomize"
+      ]
+    },
+    {
+      "id": 11,
+      "type": "SonicSinger",
+      "pos": [
+        940.400069867886,
+        542.0000146881351
+      ],
+      "size": [
+        720,
+        336
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "lyrics",
+          "type": "STRING",
+          "widget": {
+            "name": "lyrics"
+          },
+          "link": 3
+        },
+        {
+          "name": "voice_preset",
+          "type": "COMBO",
+          "widget": {
+            "name": "voice_preset"
+          }
+        },
+        {
+          "name": "mode",
+          "type": "COMBO",
+          "widget": {
+            "name": "mode"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "vocal_audio",
+          "type": "AUDIO",
+          "links": [
+            16
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "GeekatplayStudio/Sonic-Holodeck",
+        "ver": "e862302222d30846d756c1b9773f89eec0bf3a63",
+        "Node name for S&R": "SonicSinger"
+      },
+      "widgets_values": [
+        "",
+        "v2/en_speaker_6",
+        "text"
+      ]
+    },
+    {
+      "id": 12,
+      "type": "SonicTrackLayer",
+      "pos": [
+        1742.0000230246442,
+        241.9999948393039
+      ],
+      "size": [
+        480,
+        264
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "backing_audio",
+          "type": "AUDIO",
+          "link": 15
+        },
+        {
+          "name": "vocal_audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": 16
+        },
+        {
+          "name": "backing_volume",
+          "type": "FLOAT",
+          "widget": {
+            "name": "backing_volume"
+          }
+        },
+        {
+          "name": "vocal_volume",
+          "type": "FLOAT",
+          "widget": {
+            "name": "vocal_volume"
+          }
+        },
+        {
+          "name": "alignment",
+          "type": "COMBO",
+          "widget": {
+            "name": "alignment"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            10
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "GeekatplayStudio/Sonic-Holodeck",
+        "ver": "e862302222d30846d756c1b9773f89eec0bf3a63",
+        "Node name for S&R": "SonicTrackLayer"
+      },
+      "widgets_values": [
+        0.8,
+        1.2,
+        "start"
+      ]
+    },
+    {
+      "id": 10,
+      "type": "SonicSaver",
+      "pos": [
+        2282.0000587525406,
+        76.39995891291926
+      ],
+      "size": [
+        360,
+        240
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 10
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "aux_id": "GeekatplayStudio/Sonic-Holodeck",
+        "ver": "e862302222d30846d756c1b9773f89eec0bf3a63",
+        "Node name for S&R": "SonicSaver"
+      },
+      "widgets_values": [
+        "SonicFlux_Output",
+        "wav",
+        null
+      ]
+    },
+    {
+      "id": 101,
+      "type": "SonicMixer",
+      "pos": [
+        220.88943089430887,
+        133.51707118584847
+      ],
+      "size": [
+        400,
+        483.625
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "constructed_prompt",
+          "type": "STRING",
+          "links": [
+            1
+          ]
+        },
+        {
+          "name": "bpm",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "duration",
+          "type": "INT",
+          "links": [
+            2
+          ]
+        },
+        {
+          "name": "cfg",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "name": "temperature",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "name": "lyrics_out",
+          "type": "STRING",
+          "links": [
+            3
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "GeekatplayStudio/Sonic-Holodeck",
+        "ver": "e862302222d30846d756c1b9773f89eec0bf3a63",
+        "Node name for S&R": "SonicMixer"
+      },
+      "widgets_values": [
+        "MusicGen",
+        "In the neon rain...",
+        "Cyberpunk",
+        "Song",
+        "Synthesizer, Drum Machine, Bass",
+        "None",
+        120,
+        15
+      ]
+    }
+  ],
+  "links": [
+    [
+      10,
+      12,
+      0,
+      10,
+      0,
+      "AUDIO"
+    ],
+    [
+      15,
+      2,
+      0,
+      12,
+      0,
+      "AUDIO"
+    ],
+    [
+      16,
+      11,
+      0,
+      12,
+      1,
+      "AUDIO"
+    ],
+    [
+      1,
+      101,
+      0,
+      2,
+      0,
+      "STRING"
+    ],
+    [
+      2,
+      101,
+      2,
+      2,
+      1,
+      "INT"
+    ],
+    [
+      3,
+      101,
+      5,
+      11,
+      0,
+      "STRING"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "workflowRendererVersion": "Vue",
+    "ds": {
+      "scale": 0.9777424483306836,
+      "offset": [
+        430.6113821138212,
+        364.569105691057
+      ]
+    },
+    "frontendVersion": "1.37.11",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}

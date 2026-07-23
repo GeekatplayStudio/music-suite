@@ -1,0 +1,52 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-manrope: "Manrope", "Segoe UI Variable", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-space: "Space Grotesk", "Trebuchet MS", "Avenir Next", "Segoe UI", sans-serif;
+  --background: 224 31% 8%;
+  --foreground: 210 26% 93%;
+  --card: 224 26% 11%;
+  --card-foreground: 210 26% 93%;
+  --primary: 189 96% 56%;
+  --primary-foreground: 224 34% 8%;
+  --secondary: 223 21% 18%;
+  --secondary-foreground: 210 24% 91%;
+  --muted: 223 18% 14%;
+  --muted-foreground: 218 15% 67%;
+  --accent: 353 72% 58%;
+  --accent-foreground: 0 0% 100%;
+  --border: 223 18% 24%;
+  --input: 223 18% 16%;
+  --ring: 189 96% 56%;
+  --radius: 1rem;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  color: hsl(var(--foreground));
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(56, 189, 248, 0.28), transparent 30%),
+    radial-gradient(circle at 92% 6%, rgba(239, 68, 68, 0.2), transparent 35%),
+    linear-gradient(180deg, #06090f 0%, #0b1020 48%, #121725 100%);
+}
+
+.display-font {
+  font-family: var(--font-space);
+}
+
+.glass {
+  background: linear-gradient(180deg, rgba(13, 19, 35, 0.86), rgba(13, 20, 35, 0.78));
+  backdrop-filter: blur(12px);
+}

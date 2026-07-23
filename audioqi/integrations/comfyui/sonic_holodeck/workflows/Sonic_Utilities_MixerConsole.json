@@ -1,0 +1,340 @@
+{
+  "last_node_id": 4,
+  "last_link_id": 5,
+  "nodes": [
+    {
+      "id": 100,
+      "type": "Note",
+      "pos": [
+        100,
+        -150
+      ],
+      "size": [
+        500,
+        200
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "### Music Suite Sonic Console\n\n**Setup:**\n- Run the root `install.ps1` with `-ComfyUIPath`.\n- Use `-InstallComfyDependencies` when model libraries are needed.\n- Models are stored in the HuggingFace cache."
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 1,
+      "type": "SonicMixer",
+      "pos": [
+        100,
+        100
+      ],
+      "size": [
+        500,
+        350
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "constructed_prompt",
+          "type": "STRING",
+          "links": [
+            1
+          ],
+          "shape": 3,
+          "slot_index": 0
+        },
+        {
+          "name": "bpm",
+          "type": "INT",
+          "links": [
+            2
+          ],
+          "shape": 3,
+          "slot_index": 1
+        },
+        {
+          "name": "duration",
+          "type": "INT",
+          "links": [
+            3
+          ],
+          "shape": 3,
+          "slot_index": 2
+        },
+        {
+          "name": "cfg",
+          "type": "FLOAT",
+          "links": [
+            4
+          ],
+          "shape": 3,
+          "slot_index": 3
+        },
+        {
+          "name": "temperature",
+          "type": "FLOAT",
+          "links": [
+            5
+          ],
+          "shape": 3,
+          "slot_index": 4
+        },
+        {
+          "name": "lyrics_out",
+          "type": "STRING",
+          "links": null,
+          "shape": 3,
+          "slot_index": 5
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SonicMixer"
+      },
+      "widgets_values": [
+        "In the neon rain...",
+        "Cyberpunk",
+        "Song",
+        "Synthesizer, Drum Machine, Bass",
+        "None",
+        120,
+        15
+      ]
+    },
+    {
+      "id": 4,
+      "type": "SonicSinger",
+      "pos": [
+        700,
+        500
+      ],
+      "size": [
+        300,
+        150
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "lyrics",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "lyrics"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "vocal_audio",
+          "type": "AUDIO",
+          "links": [7],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SonicSinger"
+      },
+      "widgets_values": [
+        "[verse]\nIn the neon rain...",
+        "v2/en_speaker_6",
+        "text"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "SonicHoloSynth",
+      "pos": [
+        700,
+        100
+      ],
+      "size": [
+        600,
+        440
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "link": 1
+        },
+        {
+          "name": "bpm",
+          "type": "INT",
+          "link": 2
+        },
+        {
+          "name": "duration",
+          "type": "INT",
+          "link": 3
+        },
+        {
+          "name": "cfg",
+          "type": "FLOAT",
+          "link": 4
+        },
+        {
+          "name": "temperature",
+          "type": "FLOAT",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            6
+          ],
+          "shape": 3,
+          "slot_index": 0
+        },
+        {
+          "name": "bpm_out",
+          "type": "FLOAT",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SonicHoloSynth"
+      },
+      "widgets_values": [
+        0
+      ]
+    },
+    {
+      "id": 3,
+      "type": "SaveAudio",
+      "pos": [
+        1400,
+        150
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 6
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SaveAudio"
+      },
+      "widgets_values": [
+        "SonicHolodeck/ComfyUI"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "SaveAudio",
+      "pos": [
+        1050,
+        500
+      ],
+      "size": [
+        300,
+        100
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 7
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SaveVocals"
+      },
+      "widgets_values": [
+        "SonicHolodeck/Vocals"
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      0,
+      "STRING"
+    ],
+    [
+      2,
+      1,
+      1,
+      2,
+      1,
+      "INT"
+    ],
+    [
+      3,
+      1,
+      2,
+      2,
+      2,
+      "INT"
+    ],
+    [
+      4,
+      1,
+      3,
+      2,
+      3,
+      "FLOAT"
+    ],
+    [
+      5,
+      1,
+      4,
+      2,
+      4,
+      "FLOAT"
+    ],
+    [
+      6,
+      2,
+      0,
+      3,
+      0,
+      "AUDIO"
+    ],
+    [
+      7,
+      4,
+      0,
+      5,
+      0,
+      "AUDIO"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {},
+  "version": 0.4
+}

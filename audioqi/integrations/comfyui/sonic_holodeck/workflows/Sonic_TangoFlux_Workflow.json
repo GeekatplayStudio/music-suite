@@ -1,0 +1,601 @@
+{
+  "id": "54ea9350-a996-46fd-af39-2fc5eece481e-flux",
+  "revision": 0,
+  "last_node_id": 108,
+  "last_link_id": 9,
+  "nodes": [
+    {
+      "id": 100,
+      "type": "Note",
+      "pos": [
+        120.0000092214361,
+        -250.00003407382707
+      ],
+      "size": [
+        600,
+        255
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "### Sonic Flux (High Quality) Setup\n\n**Usage:**\n1. set **Mode** to 'Song' or 'Instrumental'.\n2. If Song, enter **Lyrics**.\n3. **Queue Prompt**.\n\n**Note:**\n- Uses `TangoFlux` for music (High Fidelity).\n- Uses `Bark` for vocals (if enabled)."
+      ],
+      "color": "#233",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 12,
+      "type": "SonicTrackLayer",
+      "pos": [
+        1445.7385015720274,
+        75.56368133627625
+      ],
+      "size": [
+        400,
+        195
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "backing_audio",
+          "type": "AUDIO",
+          "link": 15
+        },
+        {
+          "name": "vocal_audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": 16
+        },
+        {
+          "name": "backing_volume",
+          "type": "FLOAT",
+          "widget": {
+            "name": "backing_volume"
+          }
+        },
+        {
+          "name": "vocal_volume",
+          "type": "FLOAT",
+          "widget": {
+            "name": "vocal_volume"
+          }
+        },
+        {
+          "name": "alignment",
+          "type": "COMBO",
+          "widget": {
+            "name": "alignment"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            10,
+            5,
+            7
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "GeekatplayStudio/Sonic-Holodeck",
+        "ver": "e862302222d30846d756c1b9773f89eec0bf3a63",
+        "Node name for S&R": "SonicTrackLayer"
+      },
+      "widgets_values": [
+        0.8,
+        1.2,
+        "start"
+      ]
+    },
+    {
+      "id": 10,
+      "type": "SonicSaver",
+      "pos": [
+        1999.7195611555724,
+        68.8183939450479
+      ],
+      "size": [
+        300,
+        175
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 10
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "aux_id": "GeekatplayStudio/Sonic-Holodeck",
+        "ver": "e862302222d30846d756c1b9773f89eec0bf3a63",
+        "Node name for S&R": "SonicSaver"
+      },
+      "widgets_values": [
+        "SonicFlux_Output",
+        "wav",
+        null
+      ]
+    },
+    {
+      "id": 104,
+      "type": "SonicWaveform",
+      "pos": [
+        2008.041901379097,
+        338.8672070180175
+      ],
+      "size": [
+        225,
+        106
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            6
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "GeekatplayStudio/Sonic-Holodeck",
+        "ver": "e862302222d30846d756c1b9773f89eec0bf3a63",
+        "Node name for S&R": "SonicWaveform"
+      },
+      "widgets_values": [
+        1,
+        "cyan",
+        "black"
+      ]
+    },
+    {
+      "id": 106,
+      "type": "SonicSpectrogram",
+      "pos": [
+        2019.1219512195119,
+        568.9891582375298
+      ],
+      "size": [
+        225,
+        106
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            8
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "GeekatplayStudio/Sonic-Holodeck",
+        "ver": "e862302222d30846d756c1b9773f89eec0bf3a63",
+        "Node name for S&R": "SonicSpectrogram"
+      },
+      "widgets_values": [
+        2048,
+        512,
+        "magma"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "SonicFluxSynth",
+      "pos": [
+        790.4526551459018,
+        54.315786740162935
+      ],
+      "size": [
+        600,
+        305
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "widget": {
+            "name": "prompt"
+          },
+          "link": 1
+        },
+        {
+          "name": "duration",
+          "type": "INT",
+          "widget": {
+            "name": "duration"
+          },
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            15
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "GeekatplayStudio/Sonic-Holodeck",
+        "ver": "e862302222d30846d756c1b9773f89eec0bf3a63",
+        "Node name for S&R": "SonicFluxSynth"
+      },
+      "widgets_values": [
+        "declare-lab/TangoFlux",
+        "20",
+        4,
+        50,
+        4.5,
+        771662928519379,
+        "randomize"
+      ]
+    },
+    {
+      "id": 108,
+      "type": "PreviewAny",
+      "pos": [
+        792.3080877336724,
+        -174.80671319601578
+      ],
+      "size": [
+        573.5807291666667,
+        157.04427083333334
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 9
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.11.0",
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "id": 107,
+      "type": "PreviewImage",
+      "pos": [
+        2460.481031131229,
+        565.6457042063456
+      ],
+      "size": [
+        653.6311901754293,
+        339.9883053759721
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 8
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.11.0",
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 105,
+      "type": "PreviewImage",
+      "pos": [
+        2472.54763355617,
+        260.4552828987763
+      ],
+      "size": [
+        599.6514201959858,
+        241.55460717816345
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 6
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.11.0",
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 11,
+      "type": "SonicSinger",
+      "pos": [
+        787.3789835376607,
+        429.2527288844844
+      ],
+      "size": [
+        600,
+        255
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "lyrics",
+          "type": "STRING",
+          "widget": {
+            "name": "lyrics"
+          },
+          "link": 3
+        },
+        {
+          "name": "voice_preset",
+          "type": "COMBO",
+          "widget": {
+            "name": "voice_preset"
+          }
+        },
+        {
+          "name": "mode",
+          "type": "COMBO",
+          "widget": {
+            "name": "mode"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "vocal_audio",
+          "type": "AUDIO",
+          "links": [
+            16
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "GeekatplayStudio/Sonic-Holodeck",
+        "ver": "e862302222d30846d756c1b9773f89eec0bf3a63",
+        "Node name for S&R": "SonicSinger"
+      },
+      "widgets_values": [
+        "",
+        "v2/en_speaker_6",
+        "text"
+      ]
+    },
+    {
+      "id": 101,
+      "type": "SonicMixer",
+      "pos": [
+        311.1056910569105,
+        105.336015696125
+      ],
+      "size": [
+        333.33333333333337,
+        378.02083333333337
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "constructed_prompt",
+          "type": "STRING",
+          "links": [
+            1,
+            9
+          ]
+        },
+        {
+          "name": "bpm",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "duration",
+          "type": "INT",
+          "links": [
+            2
+          ]
+        },
+        {
+          "name": "cfg",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "name": "temperature",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "name": "lyrics_out",
+          "type": "STRING",
+          "links": [
+            3
+          ]
+        }
+      ],
+      "properties": {
+        "aux_id": "GeekatplayStudio/Sonic-Holodeck",
+        "ver": "e862302222d30846d756c1b9773f89eec0bf3a63",
+        "Node name for S&R": "SonicMixer"
+      },
+      "widgets_values": [
+        "MusicGen",
+        "In the neon rain...",
+        "Cyberpunk",
+        "Instrumental",
+        "Synthesizer, Drum Machine, Bass",
+        "Robotic",
+        120,
+        15
+      ]
+    }
+  ],
+  "links": [
+    [
+      10,
+      12,
+      0,
+      10,
+      0,
+      "AUDIO"
+    ],
+    [
+      15,
+      2,
+      0,
+      12,
+      0,
+      "AUDIO"
+    ],
+    [
+      16,
+      11,
+      0,
+      12,
+      1,
+      "AUDIO"
+    ],
+    [
+      1,
+      101,
+      0,
+      2,
+      0,
+      "STRING"
+    ],
+    [
+      2,
+      101,
+      2,
+      2,
+      1,
+      "INT"
+    ],
+    [
+      3,
+      101,
+      5,
+      11,
+      0,
+      "STRING"
+    ],
+    [
+      5,
+      12,
+      0,
+      104,
+      0,
+      "AUDIO"
+    ],
+    [
+      6,
+      104,
+      0,
+      105,
+      0,
+      "IMAGE"
+    ],
+    [
+      7,
+      12,
+      0,
+      106,
+      0,
+      "AUDIO"
+    ],
+    [
+      8,
+      106,
+      0,
+      107,
+      0,
+      "IMAGE"
+    ],
+    [
+      9,
+      101,
+      0,
+      108,
+      0,
+      "STRING"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "workflowRendererVersion": "LG",
+    "ds": {
+      "scale": 1.0755166931637539,
+      "offset": [
+        -7.500440994271862,
+        334.77738583921007
+      ]
+    },
+    "frontendVersion": "1.37.11",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}

@@ -1,0 +1,92 @@
+:root {
+  --ink: #1f2a44;
+  --accent: #0b7285;
+  --bg: #f5efe2;
+  --panel: #ffffff;
+  --line: #d8d6ce;
+  --warn: #bc4b51;
+}
+
+body {
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at 10% 0%, #daeaf2 0%, transparent 35%),
+    radial-gradient(circle at 90% 0%, #f4e6cf 0%, transparent 30%),
+    var(--bg);
+  color: var(--ink);
+}
+
+.app-shell {
+  padding: 24px;
+}
+
+.hero {
+  margin-bottom: 18px;
+  border-radius: 16px;
+  padding: 18px;
+  background: linear-gradient(120deg, rgba(11, 114, 133, 0.12), rgba(188, 75, 81, 0.08));
+  border: 1px solid rgba(31, 42, 68, 0.12);
+}
+
+.app-title {
+  margin: 0;
+  font-size: 2.1rem;
+  letter-spacing: 0.02em;
+}
+
+.app-subtitle {
+  margin: 4px 0 0;
+  color: #485470;
+}
+
+.panel-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 8px 18px rgba(31, 42, 68, 0.08);
+}
+
+.upload-dropzone {
+  border: 2px dashed #8ca8b0;
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 12px;
+  background: #f7fbfc;
+  text-align: center;
+}
+
+.analyze-btn {
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 12px;
+  color: white;
+  background: linear-gradient(135deg, #0b7285, #126782);
+}
+
+.status-text {
+  min-height: 22px;
+  font-weight: 600;
+}
+
+.audio-player {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.exports {
+  margin-top: 8px;
+  font-size: 0.95rem;
+}
+
+.exports a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.marker-summary {
+  max-height: 180px;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}

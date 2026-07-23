@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Geekatplay Studio Music Suite Report</title>
+  <style>
+    :root {
+      --bg: #f6f3eb;
+      --ink: #1f2a44;
+      --accent: #0b7285;
+      --muted: #5c677d;
+      --card: #ffffff;
+      --warn: #bc4b51;
+    }
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: "Source Sans 3", "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top right, #dcecf2, var(--bg));
+      color: var(--ink);
+    }
+    h1, h2, h3 { margin: 0 0 12px; }
+    .meta, .warnings, .metrics, .recommendations {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 18px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+    }
+    .chart {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+      page-break-inside: avoid;
+    }
+    .chart img { width: 100%; height: auto; }
+    .warn { color: var(--warn); margin: 0 0 6px; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th {
+      border-bottom: 1px solid #d9dce6;
+      padding: 6px 8px;
+      text-align: left;
+    }
+    .tiny { color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Geekatplay Studio Music Suite — Audio Analysis Report</h1>
+  <p class="tiny">Created by Vladimir Chopine</p>
+  <p class="tiny">Generated at {{ generated_at }}</p>
+
+  <section class="meta">
+    <h2>Metadata</h2>
+    <table>
+      <tr><th>File</th><td>{{ metadata.filename }}</td></tr>
+      <tr><th>Format</th><td>{{ metadata.format }}</td></tr>
+      <tr><th>Codec</th><td>{{ metadata.codec }}</td></tr>
+      <tr><th>Duration (s)</th><td>{{ "%.2f"|format(metadata.duration_seconds or 0) }}</td></tr>
+      <tr><th>Sample rate</th><td>{{ metadata.sample_rate }}</td></tr>
+      <tr><th>Channels</th><td>{{ metadata.channels }}</td></tr>
+      <tr><th>Bitrate</th><td>{{ metadata.bitrate }}</td></tr>
+    </table>
+  </section>
+
+  <section class="metrics">
+    <h2>Key Metrics</h2>
+    <table>
+      <tr><th>Integrated loudness (LUFS)</th><td>{{ "%.2f"|format(metrics.loudness.integrated_lufs) }}</td></tr>
+      <tr><th>True peak estimate (dBFS)</th><td>{{ "%.2f"|format(metrics.dynamics.true_peak_dbfs) }}</td></tr>
+      <tr><th>RMS (dBFS)</th><td>{{ "%.2f"|format(metrics.dynamics.rms_dbfs) }}</td></tr>
+      <tr><th>Crest factor (dB)</th><td>{{ "%.2f"|format(metrics.dynamics.crest_factor_db) }}</td></tr>
+      <tr><th>Noise floor (dBFS)</th><td>{{ "%.2f"|format(metrics.noise_floor_dbfs) }}</td></tr>
+      <tr><th>LRA approx (LU)</th><td>{{ "%.2f"|format(metrics.loudness.lra_approx) }}</td></tr>
+    </table>
+  </section>
+
+  <section class="metrics">
+    <h2>AI Mastering Advice</h2>
+    {% if metrics.ai_mastering_advice %}
+      <table>
+        <tr><th>Recommended mode</th><td>{{ metrics.ai_mastering_advice.recommended_mode }}</td></tr>
+        <tr><th>Recommended preset</th><td>{{ metrics.ai_mastering_advice.recommended_preset }}</td></tr>
+        <tr><th>Target LUFS</th><td>{{ metrics.ai_mastering_advice.target_lufs }}</td></tr>
+        <tr><th>True peak target (dBFS)</th><td>{{ metrics.ai_mastering_advice.true_peak_dbfs }}</td></tr>
+        <tr><th>Optimizer variants</th><td>{{ metrics.ai_mastering_advice.optimizer_variants }}</td></tr>
+        <tr><th>Confidence</th><td>{{ metrics.ai_mastering_advice.confidence }}</td></tr>
+      </table>
+    {% else %}
+      <p>No AI mastering advice available.</p>
+    {% endif %}
+  </section>
+
+  <section class="warnings">
+    <h2>Warnings</h2>
+    {% if metrics.warnings %}
+      {% for w in metrics.warnings %}
+        <p class="warn">{{ w }}</p>
+      {% endfor %}
+    {% else %}
+      <p>No warnings detected.</p>
+    {% endif %}
+  </section>
+
+  <section class="recommendations">
+    <h2>Remastering Recommendations</h2>
+    {% if metrics.mastering_recommendations %}
+      <table>
+        <tr><th>Priority</th><th>Issue</th><th>Action</th></tr>
+        {% for rec in metrics.mastering_recommendations %}
+          <tr>
+            <td>{{ rec.priority }}</td>
+            <td>{{ rec.issue }}</td>
+            <td>{{ rec.action }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <p>No recommendations available.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Charts</h2>
+    <div class="grid">
+      {% for name, img in image_paths.items() %}
+        <div class="chart">
+          <h3>{{ name }}</h3>
+          {% if img %}
+            <img src="{{ img }}" alt="{{ name }}" />
+          {% else %}
+            <p>Static image unavailable in this environment.</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+</body>
+</html>
