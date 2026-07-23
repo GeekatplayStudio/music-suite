@@ -26,15 +26,18 @@ fi
 cd "$ROOT/apps/web-next"
 if command -v pnpm >/dev/null 2>&1; then
   pnpm install
+  pnpm build
 elif command -v npm >/dev/null 2>&1; then
   npm install
+  npm run build
 else
   echo "Node.js 20.9 or newer with pnpm or npm is required."
   exit 1
 fi
 
 cd "$ROOT"
-.venv/bin/python -c 'import hashlib, pathlib; files=(pathlib.Path("pyproject.toml"), pathlib.Path("apps/web-next/pnpm-lock.yaml")); print("-".join(hashlib.sha256(path.read_bytes()).hexdigest().upper() for path in files))' > .music-suite-install-state
+GIT_REVISION="$(git rev-parse HEAD 2>/dev/null || printf 'no-git-revision')"
+.venv/bin/python -c 'import hashlib, pathlib, sys; files=(pathlib.Path("pyproject.toml"), pathlib.Path("apps/web-next/pnpm-lock.yaml")); print("-".join([*(hashlib.sha256(path.read_bytes()).hexdigest().upper() for path in files), sys.argv[1]]))' "$GIT_REVISION" > .music-suite-install-state
 
 echo
 echo "Installation complete. Double-click start.command to launch Music Suite."

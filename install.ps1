@@ -62,8 +62,10 @@ try {
     try {
         if (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) {
             & pnpm.cmd install
+            & pnpm.cmd build
         } elseif (Get-Command npm.cmd -ErrorAction SilentlyContinue) {
             & npm.cmd install
+            & npm.cmd run build
         } else {
             throw "pnpm or npm was not found on PATH."
         }
@@ -112,9 +114,15 @@ try {
     }
 
     Write-Host ""
+    $gitRevision = "no-git-revision"
+    if (Get-Command git.exe -ErrorAction SilentlyContinue) {
+        $detectedRevision = (& git.exe -C $root rev-parse HEAD 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $detectedRevision) { $gitRevision = $detectedRevision.Trim() }
+    }
     $manifestHash = @(
         (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $root "pyproject.toml")).Hash,
-        (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $webDir "pnpm-lock.yaml")).Hash
+        (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $webDir "pnpm-lock.yaml")).Hash,
+        $gitRevision
     ) -join "-"
     Set-Content -LiteralPath (Join-Path $root ".music-suite-install-state") -Value $manifestHash -Encoding ascii
     Write-Host "Music Suite installation complete." -ForegroundColor Green

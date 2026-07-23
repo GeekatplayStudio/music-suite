@@ -68,7 +68,7 @@ Install FFmpeg with Homebrew when needed:
 brew install ffmpeg
 ```
 
-Music Suite opens at `http://127.0.0.1:3000`; its local API uses `http://127.0.0.1:8008`.
+Music Suite opens at `http://127.0.0.1:3000`; its local API uses `http://127.0.0.1:8008`. The installer creates an optimized production frontend, and the normal launcher uses `next start` without development hot-reload WebSockets.
 
 ## Application workflow
 

@@ -7,12 +7,15 @@ cd "$ROOT"
 echo "Geekatplay Studio Music Suite - Startup"
 
 manifest_hash() {
-  .venv/bin/python -c 'import hashlib, pathlib; files=(pathlib.Path("pyproject.toml"), pathlib.Path("apps/web-next/pnpm-lock.yaml")); print("-".join(hashlib.sha256(path.read_bytes()).hexdigest().upper() for path in files))'
+  local git_revision
+  git_revision="$(git rev-parse HEAD 2>/dev/null || printf 'no-git-revision')"
+  .venv/bin/python -c 'import hashlib, pathlib, sys; files=(pathlib.Path("pyproject.toml"), pathlib.Path("apps/web-next/pnpm-lock.yaml")); print("-".join([*(hashlib.sha256(path.read_bytes()).hexdigest().upper() for path in files), sys.argv[1]]))' "$git_revision"
 }
 
 NEEDS_INSTALL=0
 [[ -x ".venv/bin/python" ]] || NEEDS_INSTALL=1
 [[ -d "apps/web-next/node_modules" ]] || NEEDS_INSTALL=1
+[[ -f "apps/web-next/.next/BUILD_ID" ]] || NEEDS_INSTALL=1
 [[ -f ".music-suite-install-state" ]] || NEEDS_INSTALL=1
 if [[ "$NEEDS_INSTALL" -eq 0 ]] && [[ "$(tr -d '\r\n' < .music-suite-install-state)" != "$(manifest_hash)" ]]; then
   NEEDS_INSTALL=1
@@ -38,9 +41,9 @@ API_PID=$!
 
 cd "$ROOT/apps/web-next"
 if command -v pnpm >/dev/null 2>&1; then
-  pnpm exec next dev -p 3000 &
+  pnpm exec next start -H 127.0.0.1 -p 3000 &
 else
-  npm run dev -- -p 3000 &
+  npm run start -- -H 127.0.0.1 -p 3000 &
 fi
 WEB_PID=$!
 

@@ -13,9 +13,15 @@ $webDir = Join-Path $root "apps\web-next"
 $installStatePath = Join-Path $root ".music-suite-install-state"
 
 function Get-DependencyManifestHash {
+    $gitRevision = "no-git-revision"
+    if (Get-Command git.exe -ErrorAction SilentlyContinue) {
+        $detectedRevision = (& git.exe -C $root rev-parse HEAD 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $detectedRevision) { $gitRevision = $detectedRevision.Trim() }
+    }
     return @(
         (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $root "pyproject.toml")).Hash,
-        (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $webDir "pnpm-lock.yaml")).Hash
+        (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $webDir "pnpm-lock.yaml")).Hash,
+        $gitRevision
     ) -join "-"
 }
 
@@ -41,6 +47,7 @@ function Find-ComfyPython([string]$Path) {
 if (
     -not (Test-Path -LiteralPath $venvPython) -or
     -not (Test-Path -LiteralPath (Join-Path $webDir "node_modules")) -or
+    -not (Test-Path -LiteralPath (Join-Path $webDir ".next\BUILD_ID")) -or
     -not (Test-Path -LiteralPath $installStatePath) -or
     (Get-Content -Raw -LiteralPath $installStatePath).Trim() -ne (Get-DependencyManifestHash)
 ) {
@@ -77,9 +84,9 @@ $apiArgs = @("-m", "uvicorn", "apps.api.main:app", "--host", "127.0.0.1", "--por
 $apiProcess = Start-Process -FilePath $venvPython -ArgumentList $apiArgs -WorkingDirectory $root -WindowStyle Hidden -PassThru
 
 if (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) {
-    $webCommand = "pnpm.cmd exec next dev -p $WebPort"
+    $webCommand = "pnpm.cmd exec next start -H 127.0.0.1 -p $WebPort"
 } elseif (Get-Command npm.cmd -ErrorAction SilentlyContinue) {
-    $webCommand = "npm.cmd run dev -- -p $WebPort"
+    $webCommand = "npm.cmd run start -- -H 127.0.0.1 -p $WebPort"
 } else {
     Stop-Process -Id $apiProcess.Id -Force
     throw "pnpm or npm was not found on PATH."
