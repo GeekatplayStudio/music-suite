@@ -7,6 +7,17 @@ cd "$ROOT"
 
 echo "Geekatplay Studio Music Suite - Shutdown"
 
+if [[ ! -f "$PID_FILE" ]]; then
+  echo "No recorded Music Suite instance is running. No processes were changed."
+  exit 0
+fi
+
+RECORDED_ROOT="$(python3 -c 'import json, pathlib; print(json.loads(pathlib.Path(".music-suite-processes.json").read_text()).get("project_root", ""))')"
+if [[ "$RECORDED_ROOT" != "$ROOT" ]]; then
+  echo "The runtime file belongs to another project directory. No processes were changed."
+  exit 1
+fi
+
 is_music_suite_process() {
   local pid="$1" command_line
   command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
@@ -22,16 +33,9 @@ stop_tree() {
 }
 
 PIDS=()
-if [[ -f "$PID_FILE" ]]; then
-  while read -r pid; do
-    [[ "$pid" =~ ^[0-9]+$ ]] && PIDS+=("$pid")
-  done < <(python3 -c 'import json, pathlib; data=json.loads(pathlib.Path(".music-suite-processes.json").read_text()); print(*[value for value in data.values() if isinstance(value, int)], sep="\n")' 2>/dev/null || true)
-fi
-for port in 3000 8008; do
-  while read -r pid; do
-    [[ "$pid" =~ ^[0-9]+$ ]] && PIDS+=("$pid")
-  done < <(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
-done
+while read -r pid; do
+  [[ "$pid" =~ ^[0-9]+$ ]] && PIDS+=("$pid")
+done < <(python3 -c 'import json, pathlib; data=json.loads(pathlib.Path(".music-suite-processes.json").read_text()); print(*[value for key, value in data.items() if key.endswith("_pid") and isinstance(value, int)], sep="\n")')
 
 STOPPED=0
 for pid in "${PIDS[@]:-}"; do
@@ -41,18 +45,10 @@ for pid in "${PIDS[@]:-}"; do
   fi
 done
 sleep 1
-
-for port in 3000 8008; do
-  if lsof -tiTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
-    echo "Port $port is still used by an unrecognized process; it was not terminated."
-    exit 1
-  fi
-done
-
 rm -f "$PID_FILE"
+
 if [[ "$STOPPED" -eq 1 ]]; then
-  echo "Music Suite processes stopped."
+  echo "The recorded Music Suite instance was stopped."
 else
-  echo "No running Music Suite processes were found."
+  echo "The recorded processes had already exited. No other processes were changed."
 fi
-echo "Ports 3000 and 8008 are available."

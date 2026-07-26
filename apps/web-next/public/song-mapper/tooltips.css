@@ -1,0 +1,234 @@
+
+/* ===== Tooltip Icons (SVG Style) ===== */
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  cursor: help;
+  position: relative;
+  transition: all 0.2s ease;
+  vertical-align: middle;
+}
+
+.info-icon svg {
+  width: 10px;
+  height: 10px;
+  fill: #e7eef9;
+  pointer-events: none;
+}
+
+.info-icon:hover {
+  background-color: var(--accent-cyan);
+  transform: scale(1.1);
+  box-shadow: 0 0 8px rgba(75, 196, 255, 0.6);
+}
+
+.info-icon:hover svg {
+  fill: #000;
+}
+
+/* Tooltip Popup */
+.info-icon::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 140%;
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  width: max-content;
+  max-width: 220px;
+  padding: 8px 12px;
+  background: rgba(12, 20, 30, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+  white-space: pre-wrap;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: none;
+  z-index: 10000;
+}
+
+.info-icon:hover::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Tooltip Arrow */
+.info-icon::before {
+  content: "";
+  position: absolute;
+  bottom: 110%;
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  border: 5px solid transparent;
+  border-top-color: rgba(255, 255, 255, 0.22);
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: none;
+  z-index: 10001;
+}
+
+.info-icon:hover::before {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ===== Help Modal Styling ===== */
+.modal {
+  display: flex !important;
+  opacity: 0;
+  visibility: hidden;
+  position: fixed;
+  z-index: 9999;
+  inset: 0;
+  padding: 14px;
+  overflow-y: auto;
+  background-color: rgba(0, 5, 10, 0.85);
+  backdrop-filter: blur(8px);
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.modal[aria-hidden="false"] {
+  opacity: 1;
+  visibility: visible;
+}
+
+.modal-content {
+  background: linear-gradient(150deg, rgba(22, 32, 45, 0.95), rgba(9, 14, 20, 0.98));
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 2.5rem;
+  width: 90%;
+  max-width: 650px;
+  max-height: calc(100vh - 28px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 16px;
+  position: relative;
+  color: #e7eef9;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7);
+  transform: scale(0.95);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.modal[aria-hidden="false"] .modal-content {
+  transform: scale(1);
+}
+
+.close-btn {
+  position: absolute;
+  top: 15px;
+  right: 20px;
+  color: #6d7d93;
+  font-size: 28px;
+  font-weight: 300;
+  cursor: pointer;
+  background: none;
+  border: none;
+  transition: color 0.2s;
+}
+
+.close-btn:hover {
+  color: #fff;
+}
+
+.help-header {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 1.5rem;
+}
+
+.help-logo {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, #4bc4ff, #b2f662);
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    font-weight: bold;
+    color: #000;
+    font-size: 24px;
+}
+
+.help-title h2 {
+    margin: 0;
+    font-size: 1.6rem;
+    color: #fff;
+}
+
+.help-title p {
+    margin: 4px 0 0;
+    color: var(--accent-cyan);
+    font-size: 0.9rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.help-body h3 {
+  color: var(--accent-gold);
+  margin: 1.8rem 0 0.8rem;
+  font-size: 1.1rem;
+  border-bottom: none;
+  padding: 0;
+}
+
+.help-body h3:first-child {
+    margin-top: 0;
+}
+
+.help-body p {
+    line-height: 1.6;
+    color: #b0c0d6;
+    margin-bottom: 1rem;
+}
+
+.help-body ul {
+    padding-left: 1.2rem;
+    color: #b0c0d6;
+}
+
+.help-body li {
+    margin-bottom: 0.6rem;
+}
+
+.help-body strong {
+    color: #fff;
+}
+
+/* ===== Balanced Layout for Mapping Tab ===== */
+.control-group-title {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: #6d7d93;
+    margin: 14px 0 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 4px;
+    grid-column: 1 / -1;
+}
+
+.control-group-title:first-of-type {
+    margin-top: 0;
+}
+
+#panel-mapping {
+    column-gap: 20px;
+}

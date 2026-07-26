@@ -13,6 +13,7 @@ Official repository: [GeekatplayStudio/music-suite](https://github.com/Geekatpla
 - Loudness, true-peak, stereo, phase, waveform, spectrum, and spectrogram analysis
 - Internal, FFmpeg, Pedalboard, and Matchering mastering paths
 - Smooth high-DPI Spectrum, Orbit, and Waveform visualization after upload
+- Integrated Song Geometry Mapper workspace with 3D mappings, presets, overlays, exports, and adaptive rendering
 - Guarded local MCP server for analysis access and mastering advice
 - In-app configuration and update checking against the official repository
 - Sonic Holodeck ComfyUI nodes and workflows for supported music-generation models
@@ -75,15 +76,55 @@ Install FFmpeg with Homebrew when needed:
 brew install ffmpeg
 ```
 
-Music Suite opens at `http://127.0.0.1:3000`; its local API uses `http://127.0.0.1:8008`. The installer creates an optimized production frontend, and the normal launcher uses `next start` without development hot-reload WebSockets.
+### From the project root with npm
+
+`npm run start` and `npm run stop` work from the repository root on both platforms and call the same unified launchers:
+
+```bash
+npm run start
+npm run stop
+npm run install:suite
+```
+
+### Ports
+
+Music Suite prefers `http://127.0.0.1:3000` for the web interface and port `8008` for its local API. If either port is occupied, startup automatically scans upward for the next available loopback port; if that entire window is busy it asks the operating system for any free loopback port. It then displays and opens the selected web address and records the exact instance configuration. The existing application on the preferred port is never stopped or modified.
+
+### Startup time and logs
+
+A cold first start imports the complete audio stack and can take a few minutes on a slow disk, or while antivirus scans the virtual environment. The launchers wait up to **300 seconds** per service, print progress while waiting, and stream each service's output to `logs/`:
+
+```text
+logs/api.log        logs/api.error.log
+logs/web.log        logs/web.error.log
+```
+
+If a service fails or times out, the launcher prints the tail of that log instead of stopping with an unexplained message. Raise the limit when needed:
+
+```powershell
+.\start.ps1 -StartupTimeoutSeconds 600
+```
+
+```bash
+MUSIC_SUITE_STARTUP_TIMEOUT_SECONDS=600 ./start.command
+```
+
+The same value can be set once through the `MUSIC_SUITE_STARTUP_TIMEOUT_SECONDS` environment variable on either platform.
+
+The frontend reaches the selected API through a same-origin streaming proxy, so uploads, audio seeking, downloads, MCP discovery, and configuration continue to work without fixed port assumptions. The installer creates an optimized production frontend, and normal startup uses `next start` without development hot-reload WebSockets.
+
+Shutdown reads `.music-suite-processes.json` and terminates only the verified PIDs recorded for that project instance and their descendants. It does not scan or claim ports 3000/8008, and an unrelated process using either port is left running.
 
 ## Application workflow
 
 1. Upload or drag in a song.
 2. Select **Analyze** for technical and mastering analysis.
 3. Select **Visual AI** for the live Spectrum, Orbit, and Waveform experience.
-4. Use **AI Mastering** to render and compare mastered outputs.
-5. Open **Configuration** to check for updates from the official Geekatplay Studio repository.
+4. Select a run and open **Geometry Mapper** to reuse that song in the full 3D mapper workspace.
+5. Use **AI Mastering** to render and compare mastered outputs.
+6. Open **Configuration** to check for updates from the official Geekatplay Studio repository.
+
+Geometry Mapper runs inside the normal Music Suite web process; Docker and a separate mapper server are not required. Classic analysis runs in the browser. Voice / Deep analysis uses the same loopback FastAPI service and stores its cache under `data/song-mapper`. Optional Demucs stem separation can be enabled with `pip install -e ".[geometry]"`; without it, the analyzer safely falls back to the full mix.
 
 ## Safe in-app updates
 
@@ -102,7 +143,7 @@ Updates are available to Git clones. The updater:
 - requires an explicit same-origin confirmation header;
 - never executes a user-provided URL or branch.
 
-After an update, restart Music Suite. The start launcher fingerprints `pyproject.toml` and `pnpm-lock.yaml` and automatically synchronizes dependencies only when either manifest changed. ZIP installations can update by downloading a new release, but Git clone installations are recommended.
+After an update, restart Music Suite. The start launcher fingerprints the Git revision, `pyproject.toml`, and `pnpm-lock.yaml` and automatically synchronizes dependencies and the production build when needed. ZIP installations can update by downloading a new release, but Git clone installations are recommended.
 
 ## Unified project layout
 
@@ -111,10 +152,15 @@ music-suite/
   apps/api/                         FastAPI application
   apps/mcp/                         guarded MCP server
   apps/web-next/                    Next.js interface and Visual AI
+    public/song-mapper/             integrated Song Geometry Mapper workspace
   audioqi/                          analysis, mastering, update, and integrations
+    geometry_mapper/                mapper deep-analysis and managed cache service
     integrations/comfyui/
       sonic_holodeck/               bundled nodes and workflows
   tests/                            backend, security, MCP, and launcher tests
+  scripts/launch.mjs                cross-platform bridge for the root npm scripts
+  logs/                             per-service startup logs (generated, ignored by Git)
+  package.json                      root npm start/stop/install wrappers
   install.bat / start.bat           simple Windows launchers
   stop.bat                           safe Windows shutdown launcher
   install.command / start.command   simple macOS launchers

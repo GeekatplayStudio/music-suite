@@ -1,0 +1,19 @@
+{
+  "name": "music-suite",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Root launcher for the Geekatplay Studio Music Suite. Delegates to the unified install/start/stop scripts.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "install:suite": "node scripts/launch.mjs install",
+    "start": "node scripts/launch.mjs start",
+    "stop": "node scripts/launch.mjs stop",
+    "web:dev": "npm --prefix apps/web-next run dev",
+    "web:build": "npm --prefix apps/web-next run build",
+    "web:lint": "npm --prefix apps/web-next run lint"
+  },
+  "engines": {
+    "node": ">=20.9"
+  }
+}

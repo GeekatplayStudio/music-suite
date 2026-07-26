@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 from uuid import uuid4
@@ -16,6 +17,16 @@ def test_mcp_api_url_rejects_non_loopback(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("MUSIC_SUITE_MCP_API_URL", "https://example.com")
     with pytest.raises(ValueError, match="loopback"):
         server._api_base_url()
+
+
+def test_mcp_discovers_recorded_dynamic_api_port(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    runtime_file = tmp_path / ".music-suite-processes.json"
+    runtime_file.write_text(json.dumps({"api_port": 8123}), encoding="utf-8")
+    monkeypatch.delenv("MUSIC_SUITE_MCP_API_URL", raising=False)
+    monkeypatch.setattr(server, "RUNTIME_FILE", runtime_file)
+    assert server._api_base_url() == "http://127.0.0.1:8123"
 
 
 def test_mcp_run_id_requires_canonical_uuid() -> None:

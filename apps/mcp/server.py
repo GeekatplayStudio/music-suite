@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
 from uuid import UUID
@@ -11,6 +12,8 @@ import requests
 from mcp.server.fastmcp import FastMCP
 
 DEFAULT_API_URL = "http://127.0.0.1:8008"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+RUNTIME_FILE = PROJECT_ROOT / ".music-suite-processes.json"
 MAX_HTTP_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_CONTEXT_RESPONSE_BYTES = 256 * 1024
 MAX_COLLECTION_ITEMS = 100
@@ -38,7 +41,17 @@ mcp = FastMCP(
 
 
 def _api_base_url() -> str:
-    raw = os.getenv("MUSIC_SUITE_MCP_API_URL", DEFAULT_API_URL).strip().rstrip("/")
+    configured = os.getenv("MUSIC_SUITE_MCP_API_URL", "").strip()
+    runtime_url = ""
+    if not configured and RUNTIME_FILE.exists() and RUNTIME_FILE.stat().st_size <= 64 * 1024:
+        try:
+            runtime_state = json.loads(RUNTIME_FILE.read_text(encoding="utf-8-sig"))
+            runtime_port = runtime_state.get("api_port") if isinstance(runtime_state, dict) else None
+            if isinstance(runtime_port, int) and 1 <= runtime_port <= 65535:
+                runtime_url = f"http://127.0.0.1:{runtime_port}"
+        except (OSError, ValueError, json.JSONDecodeError):
+            runtime_url = ""
+    raw = (configured or runtime_url or DEFAULT_API_URL).rstrip("/")
     parsed = urlparse(raw)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("MUSIC_SUITE_MCP_API_URL must be a valid HTTP URL.")
@@ -118,10 +131,13 @@ def _sanitize_for_context(value: Any, *, depth: int = 0) -> Any:
             result[str(key)] = _sanitize_for_context(item, depth=depth + 1)
         return result
     if isinstance(value, list):
-        result = [_sanitize_for_context(item, depth=depth + 1) for item in value[:MAX_COLLECTION_ITEMS]]
+        items: list[Any] = [
+            _sanitize_for_context(item, depth=depth + 1)
+            for item in value[:MAX_COLLECTION_ITEMS]
+        ]
         if len(value) > MAX_COLLECTION_ITEMS:
-            result.append({"_truncated_items": len(value) - MAX_COLLECTION_ITEMS})
-        return result
+            items.append({"_truncated_items": len(value) - MAX_COLLECTION_ITEMS})
+        return items
     if isinstance(value, str) and len(value) > MAX_STRING_CHARS:
         return f"{value[:MAX_STRING_CHARS]}…[truncated]"
     return value

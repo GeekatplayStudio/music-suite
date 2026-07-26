@@ -7,13 +7,13 @@ import shutil
 import threading
 import time
 import traceback
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse
@@ -31,6 +31,7 @@ from audioqi.conversion import (
 )
 from audioqi.core.analyzer import analyze_audio_file
 from audioqi.db import SessionLocal, init_db
+from audioqi.geometry_mapper.service import analyze_mapper_upload, clear_mapper_cache
 from audioqi.io.metadata import normalize_metadata_payload
 from audioqi.jobs import reset_executor, submit
 from audioqi.mastering import (
@@ -120,7 +121,7 @@ MASTERING_STAGE_DETAILS: dict[str, str] = {
 }
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> Generator[None, None, None]:
+async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     ensure_data_dirs(SETTINGS)
     init_db()
     yield
@@ -326,6 +327,47 @@ def upload_audio(
         detail=_analysis_stage_detail("uploaded"),
     )
     return UploadResponse(run=_to_summary(run), metadata=metadata)
+
+
+@app.post("/song-mapper/api/voice/analyze")
+def analyze_song_geometry(
+    audio: UploadFile = File(...),
+    sr: int = Form(default=48_000),
+    n_fft: int = Form(default=2_048),
+    hop: int = Form(default=512),
+    smooth: int = Form(default=1),
+    norm: str = Form(default="none"),
+    edge_mode: str = Form(default="none"),
+    knn_n: int = Form(default=4),
+    separate: str | None = Form(default=None),
+    cache_dir: str | None = Form(default=None),
+) -> dict[str, Any]:
+    del cache_dir  # Music Suite always keeps mapper cache inside its managed data directory.
+    if not audio.filename:
+        raise HTTPException(status_code=400, detail="File name is missing.")
+    try:
+        return analyze_mapper_upload(
+            audio.file,
+            audio.filename,
+            sr=sr,
+            n_fft=n_fft,
+            hop=hop,
+            smooth=smooth,
+            norm=norm,
+            edge_mode=edge_mode,
+            knn_n=knn_n,
+            separate=separate,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Song mapper analysis failed: {exc}") from exc
+
+
+@app.post("/song-mapper/api/voice/cache/clear")
+def clear_song_geometry_cache(payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    del payload  # Client paths are intentionally ignored; only the managed mapper cache is cleared.
+    return clear_mapper_cache()
 
 
 @app.post("/runs/{run_id}/analyze", response_model=RunSummary)
@@ -1070,10 +1112,10 @@ def _run_conversion_job(
         )
     except Exception as exc:
         run = db.get(AnalysisRun, run_id)
-        run_dir = Path(run.run_dir) if run else None
-        if run_dir is not None:
+        failure_run_dir = Path(run.run_dir) if run else None
+        if failure_run_dir is not None:
             write_conversion_state(
-                run_dir,
+                failure_run_dir,
                 {
                     "status": "failed",
                     "progress": 100.0,
@@ -1168,10 +1210,10 @@ def _run_mastering_job(
         )
     except Exception as exc:
         run = db.get(AnalysisRun, run_id)
-        run_dir = Path(run.run_dir) if run else None
-        if run_dir is not None:
+        failure_run_dir = Path(run.run_dir) if run else None
+        if failure_run_dir is not None:
             write_mastering_state(
-                run_dir,
+                failure_run_dir,
                 {
                     "status": "failed",
                     "progress": 100.0,

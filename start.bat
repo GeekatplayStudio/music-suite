@@ -10,6 +10,5 @@ if errorlevel 1 (
   exit /b 1
 )
 echo.
-echo Music Suite is running at http://127.0.0.1:3000
-echo To stop it, double-click stop.bat.
-start "" "http://127.0.0.1:3000"
+echo Startup complete. The selected web address is shown above.
+echo To stop this exact instance, double-click stop.bat.

@@ -8,7 +8,8 @@ These boundaries are enforced in code and covered by automated tests. Defaults a
 
 - The API defaults to `127.0.0.1`; the unified startup script also binds it to loopback.
 - Trusted hosts are limited to `127.0.0.1`, `localhost`, and the test host.
-- CORS defaults to `http://127.0.0.1:3000` and `http://localhost:3000`—never `*`.
+- Browser API requests use a same-origin streaming proxy whose private upstream is injected by the launcher and restricted to loopback.
+- Direct API CORS defaults to `http://127.0.0.1:3000` and `http://localhost:3000`—never `*`.
 - Allowed methods and headers are explicitly enumerated.
 - Additional origins require the explicit `MUSIC_SUITE_CORS_ORIGINS` environment variable.
 - Ollama and MCP integrations accept loopback destinations only.
@@ -31,8 +32,12 @@ These boundaries are enforced in code and covered by automated tests. Defaults a
 - Progress is clamped to 0–100 and every long-running job records stage heartbeats.
 - Runtime deletion resolves every target beneath the configured data root before removal.
 - Active jobs are preserved unless the operator explicitly requests a hard reset.
-- Shutdown reads recorded launcher IDs and current port owners, verifies Music Suite command signatures, and terminates verified descendant trees only.
-- Processes holding suite ports with an unrecognized command signature are reported but never terminated automatically.
+- Startup tests loopback availability and automatically selects unused web/API ports without stopping existing listeners; if the preferred scan window is fully occupied it requests an operating-system-assigned free loopback port rather than failing.
+- Service readiness has a bounded wait (300 seconds by default, adjustable through `MUSIC_SUITE_STARTUP_TIMEOUT_SECONDS`); a timeout terminates only the processes that startup itself spawned.
+- Each spawned service writes stdout and stderr to `logs/` inside the project root so a failed launch is diagnosable without reopening a hidden console.
+- The exact project root, selected ports, launcher PIDs, and runtime PIDs are stored in a per-project instance manifest.
+- Shutdown uses only that manifest, verifies Music Suite command signatures, and terminates verified recorded descendant trees only.
+- Ports are never treated as process ownership; unrelated listeners are not candidates for termination.
 
 ## DSP and mastering safety
 
@@ -76,6 +81,8 @@ These boundaries are enforced in code and covered by automated tests. Defaults a
 - React metric state is throttled; waveform drawing is downsampled to visible pixels.
 - Rendering stops while off-screen, paused, or in a hidden browser tab.
 - Expensive geometry and color resources are cached or shared rather than allocated per bar per frame.
+- Song Geometry Mapper caps its backing canvas at 1.5× pixel density, measures actual draw cost, and adapts node, edge, star, and frame budgets while preserving every visual control.
+- Mapper Voice / Deep uploads use the suite upload size and duration limits; client-provided cache paths are ignored and cache writes remain under `data/song-mapper`.
 
 ## Verification
 

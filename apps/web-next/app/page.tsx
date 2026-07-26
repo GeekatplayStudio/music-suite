@@ -7,6 +7,7 @@ import {
   Cpu,
   Download,
   FileAudio2,
+  Network,
   Pause,
   Play,
   RefreshCcw,
@@ -2243,6 +2244,19 @@ export default function HomePage() {
             <Button variant="secondary" onClick={() => void refreshRuns()} disabled={isBusy}>
               <RefreshCcw className="mr-2 h-4 w-4" />
               Refresh Runs
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!selectedRunId}
+              title={selectedRunId ? "Open the selected song in Geometry Mapper" : "Select or upload a song first"}
+              onClick={() => {
+                if (!selectedRunId) return;
+                const params = new URLSearchParams({ run: selectedRunId, name: selectedRunFilename });
+                window.location.assign(`/mapper?${params.toString()}`);
+              }}
+            >
+              <Network className="mr-2 h-4 w-4" />
+              Geometry Mapper
             </Button>
             <Button variant="danger" onClick={() => void onClearHistory()} disabled={isBusy || runs.length === 0}>
               <Trash2 className="mr-2 h-4 w-4" />

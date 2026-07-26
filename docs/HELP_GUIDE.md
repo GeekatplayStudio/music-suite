@@ -116,8 +116,15 @@ Important behavior:
 ## 9) Troubleshooting
 
 - `Failed to fetch`:
-  - ensure API is running on port `8000`
-  - verify `NEXT_PUBLIC_AUDIOQI_API_URL`
+  - confirm the API is running; startup prefers port `8008` but auto-selects the next free loopback port
+  - the browser always calls the same-origin `/suite-api` proxy, so no public API URL needs to be configured
+  - check the selected API port in `.music-suite-processes.json` and the launcher output
+- `<service> did not open port <n> within <n> seconds`:
+  - a cold first start imports the full audio stack and can take minutes on a slow disk or while antivirus scans `.venv`
+  - read `logs/api.log`, `logs/api.error.log`, or `logs/web.log` for the real failure
+  - raise the limit: `.\start.ps1 -StartupTimeoutSeconds 600`, or `MUSIC_SUITE_STARTUP_TIMEOUT_SECONDS=600 ./start.command`
+- `npm error enoent ... package.json` when running `npm run start`:
+  - run it from the project root, which now provides `npm start` and `npm stop` wrappers around the unified launchers
 - `Stage heartbeat is stale`:
   - long mel spectrogram work can legitimately take time
   - the frontend warning is advisory; the backend loop guard is the actual stall detector

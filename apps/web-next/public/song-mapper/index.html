@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Geekatplay Studio | Song Geometry Mapper</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./tooltips.css" />
+  </head>
+  <body>
+    <main class="stage">
+      <canvas id="preview-canvas" width="1920" height="1080"></canvas>
+
+      <header class="hud-top">
+        <div class="title-stack">
+          <p class="eyebrow">Geekatplay Studio</p>
+          <h1 id="track-caption">Geometry of your song</h1>
+          <p class="subtitle">Full-song 3D spectral map with reactive trails, fluid connections, and cinematic depth.</p>
+        </div>
+        <div class="status-stack">
+          <span class="chip" id="session-state">Idle</span>
+          <div class="metrics" id="metrics">
+            <div><span>RMS</span><strong id="metric-rms">0.000</strong></div>
+            <div><span>Centroid</span><strong id="metric-centroid">0 Hz</strong></div>
+            <div><span>Spread</span><strong id="metric-spread">0.00 kHz</strong></div>
+          </div>
+          <div class="status-actions">
+            <button id="help-btn" class="btn btn-sm" type="button" aria-label="About">About</button>
+            <button id="toggle-math-panel" class="btn btn-sm" type="button" aria-label="Toggle math analysis panel" aria-pressed="false">Math HUD</button>
+            <a
+              id="support-vlad-btn"
+              class="btn btn-sm support-btn"
+              href="https://geekatplay.gumroad.com/coffee"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Support Vlad"
+            >
+              Support Vlad
+            </a>
+          </div>
+        </div>
+      </header>
+
+      <aside id="math-panel" class="math-panel is-hidden" aria-hidden="true">
+        <div class="math-panel-head">
+          <strong>Live Math Analysis</strong>
+          <button id="close-math-panel" class="math-close" type="button" aria-label="Close math analysis panel">×</button>
+        </div>
+
+        <section class="math-section">
+          <h3>File / Source</h3>
+          <div class="math-grid">
+            <div><span>Name</span><strong id="math-file-name">-</strong></div>
+            <div><span>Type</span><strong id="math-file-type">-</strong></div>
+            <div><span>Size</span><strong id="math-file-size">-</strong></div>
+            <div><span>Duration</span><strong id="math-file-duration">-</strong></div>
+            <div><span>Bitrate (est)</span><strong id="math-file-bitrate">-</strong></div>
+            <div><span>Range</span><strong id="math-file-range">-</strong></div>
+          </div>
+        </section>
+
+        <section class="math-section">
+          <h3>Pipeline</h3>
+          <div class="math-grid">
+            <div><span>Engine</span><strong id="math-engine">-</strong></div>
+            <div><span>Toolchain</span><strong id="math-toolchain">-</strong></div>
+            <div><span>AI Generated</span><strong id="math-ai-generated">Unknown</strong></div>
+            <div><span>FFT / Hop</span><strong id="math-fft-hop">-</strong></div>
+            <div><span>Window</span><strong id="math-window">-</strong></div>
+            <div><span>Sample Rate</span><strong id="math-sample-rate">-</strong></div>
+            <div><span>Channels</span><strong id="math-channels">-</strong></div>
+            <div><span>Frames</span><strong id="math-frames">-</strong></div>
+            <div><span>FPS (analysis)</span><strong id="math-fps">-</strong></div>
+          </div>
+          <p class="math-descriptor-list" id="math-descriptors">Descriptors: -</p>
+        </section>
+
+        <section class="math-section">
+          <h3>Live Frame</h3>
+          <div class="math-grid">
+            <div><span>Playback</span><strong id="math-live-playback">-</strong></div>
+            <div><span>Frame Index</span><strong id="math-live-index">-</strong></div>
+            <div><span>RMS / dBFS</span><strong id="math-live-rms-db">-</strong></div>
+            <div><span>Centroid</span><strong id="math-live-centroid">-</strong></div>
+            <div><span>Spread</span><strong id="math-live-spread">-</strong></div>
+            <div><span>Rolloff (85%)</span><strong id="math-live-rolloff">-</strong></div>
+            <div><span>Peak</span><strong id="math-live-peak">-</strong></div>
+            <div><span>Flux</span><strong id="math-live-flux">-</strong></div>
+            <div><span>Flatness</span><strong id="math-live-flatness">-</strong></div>
+            <div><span>ZCR</span><strong id="math-live-zcr">-</strong></div>
+            <div><span>Tonality (1-flat)</span><strong id="math-live-tonality">-</strong></div>
+            <div><span>Bandwidth Ratio</span><strong id="math-live-bw-ratio">-</strong></div>
+          </div>
+        </section>
+      </aside>
+
+      <div id="help-modal" class="modal" aria-hidden="true">
+        <div class="modal-content">
+          <button id="close-help" class="close-btn">&times;</button>
+          
+          <div class="help-header">
+            <div class="help-logo">3D</div>
+            <div class="help-title">
+                <h2>Song Geometry Mapper</h2>
+              <p>Version 1.3.0 &bull; Geekatplay Studio</p>
+            </div>
+          </div>
+
+          <div class="help-body">
+            <h3>How it works</h3>
+            <p>
+              Song Geometry Mapper converts an audio track into frame-wise spectral descriptors and maps those frames into a 3D structure.
+              Each node is one time slice of the song.
+            </p>
+            <h3>The 3D Construction</h3>
+            <p>
+              <strong>Analysis:</strong> We extract RMS, centroid, spread, rolloff, flatness, peak frequency, zero-crossing rate, and flux per frame.
+            </p>
+            <p>
+              <strong>Mapping:</strong> Choose <em>Manifold (PCA)</em> for structure clusters, <em>Time Spine</em> for chronology, <em>Hybrid Flow</em> for both, or <em>Helix Orbit</em> for spiral timeline motion.
+              Similar sounding regions become spatially closer in manifold-style modes.
+            </p>
+            <p>
+              <strong>Observatory Layer:</strong> The <em>Observatory</em> preset adds a more analytical presentation with structural scan halos and orbit rings, while keeping the original geometry modes intact.
+              It also loads a calmer camera and lower-noise FX profile when selected.
+            </p>
+            <p>
+              <strong>Cathedral Layer:</strong> The <em>Cathedral</em> preset adds vaulted arches, beacon spires, and a stronger stage silhouette without replacing the base graph.
+              It also loads a more theatrical camera and glow profile when selected.
+            </p>
+            <h3>Analyzer Modes</h3>
+            <p>
+              <strong>Classic (Browser):</strong> drop audio and analyze locally in the browser.
+              <br />
+              <strong>Voice / Deep (Backend):</strong> drop one audio file, backend analyzer auto-generates geometry JSON, and loads it for playback sync.
+            </p>
+            <h3>Controls</h3>
+            <ul>
+              <li><strong>Mapping Mode:</strong> Switch among Manifold, Time Spine, Hybrid Flow, and Helix Orbit views.</li>
+              <li><strong>Connections:</strong> Use temporal and similarity links, with straight or wave style.</li>
+              <li><strong>Observatory Overlay:</strong> Add structural scan rings on top of the current map without replacing legacy presets or controls.</li>
+              <li><strong>Cathedral Overlay:</strong> Add vaulted arches and beacon spires as another optional scene layer.</li>
+              <li><strong>Scene Defaults:</strong> Selecting Observatory or Cathedral also loads recommended camera and FX defaults, and switching back to a legacy preset restores your prior non-scene settings.</li>
+              <li><strong>Refine Geometry:</strong> Use song-aware auto spread or manual spread plus X/Y/Z offsets.</li>
+              <li><strong>Visibility:</strong> Use "Nodes Only" to hide edges and effects for a cleaner view.</li>
+            </ul>
+             <p style="margin-top: 2rem; font-size: 0.85rem; opacity: 0.7;">
+                Created by <strong>Geekatplay Studio</strong>. See repository docs for full math, setup, and research references.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <aside class="legend" aria-hidden="true">
+        <span class="legend-title">Spectral Spread (kHz)</span>
+        <div class="legend-bar" id="legend-bar"></div>
+        <div class="legend-scale" id="legend-scale">
+          <span>2.20</span>
+          <span>1.90</span>
+          <span>1.60</span>
+          <span>1.30</span>
+          <span>1.00</span>
+          <span>0.70</span>
+          <span>0.40</span>
+        </div>
+      </aside>
+
+      <section id="control-drawer" class="control-drawer" aria-label="Controls">
+        <div class="drawer-grid">
+          <section id="panel-session" class="control-block tab-panel is-active" data-tab-panel="session">
+            <h2>Session</h2>
+
+            <div class="control-group" style="margin-bottom: 12px; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px;">
+               <div class="control-group-title" style="margin-bottom: 6px; font-size: 0.75rem; color: var(--accent-cyan); text-transform: uppercase; letter-spacing: 0.05em;">Analysis Model</div>
+               <div style="display: flex; gap: 12px; font-size: 0.85rem;">
+                   <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                       <input type="radio" name="analysis-mode" value="classic" checked onchange="updateAnalysisModeUI()"> 
+                       <span>Classic (Browser)</span>
+                   </label>
+                   <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                       <input type="radio" name="analysis-mode" value="voice" onchange="updateAnalysisModeUI()"> 
+                       <span>Voice / Deep (Backend)</span>
+                   </label>
+               </div>
+               <div id="voice-options" style="display: none; margin-top: 8px;">
+                   <label style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem;">
+                       <span>Voice Focus:</span>
+                       <select id="voice-stem">
+                           <option value="vocals" selected>Vocals</option>
+                           <option value="none">Full Mix</option>
+                           <option value="drums">Drums</option>
+                           <option value="bass">Bass</option>
+                           <option value="other">Other</option>
+                       </select>
+                   </label>
+                   <label style="display: grid; gap: 4px; margin-top: 8px; font-size: 0.8rem;">
+                     <span>Cache Folder (managed by Music Suite):</span>
+                     <input id="voice-cache-dir" type="text" value="data/song-mapper/cache" disabled />
+                   </label>
+                   <div class="button-row" style="margin-top: 6px;">
+                   <button id="voice-cache-clear" class="btn" type="button" disabled>Managed Local Cache</button>
+                   <button id="voice-analysis-cache-clear" class="btn" type="button">Clear Cached Analyses</button>
+                   </div>
+                   <small id="voice-cache-status" style="display: block; margin-top: 6px; opacity: 0.72; font-size: 0.76rem; line-height: 1.3;">
+                     Cache output: Music Suite local data directory
+                   </small>
+               </div>
+            </div>
+
+            <label class="file-pill" for="audio-file" style="flex-direction: column; align-items: flex-start; min-height: 80px; justify-content: center;">
+              <span id="upload-title">Load Audio File</span>
+              <small id="upload-desc" style="opacity: 0.7; font-size: 0.8em; margin-bottom: 4px; line-height: 1.3;">
+                  Drag & drop .mp3 or .wav for instant browser analysis
+              </small>
+              <small id="file-label">No file selected</small>
+              <input id="audio-file" type="file" accept="audio/*,.json,application/json" />
+            </label>
+
+            <script>
+                function updateAnalysisModeUI() {
+                    const mode = document.querySelector('input[name="analysis-mode"]:checked').value;
+                    const title = document.getElementById('upload-title');
+                    const desc = document.getElementById('upload-desc');
+                    const voiceOptions = document.getElementById('voice-options');
+                    
+                    if (mode === 'classic') {
+                        title.textContent = "Load Audio File";
+                        desc.textContent = "Drag & drop .mp3 or .wav for instant browser analysis";
+                        if (voiceOptions) voiceOptions.style.display = "none";
+                    } else {
+                        title.textContent = "Load Audio For Voice Analyzer";
+                        desc.innerHTML = "Drag one audio file. Backend analyzer auto-builds geometry JSON and loads it.";
+                        if (voiceOptions) voiceOptions.style.display = "block";
+                    }
+                }
+            </script>
+
+            <audio id="player" controls preload="metadata"></audio>
+
+            <div class="button-row">
+              <button id="play-toggle" class="btn btn-primary" type="button" disabled>Play</button>
+              <button id="pause-audio" class="btn" type="button" disabled>Pause</button>
+              <button id="reset-view" class="btn" type="button">Reset Camera</button>
+            </div>
+
+            <div class="switch-row">
+              <label><input id="show-connections" type="checkbox" checked /> Connections <span class="info-icon" data-tooltip="Draw lines between related audio segments"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span></label>
+              <label><input id="show-labels" type="checkbox" checked /> Labels <span class="info-icon" data-tooltip="Show text labels for distinct song sections"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span></label>
+              <label><input id="cinema-mode" type="checkbox" checked /> Cinema FX <span class="info-icon" data-tooltip="Enable bloom, glow, and cinematic depth effects"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span></label>
+              <label><input id="nodes-only" type="checkbox" /> Nodes Only <span class="info-icon" data-tooltip="Hide all edges and effects, showing only raw data points"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span></label>
+            </div>
+          </section>
+
+          <section id="panel-mapping" class="control-block tab-panel mapping-panel" data-tab-panel="mapping">
+            <h2>Mapping & Geometry</h2>
+            
+            <div class="control-group-title">Structure</div>
+            <label>
+              Mapping Mode <span class="info-icon" data-tooltip="Manifold: similarity clusters. Time Spine: chronological line. Hybrid Flow: blend of structure + time. Helix Orbit: spiral timeline."><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <select id="mapping-mode">
+                <option value="manifold" selected>Manifold (PCA)</option>
+                <option value="time">Time Spine</option>
+                <option value="hybrid">Hybrid Flow</option>
+                <option value="helix">Helix Orbit</option>
+              </select>
+            </label>
+            <label>
+              <span class="label-head">
+                <span>3D Frequency Spread <span class="info-icon" data-tooltip="Expand point cloud in X/Z. Auto mode calibrates this from loaded song statistics."><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span></span>
+                <span id="freq-spread-value" class="range-value">1.40x</span>
+              </span>
+              <input id="freq-spread" type="range" min="0.6" max="6" value="1.4" step="0.05" />
+            </label>
+            <label class="mapping-toggle"><input id="auto-freq-spread" type="checkbox" checked /> Auto Spread by Song <span class="info-icon" data-tooltip="When enabled, spread is calibrated from each song after analysis/loading and after mapping-mode changes."><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span></label>
+            <p class="mapping-note">Auto mode targets a balanced cloud radius from the loaded song.</p>
+            
+            <div class="control-group-title">Position</div>
+            <div class="control-group mapping-offsets">
+                <label>
+                    <span class="label-head">Offset X <span id="val-offset-x" class="range-value">0</span></span>
+                    <input id="offset-x" type="range" min="-10" max="10" step="0.1" value="0" />
+                </label>
+                <label>
+                    <span class="label-head">Offset Y <span id="val-offset-y" class="range-value">0</span></span>
+                    <input id="offset-y" type="range" min="-10" max="10" step="0.1" value="0" />
+                </label>
+                <label>
+                    <span class="label-head">Offset Z <span id="val-offset-z" class="range-value">0</span></span>
+                    <input id="offset-z" type="range" min="-20" max="20" step="0.1" value="0" />
+                </label>
+            </div>
+
+            <div class="control-group-title">Connectivity</div>
+            <label>
+              Edge Mode <span class="info-icon" data-tooltip="Define how points are connected (Time vs Similarity)"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <select id="edge-mode">
+                <option value="both" selected>Temporal + kNN</option>
+                <option value="temporal">Temporal</option>
+                <option value="knn">kNN</option>
+              </select>
+            </label>
+            <label>
+              Neighbor Links <span class="info-icon" data-tooltip="Number of connections per point"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="knn-neighbors" type="range" min="1" max="10" value="4" step="1" />
+            </label>
+            <label>
+              Neighbor Boost <span class="info-icon" data-tooltip="Strengthen visual weight of neighbor connections"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="knn-boost" type="range" min="0.2" max="2" value="1" step="0.01" />
+            </label>
+
+            <div class="control-group-title">View</div>
+            <label>
+              Camera Preset <span class="info-icon" data-tooltip="Select automatic camera movement patterns"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <select id="camera-preset">
+                <option value="static">Static</option>
+                <option value="drift" selected>Drift</option>
+                <option value="orbit">Orbit</option>
+                <option value="pulse">Pulse</option>
+                <option value="dive">Dive</option>
+              </select>
+            </label>
+            <label>
+              Drag Mode <span class="info-icon" data-tooltip="Orbit: Rotate view. Pan: Move camera laterally."><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <select id="drag-mode">
+                <option value="orbit" selected>Orbit</option>
+                <option value="pan">Pan</option>
+              </select>
+            </label>
+            <label>
+              Display Decimation <span class="info-icon" data-tooltip="Increase to show fewer points for better performance"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="display-decimation" type="range" min="1" max="8" value="2" step="1" />
+            </label>
+          </section>
+
+          <section id="panel-visual" class="control-block tab-panel" data-tab-panel="visual">
+            <h2>Visual Dynamics</h2>
+            
+            <div class="control-group-title">Points</div>
+            <label>
+              Point Scale <span class="info-icon" data-tooltip="Size of individual data points"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="point-scale" type="range" min="0.6" max="4.6" value="1.9" step="0.1" />
+            </label>
+            <label>
+              Point Opacity <span class="info-icon" data-tooltip="Transparency of the data points"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="point-opacity" type="range" min="0.15" max="1" value="0.72" step="0.01" />
+            </label>
+            <label>
+              Point Solidness <span class="info-icon" data-tooltip="How dense and solid each node appears"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="point-solidness" type="range" min="0" max="1" value="0.45" step="0.01" />
+            </label>
+            <label>
+              Point Depth (3D) <span class="info-icon" data-tooltip="Enhance the perception of 3D depth"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="point-depth" type="range" min="0" max="1.6" value="0.95" step="0.01" />
+            </label>
+
+            <div class="control-group-title">Connections</div>
+            <label>
+              Connection Style <span class="info-icon" data-tooltip="Choose between straight or wave-based connections"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <select id="edge-style">
+                <option value="wave" selected>Wave</option>
+                <option value="line">Straight</option>
+                <option value="ribbon">Ribbon</option>
+              </select>
+            </label>
+            <label>
+              Connection Strength <span class="info-icon" data-tooltip="Brightness/Opacity of resolving lines"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="edge-opacity" type="range" min="0" max="1" value="0.55" step="0.01" />
+            </label>
+            <label>
+              Connection Brightness <span class="info-icon" data-tooltip="Boost perceived brightness of all node connections"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="edge-brightness" type="range" min="0.4" max="3" value="1" step="0.05" />
+            </label>
+            <label>
+              Connection Width Boost <span class="info-icon" data-tooltip="Increase thickness of all node connections"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="edge-width-boost" type="range" min="0.6" max="3" value="1" step="0.05" />
+            </label>
+            <label>
+              Ribbon Softness <span class="info-icon" data-tooltip="Soft feathering for ribbon edges and glow"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="edge-ribbon-softness" type="range" min="0" max="1" value="0.55" step="0.01" />
+            </label>
+            <label>
+              Ribbon Wave Speed <span class="info-icon" data-tooltip="Speed of light-wave travel along ribbons"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="edge-ribbon-wave-speed" type="range" min="0.2" max="3" value="1" step="0.05" />
+            </label>
+            <label>
+              Ribbon Flexibility <span class="info-icon" data-tooltip="How strongly ribbons bend and follow music wave shapes"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="edge-ribbon-flexibility" type="range" min="0.2" max="3" value="1" step="0.05" />
+            </label>
+            <label>
+              Connection Solidness <span class="info-icon" data-tooltip="Make lines appear more solid or dashed"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="edge-solidness" type="range" min="0" max="1" value="0.45" step="0.01" />
+            </label>
+            <label>
+              Connection Trail Length <span class="info-icon" data-tooltip="How long trails follow the connections"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="edge-trail-length" type="range" min="0.08" max="1" value="0.38" step="0.01" />
+            </label>
+            <label>
+              Connection Tail Fade <span class="info-icon" data-tooltip="How quickly connection trails fade out"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="edge-tail-fade" type="range" min="0" max="1.8" value="0.9" step="0.01" />
+            </label>
+            <label>
+              Wave Amplification <span class="info-icon" data-tooltip="Boost wave connection height when amplitude is too subtle"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="wave-amplification" type="range" min="0.2" max="4" value="1" step="0.05" />
+            </label>
+
+            <div class="control-group-title">Motion &amp; Pulse</div>
+            <label>
+              Trail Persistence <span class="info-icon" data-tooltip="How long motion trails remain on screen"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="trail-persistence" type="range" min="0.75" max="0.99" value="0.93" step="0.01" />
+            </label>
+            <label>
+              Meteor Trail <span class="info-icon" data-tooltip="Brightness of the leading edge of trails"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="trail-flare" type="range" min="0" max="1.5" value="0.95" step="0.01" />
+            </label>
+            <label>
+              Flow Density <span class="info-icon" data-tooltip="Volume of particles flowing through lines"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="flow-density" type="range" min="0" max="1" value="0.7" step="0.01" />
+            </label>
+            <label>
+              Show Flow Arrows <span class="info-icon" data-tooltip="Show/hide small moving arrow streaks on connections"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="show-flow-arrows" type="checkbox" checked />
+            </label>
+            <label>
+              Activation Pulse <span class="info-icon" data-tooltip="Flash intensity when a point activates"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="pulse-strength" type="range" min="0" max="2.2" value="1.05" step="0.05" />
+            </label>
+            <label>
+              Node Hit Pulse <span class="info-icon" data-tooltip="Reaction size when audio hits a node"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="node-hit-pulse" type="range" min="0" max="2.8" value="1.25" step="0.05" />
+            </label>
+            <label>
+              Motion Strength <span class="info-icon" data-tooltip="Intensity of movement reacting to audio"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="motion-strength" type="range" min="0" max="3" value="1.3" step="0.05" />
+            </label>
+            <label>
+              Motion Blur <span class="info-icon" data-tooltip="Blur effect based on movement speed"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="motion-blur" type="range" min="0" max="1.4" value="0.28" step="0.01" />
+            </label>
+            <label>
+              Auto Orbit <span class="info-icon" data-tooltip="Speed of automatic camera rotation"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="rotation-speed" type="range" min="0" max="1.2" value="0.12" step="0.01" />
+            </label>
+          </section>
+
+          <section id="panel-postfx" class="control-block tab-panel" data-tab-panel="postfx">
+            <h2>Post FX &amp; Export</h2>
+            
+            <div class="control-group-title">Presets</div>
+            <label>
+              Visual Preset <span class="info-icon" data-tooltip="Load a pre-configured colorful theme"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <select id="visual-preset">
+                <option value="cinematic" selected>Cinematic</option>
+                <option value="cinematic-plus">Cinematic+</option>
+                <option value="observatory">Observatory</option>
+                <option value="cathedral">Cathedral</option>
+                <option value="scientific">Scientific</option>
+                <option value="neon">Neon</option>
+                <option value="aurora">Aurora</option>
+                <option value="sunset">Sunset</option>
+                <option value="arctic">Arctic</option>
+                <option value="infrared">Infrared</option>
+              </select>
+            </label>
+            <label>
+              <input id="observatory-overlay" type="checkbox" /> Observatory Overlay <span class="info-icon" data-tooltip="Adds structural scan halos and orbit rings; enabled automatically by the Observatory preset and optionally usable with other presets."><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+            </label>
+            <label>
+              <input id="cathedral-overlay" type="checkbox" /> Cathedral Overlay <span class="info-icon" data-tooltip="Adds vaulted arches and beacon spires; enabled automatically by the Cathedral preset and optionally usable with other presets."><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+            </label>
+            <label>
+              Custom Presets
+              <select id="custom-preset-select">
+                <option value="">Select custom preset</option>
+              </select>
+            </label>
+            <label>
+              Save Preset As
+              <input id="custom-preset-name" type="text" maxlength="48" placeholder="My cinematic build" />
+            </label>
+            <div class="button-row">
+              <button id="save-custom-preset" class="btn" type="button">Save Preset</button>
+              <button id="delete-custom-preset" class="btn" type="button">Delete Preset</button>
+            </div>
+
+            <div class="control-group-title">Glow &amp; Bloom</div>
+            <label>
+              Bloom <span class="info-icon" data-tooltip="Intensity of the glowing light bleed effect"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="bloom-strength" type="range" min="0" max="1" value="0.56" step="0.01" />
+            </label>
+            <label>
+              Glow Intensity <span class="info-icon" data-tooltip="Overall brightness of the scene"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="glow-intensity" type="range" min="0" max="1.5" value="0.56" step="0.01" />
+            </label>
+            <label>
+              Glow Threshold <span class="info-icon" data-tooltip="Minimum brightness required to trigger a glow"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="glow-threshold" type="range" min="0" max="1" value="0.2" step="0.01" />
+            </label>
+            <label>
+              Glow Shift (Infra) <span class="info-icon" data-tooltip="Shift colors towards warmer infrared tones"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="glow-shift" type="range" min="0" max="1.6" value="0.55" step="0.01" />
+            </label>
+            <label>
+              Glow Decay <span class="info-icon" data-tooltip="Falloff rate of the glow from the center"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="glow-decay" type="range" min="0.2" max="2.5" value="1.1" step="0.01" />
+            </label>
+            <label>
+              Fog Depth <span class="info-icon" data-tooltip="Distance based fog that works as a depth cue"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="fog-strength" type="range" min="0" max="1" value="0.42" step="0.01" />
+            </label>
+            <label>
+              Lens Flare <span class="info-icon" data-tooltip="Cinematic optical flare around the dominant active light source"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="lens-flare-strength" type="range" min="0" max="1.5" value="0.42" step="0.01" />
+            </label>
+            <label>
+              Lens Streaks <span class="info-icon" data-tooltip="Anamorphic horizontal streaks that react to source intensity"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <input id="lens-streak-strength" type="range" min="0" max="1.5" value="0.35" step="0.01" />
+            </label>
+
+            <div class="control-group-title">Data &amp; Color</div>
+            <label>
+              Color Metric <span class="info-icon" data-tooltip="Data source used to colorize the points"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span>
+              <select id="color-metric">
+                <option value="spread" selected>Spectral Spread (kHz)</option>
+                <option value="peak">Peak Frequency (kHz)</option>
+                <option value="centroid">Spectral Centroid (kHz)</option>
+                <option value="rolloff">Spectral Rolloff 85% (kHz)</option>
+                <option value="flux">Spectral Flux</option>
+                <option value="flatness">Spectral Flatness</option>
+                <option value="tonality">Tonality (1 - Flatness)</option>
+                <option value="rms">RMS Energy</option>
+                <option value="zcr">Zero Crossing Rate</option>
+              </select>
+            </label>
+            <label>
+              <span class="label-head">
+                <span>Palette Vibrance / Saturation <span class="info-icon" data-tooltip="Boost or reduce palette intensity for spectral color mapping"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg></span></span>
+                <span id="palette-saturation-value" class="range-value">1.00x</span>
+              </span>
+              <input id="palette-saturation" type="range" min="0" max="2" value="1" step="0.01" />
+            </label>
+            <label class="file-pill" for="palette-file">
+              <span>Load Palette JSON</span>
+              <small>Format: [{"position":0.0,"color":[80,98,255]}, ...]</small>
+              <input id="palette-file" type="file" accept="application/json,.json" />
+            </label>
+            <div class="button-row">
+              <button id="clear-palette" class="btn" type="button">Use Built-in Palette</button>
+            </div>
+
+            <div class="control-group-title">Export</div>
+            <label>
+              Export Mode
+              <select id="export-mode">
+                <option value="preview" selected>Preview Size</option>
+                <option value="4k">4K Still</option>
+              </select>
+            </label>
+            <div class="button-row export-row">
+              <button id="export-analysis-json" class="btn" type="button">Export Analysis JSON</button>
+              <button id="export-3d-obj" class="btn" type="button">Export 3D OBJ</button>
+              <button id="capture-still" class="btn" type="button">Capture Still</button>
+              <button id="start-recording" class="btn" type="button">Start Video</button>
+              <button id="stop-recording" class="btn" type="button" disabled>Stop Video</button>
+              <button id="copy-mp4-command" class="btn" type="button">Copy MP4 Command</button>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <nav class="tabs-dock" aria-label="Control tabs">
+        <button id="drawer-toggle" class="drawer-toggle" type="button" aria-expanded="true" aria-label="Hide controls" title="Hide controls">Hide</button>
+        <button class="tab-btn is-active" type="button" data-tab-target="session" aria-controls="panel-session" aria-label="Session controls" title="Session">
+          <span class="tab-short">S</span>
+          <span class="tab-full">Session</span>
+        </button>
+        <button class="tab-btn" type="button" data-tab-target="mapping" aria-controls="panel-mapping" aria-label="Mapping controls" title="Mapping">
+          <span class="tab-short">M</span>
+          <span class="tab-full">Mapping</span>
+        </button>
+        <button class="tab-btn" type="button" data-tab-target="visual" aria-controls="panel-visual" aria-label="Visual controls" title="Visual">
+          <span class="tab-short">V</span>
+          <span class="tab-full">Visual</span>
+        </button>
+        <button class="tab-btn" type="button" data-tab-target="postfx" aria-controls="panel-postfx" aria-label="Post FX controls" title="Post FX">
+          <span class="tab-short">FX</span>
+          <span class="tab-full">Post FX</span>
+        </button>
+      </nav>
+
+      <button
+        id="focus-toggle"
+        class="focus-toggle"
+        type="button"
+        aria-label="Hide UI overlays"
+        title="Hide UI overlays"
+      >
+        H
+      </button>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

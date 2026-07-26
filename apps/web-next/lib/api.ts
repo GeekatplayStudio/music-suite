@@ -10,18 +10,7 @@ import {
   UploadResponse
 } from "@/lib/types";
 
-function resolveApiBase(): string {
-  const envBase = process.env.NEXT_PUBLIC_AUDIOQI_API_URL?.trim();
-  if (envBase) {
-    return envBase.replace(/\/+$/, "");
-  }
-  if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.hostname}:8008`;
-  }
-  return "http://127.0.0.1:8008";
-}
-
-const API_BASE = resolveApiBase();
+const API_BASE = "/suite-api";
 
 export function getApiBase(): string {
   return API_BASE;
@@ -37,8 +26,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       throw err;
     }
     throw new Error(
-      `Failed to reach API at ${API_BASE}. ` +
-        "Make sure backend is running on port 8000 and CORS/network is allowed."
+      "Failed to reach the Music Suite API through the local application proxy. " +
+        "Restart Music Suite with its start launcher."
     );
   }
   if (!res.ok) {
