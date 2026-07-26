@@ -1426,6 +1426,7 @@ export function createAnalysisModule(runtime) {
       peakRangeKhz,
       temporalEdges,
       knnEdges,
+      sectionLinks: buildSectionLinks(frames, knnEdges),
       songProfile: buildSongProfile(frames, computeSongChroma(mono, sampleRate), audioBuffer.duration),
       waveformPeaks: buildWaveformPeaks(mono),
     };
@@ -1669,12 +1670,57 @@ export function createAnalysisModule(runtime) {
     };
   }
   
+  // A repeat has to be far enough apart in time to be a *structural* return
+  // rather than just the next bar sounding like this one.
+  const SECTION_MIN_GAP_RATIO = 0.06;
+  const SECTION_MIN_GAP_FRAMES = 24;
+  const SECTION_MAX_LINKS = 48;
+
+  /**
+   * Finds structural repeats: pairs of moments that sound alike but are far
+   * apart in the song.
+   *
+   * This needs no new analysis. The kNN graph already connects frames that are
+   * close in descriptor space; the ones whose endpoints are also distant in
+   * time are exactly the choruses, refrains and reprises. Links are bucketed
+   * so a whole repeated section produces one arc rather than forty.
+   */
+  function buildSectionLinks(frames, knnEdges) {
+    if (!Array.isArray(frames) || frames.length < 64 || !Array.isArray(knnEdges)) {
+      return [];
+    }
+
+    const minGap = Math.max(SECTION_MIN_GAP_FRAMES, Math.floor(frames.length * SECTION_MIN_GAP_RATIO));
+    const bucketSize = Math.max(4, Math.floor(frames.length / 48));
+    const best = new Map();
+
+    for (const edge of knnEdges) {
+      const gap = Math.abs(edge.a - edge.b);
+      if (gap < minGap) {
+        continue;
+      }
+
+      const lo = Math.min(edge.a, edge.b);
+      const hi = Math.max(edge.a, edge.b);
+      const key = `${Math.floor(lo / bucketSize)}:${Math.floor(hi / bucketSize)}`;
+      const current = best.get(key);
+      if (!current || edge.weight > current.weight) {
+        best.set(key, { a: lo, b: hi, weight: edge.weight, gap });
+      }
+    }
+
+    return Array.from(best.values())
+      .sort((x, y) => y.weight - x.weight)
+      .slice(0, SECTION_MAX_LINKS);
+  }
+
   function rebuildKnnEdges() {
     if (!state.map) {
       return;
     }
     setSessionLabel("Linking", true);
     state.map.knnEdges = buildKnnEdges(state.map.frames, Number(knnNeighbors.value));
+    state.map.sectionLinks = buildSectionLinks(state.map.frames, state.map.knnEdges);
     setSessionLabel(player.paused ? "Ready" : "Live", !player.paused);
   }
   
@@ -1696,6 +1742,7 @@ export function createAnalysisModule(runtime) {
     computeRanges,
     buildTemporalEdges,
     buildKnnEdges,
+    buildSectionLinks,
     applyMapping,
     applySongAwareFreqSpread,
     activePalette,

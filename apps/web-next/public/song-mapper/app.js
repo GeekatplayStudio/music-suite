@@ -219,6 +219,9 @@ const mathPanelEls = {
   channels: document.getElementById("math-channels"),
   frames: document.getElementById("math-frames"),
   fps: document.getElementById("math-fps"),
+  tempo: document.getElementById("math-tempo"),
+  key: document.getElementById("math-key"),
+  sections: document.getElementById("math-sections"),
   descriptors: document.getElementById("math-descriptors"),
   livePlayback: document.getElementById("math-live-playback"),
   liveIndex: document.getElementById("math-live-index"),
@@ -416,6 +419,26 @@ function updateMathPanel(nowMs, force = false) {
   setMathField(mathPanelEls.frames, analysisFrames > 0 ? String(analysisFrames) : "-");
   setMathField(mathPanelEls.fps, frameRate && frameRate > 0 ? frameRate.toFixed(2) : "-");
   setMathField(mathPanelEls.descriptors, `Descriptors: ${descriptorList}`);
+
+  // Song-level estimates are shown with their confidence rather than as bare
+  // numbers, so a weak estimate is visibly weak instead of looking definitive.
+  const profile = map && map.songProfile ? map.songProfile : null;
+  setMathField(
+    mathPanelEls.tempo,
+    profile && profile.tempoBpm
+      ? `${profile.tempoBpm.toFixed(1)} BPM (conf ${(profile.tempoConfidence * 100).toFixed(0)}%)`
+      : "-",
+  );
+  setMathField(
+    mathPanelEls.key,
+    profile && profile.key
+      ? `${profile.key} (conf ${(profile.keyConfidence * 100).toFixed(0)}%)`
+      : "-",
+  );
+  setMathField(
+    mathPanelEls.sections,
+    map && Array.isArray(map.sectionLinks) ? String(map.sectionLinks.length) : "-",
+  );
 
   const live = getActiveFrameForMath();
   const currentSec = player ? toFiniteOrNull(player.currentTime) : null;

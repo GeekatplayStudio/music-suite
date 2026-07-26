@@ -51,6 +51,11 @@ export function createRuntime() {
   const trailFlare = document.getElementById("trail-flare");
   const flowDensity = document.getElementById("flow-density");
   const showFlowArrows = document.getElementById("show-flow-arrows");
+  const temporalFog = document.getElementById("temporal-fog");
+  const temporalGhosts = document.getElementById("temporal-ghosts");
+  const ghostOffset = document.getElementById("ghost-offset");
+  const timeTube = document.getElementById("time-tube");
+  const sectionArcs = document.getElementById("section-arcs");
   const pulseStrength = document.getElementById("pulse-strength");
   const nodeHitPulse = document.getElementById("node-hit-pulse");
   const motionStrength = document.getElementById("motion-strength");
@@ -528,6 +533,11 @@ export function createRuntime() {
     trailFlare,
     flowDensity,
     showFlowArrows,
+    temporalFog,
+    temporalGhosts,
+    ghostOffset,
+    timeTube,
+    sectionArcs,
     pulseStrength,
     nodeHitPulse,
     motionStrength,

@@ -304,6 +304,56 @@ def test_hovering_a_node_explains_what_it_is_and_why_it_sits_there() -> None:
     assert "elapsed time" in hud.lower()
 
 
+TEMPORAL_CONTROLS = ("temporal-fog", "temporal-ghosts", "ghost-offset", "time-tube", "section-arcs")
+
+
+def test_temporal_effects_exist_and_are_documented() -> None:
+    index = _read(INDEX)
+    help_js = _read(HELP_CONTENT)
+    render = _read(RENDER_JS)
+
+    for control in TEMPORAL_CONTROLS:
+        assert f'id="{control}"' in index, f"missing control {control}"
+        assert f'"{control}"' in help_js, f"missing help for {control}"
+
+    for fn in ("drawTemporalGhosts", "drawSectionArcs", "drawTimeTube"):
+        assert f"function {fn}" in render, f"missing {fn}"
+
+
+def test_temporal_effects_respect_nodes_only_and_the_quality_tier() -> None:
+    """A new effect that ignores Nodes Only or the tier budget would undo both
+    the clean-view escape hatch and the flicker fix."""
+    render = _read(RENDER_JS)
+
+    ghosts = render.split("function drawTemporalGhosts")[1].split("function drawSectionArcs")[0]
+    assert "nodesOnly.checked" in ghosts
+    assert "qualityTier()" in ghosts
+
+    arcs = render.split("function drawSectionArcs")[1].split("function projectFrameIndex")[0]
+    assert "nodesOnly.checked" in arcs
+    assert "qualityTier()" in arcs
+
+
+def test_temporal_fog_keys_off_the_playhead_not_the_camera() -> None:
+    """Camera-distance fog already exists. The point of temporal fog is that it
+    keeps working while you orbit, which requires the playhead index."""
+    render = _read(RENDER_JS)
+    assert "temporalFogAmount" in render
+    assert "Math.abs(i - activeIndexFloat) / temporalFogSpan" in render
+
+
+def test_section_arcs_come_from_existing_similarity_data() -> None:
+    """Structure detection must reuse the kNN graph rather than add a second
+    analysis pass, and must only link moments genuinely far apart in time."""
+    analysis = _read(ANALYSIS_JS)
+    assert "function buildSectionLinks" in analysis
+    assert "SECTION_MIN_GAP_RATIO" in analysis
+    assert "sectionLinks" in analysis
+    # Rebuilding the neighbour graph has to refresh the structure with it.
+    rebuild = analysis.split("function rebuildKnnEdges")[1].split("function remapFrames")[0]
+    assert "buildSectionLinks" in rebuild
+
+
 def test_axis_semantics_cover_every_mapping_mode() -> None:
     """A mode with no documented axes would silently fall back to another
     mode's explanation, which would be actively misleading."""

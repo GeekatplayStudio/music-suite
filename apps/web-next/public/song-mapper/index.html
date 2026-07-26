@@ -74,6 +74,9 @@
             <div><span>Channels</span><strong id="math-channels">-</strong></div>
             <div><span>Frames</span><strong id="math-frames">-</strong></div>
             <div><span>FPS (analysis)</span><strong id="math-fps">-</strong></div>
+            <div><span>Tempo (est)</span><strong id="math-tempo">-</strong></div>
+            <div><span>Key (est)</span><strong id="math-key">-</strong></div>
+            <div><span>Repeats found</span><strong id="math-sections">-</strong></div>
           </div>
           <p class="math-descriptor-list" id="math-descriptors">Descriptors: -</p>
         </section>
@@ -457,6 +460,28 @@
             <label>
               Harmonic Detail
               <input id="edge-wave-harmonics" type="range" min="0" max="1" value="0.6" step="0.01" />
+            </label>
+
+            <div class="control-group-title">Time &amp; Structure</div>
+            <label>
+              Temporal Fog
+              <input id="temporal-fog" type="range" min="0" max="1" value="0" step="0.01" />
+            </label>
+            <label>
+              Ghost Layers
+              <input id="temporal-ghosts" type="range" min="0" max="1" value="0" step="0.01" />
+            </label>
+            <label>
+              Ghost Offset (s)
+              <input id="ghost-offset" type="range" min="1" max="20" value="6" step="0.5" />
+            </label>
+            <label>
+              Time Tube
+              <input id="time-tube" type="range" min="0" max="1" value="0" step="0.01" />
+            </label>
+            <label>
+              Section Arcs
+              <input id="section-arcs" type="range" min="0" max="1" value="0" step="0.01" />
             </label>
 
             <div class="control-group-title">Motion &amp; Pulse</div>

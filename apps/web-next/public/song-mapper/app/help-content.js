@@ -195,6 +195,31 @@ export const HELP_CONTENT = {
     what: "Sets how many partials build each connection's waveform. At 0 an edge is a pure sine; higher values stack overtones whose weighting comes from the frames' own spectral flatness, so tonal passages stay smooth while noisy or percussive ones draw a dense, ragged wave.",
     when: "Raise it to read the difference between a sustained pad and a drum fill at a glance. Lower it when the graph is dense and you want clean, legible lines.",
   },
+  "temporal-fog": {
+    title: "Temporal Fog",
+    what: "Fades nodes by how far they are from the playhead in time, not in space. At full strength only the current few seconds stay bright and the rest of the song recedes, whatever the camera is doing.",
+    when: "Use it when a dense cloud makes it hard to tell where you are. Unlike Fog Depth, it follows the music rather than the camera, so it keeps working while you orbit.",
+  },
+  "temporal-ghosts": {
+    title: "Ghost Layers",
+    what: "Draws faint echoes of the cloud as it was N seconds ago and as it will be N seconds ahead. The past echo is tinted cool, the future one warm.",
+    when: "Turn it up to see where a passage came from and where it is heading without scrubbing back and forth. Useful for spotting a build or a drop before it lands.",
+  },
+  "ghost-offset": {
+    title: "Ghost Offset",
+    what: "How many seconds ahead and behind the ghost layers sample. Small values show the immediate approach; large values reach into neighbouring sections.",
+    when: "Set it near your bar length to compare consecutive phrases, or to 15-20s to see across a whole section boundary.",
+  },
+  "time-tube": {
+    title: "Time Tube",
+    what: "Extrudes the playhead's trail into a ribbon whose thickness is loudness and whose colour is the active metric, so the last few seconds read as a shape rather than a line.",
+    when: "Raise it when you care about dynamics over time - the ribbon swells through a chorus and thins through a breakdown.",
+  },
+  "section-arcs": {
+    title: "Section Arcs",
+    what: "Draws arcs between moments that sound alike but sit far apart in the song, found from the same nearest-neighbour similarity data that builds the graph. Each arc brightens as the playhead reaches either end.",
+    when: "Turn it up to see structure: a chorus visibly links back to its earlier occurrences, and a through-composed piece shows almost no arcs at all.",
+  },
   "trail-persistence": {
     title: "Trail Persistence",
     what: "How long the playhead's motion trail stays on screen. Persistence is measured against the audio clock, so it looks the same at any playback speed.",

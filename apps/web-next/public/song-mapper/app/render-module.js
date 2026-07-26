@@ -72,6 +72,11 @@ export function createRenderModule(runtime) {
     edgeTailFade,
     flowDensity,
     showFlowArrows,
+    temporalFog,
+    temporalGhosts,
+    ghostOffset,
+    timeTube,
+    sectionArcs,
     motionStrength,
     rotationSpeed,
     cameraPreset,
@@ -422,6 +427,65 @@ export function createRenderModule(runtime) {
     ctx.restore();
   }
   
+  /**
+   * Extrudes the trail into a ribbon: thickness is loudness, colour is the
+   * active metric, and the whole band fades along its length.
+   *
+   * Where the trail line says "the playhead went this way", the tube says how
+   * loud it was the whole way, which turns the path into a readable record of
+   * the last few seconds rather than a decoration.
+   */
+  function drawTimeTube(projected, segmentCount) {
+    const tube = Number(timeTube?.value || 0);
+    if (tube <= 0.001 || projected.length < 3) {
+      return;
+    }
+
+    const top = [];
+    const bottom = [];
+
+    for (let i = 0; i < projected.length; i += 1) {
+      const point = projected[i];
+      const prev = projected[Math.max(0, i - 1)];
+      const next = projected[Math.min(projected.length - 1, i + 1)];
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      const length = Math.hypot(dx, dy) || 1;
+      // Perpendicular to the local direction of travel.
+      const nx = -dy / length;
+      const ny = dx / length;
+
+      const headBias = i / segmentCount;
+      const half =
+        tube *
+        point.node.life *
+        (1.4 + point.node.volume * 9 + point.node.flux * 3.5) *
+        (0.35 + headBias * 0.65);
+
+      top.push(point.x + nx * half, point.y + ny * half);
+      bottom.push(point.x - nx * half, point.y - ny * half);
+    }
+
+    const head = projected[projected.length - 1];
+    const tail = projected[0];
+    const gradient = ctx.createLinearGradient(tail.x, tail.y, head.x, head.y);
+    gradient.addColorStop(0, rgba(tail.node.color, 0));
+    gradient.addColorStop(0.55, rgba(head.node.color, clamp(tube * 0.14, 0.01, 0.24).toFixed(3)));
+    gradient.addColorStop(1, rgba(head.node.color, clamp(tube * 0.4, 0.02, 0.62).toFixed(3)));
+
+    ctx.beginPath();
+    ctx.moveTo(top[0], top[1]);
+    for (let i = 2; i < top.length; i += 2) {
+      ctx.lineTo(top[i], top[i + 1]);
+    }
+    for (let i = bottom.length - 2; i >= 0; i -= 2) {
+      ctx.lineTo(bottom[i], bottom[i + 1]);
+    }
+    ctx.closePath();
+    ctx.fillStyle = gradient;
+    ctx.fill();
+  }
+
   function drawTrail(nowSec) {
     if (state.trail.length < 2) {
       return;
@@ -457,9 +521,11 @@ export function createRenderModule(runtime) {
   
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
-  
+
     const segmentCount = Math.max(1, projected.length - 1);
-  
+
+    drawTimeTube(projected, segmentCount);
+
     for (let i = 1; i < projected.length; i += 1) {
       const a = projected[i - 1];
       const b = projected[i];
@@ -555,6 +621,139 @@ export function createRenderModule(runtime) {
     ctx.restore();
   }
   
+  /**
+   * Ghost layers: the cloud as it was N seconds ago and as it will be N
+   * seconds from now, drawn faintly around the playhead.
+   *
+   * Past is tinted cool and future warm, so the direction of travel is
+   * readable at a glance rather than inferred from motion. Only the
+   * neighbourhood of each offset is drawn - rendering two whole extra clouds
+   * would triple the frame cost to show something that is mostly redundant.
+   */
+  function drawTemporalGhosts(activeIndexFloat, nowSec) {
+    const strength = Number(temporalGhosts?.value || 0);
+    if (strength <= 0.001 || activeIndexFloat < 0 || !state.map || nodesOnly.checked) {
+      return;
+    }
+
+    const profile = state.map.songProfile;
+    const frameRate = Number(profile?.frameRate) || 0;
+    if (frameRate <= 0) {
+      return;
+    }
+
+    const offsetFrames = Number(ghostOffset?.value || 6) * frameRate;
+    const tier = qualityTier();
+    const span = Math.max(6, Math.round(26 * tier.waveDetail));
+    const stride = Math.max(1, Math.round(2 / tier.waveDetail));
+    const sizeScale = Number(pointScale.value);
+    const past = { r: 108, g: 168, b: 255 };
+    const future = { r: 255, g: 168, b: 108 };
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+
+    for (const direction of [-1, 1]) {
+      const centre = activeIndexFloat + offsetFrames * direction;
+      const tint = direction < 0 ? past : future;
+
+      for (let step = -span; step <= span; step += stride) {
+        const sample = sampleFrameAt(centre + step);
+        if (!sample) {
+          continue;
+        }
+
+        const p = projectPoint3D(sample.x, sample.y, sample.z, nowSec, 0);
+        if (!p) {
+          continue;
+        }
+
+        const falloff = 1 - Math.abs(step) / (span + 1);
+        const alpha = clamp(strength * falloff * (0.06 + sample.volume * 0.2) * p.nearFade, 0.004, 0.42);
+        const radius = clamp((0.6 + sample.volume * 2.6) * sizeScale * p.perspective * 0.05, 0.4, 12);
+
+        ctx.fillStyle = rgba(mixColor(sample.color, tint, 0.55), alpha.toFixed(3));
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Structural section arcs: curves joining moments that sound alike but are
+   * far apart in the song, so a chorus visibly links back to its earlier
+   * occurrences. The pairs come from the kNN graph that already exists.
+   */
+  function drawSectionArcs(byIndex, activeIndexFloat, nowSec) {
+    const strength = Number(sectionArcs?.value || 0);
+    const links = state.map?.sectionLinks;
+    if (strength <= 0.001 || !links || links.length === 0 || nodesOnly.checked) {
+      return;
+    }
+
+    const dpr = Math.max(1, state.dpr || 1);
+    const budget = Math.max(6, Math.round(links.length * qualityTier().waveDetail));
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+
+    for (let i = 0; i < Math.min(budget, links.length); i += 1) {
+      const link = links[i];
+      const a = byIndex.get(link.a) || projectFrameIndex(link.a, nowSec);
+      const b = byIndex.get(link.b) || projectFrameIndex(link.b, nowSec);
+      if (!a || !b) {
+        continue;
+      }
+
+      // An arc lights up as the playhead reaches either end, which is the
+      // moment the repeat is audible.
+      const focus = Math.max(
+        activityForIndex(link.a, activeIndexFloat, 14),
+        activityForIndex(link.b, activeIndexFloat, 14),
+      );
+      const alpha = clamp(strength * (0.05 + link.weight * 0.1 + focus * 0.62), 0.006, 0.85);
+
+      const midX = (a.x + b.x) * 0.5;
+      const midY = (a.y + b.y) * 0.5;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const distance = Math.hypot(dx, dy) || 1;
+      // Bulge perpendicular to the chord so the arc reads as a link rather
+      // than as another edge in the graph.
+      const bulge = Math.min(distance * 0.42, Math.min(state.width, state.height) * 0.3);
+      const cx = midX - (dy / distance) * bulge;
+      const cy = midY + (dx / distance) * bulge;
+
+      const color = mixColor(a.frame.color, b.frame.color, 0.5);
+      ctx.strokeStyle = rgba(color, alpha.toFixed(3));
+      ctx.lineWidth = Math.max(0.6 * dpr, (0.7 + link.weight * 1.2 + focus * 2.4) * dpr);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.quadraticCurveTo(cx, cy, b.x, b.y);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Projects a frame that decimation left out of `byIndex`. Section arcs
+   * anchor to specific frames, and dropping an arc because its endpoint
+   * happened to be decimated away would make the structure flicker with the
+   * decimation stride.
+   */
+  function projectFrameIndex(index, nowSec) {
+    const frame = state.map?.frames?.[index];
+    if (!frame) {
+      return null;
+    }
+    const p = projectPoint3D(frame.x, frame.y, frame.z, nowSec, 0);
+    return p ? { x: p.x, y: p.y, frame, radius: 1, nearFade: p.nearFade } : null;
+  }
+
   function drawFlowParticles(activeIndex, nowSec) {
     if (!showFlowArrows?.checked) {
       return;
@@ -1970,6 +2169,10 @@ export function createRenderModule(runtime) {
     // obvious at 0.25x where a frame lasts the better part of a second.
     const activeIndexFloat = !player.paused ? getFrameIndexFloatAtTime(player.currentTime) : -1;
     const activityWindow = 6 + Number(flowDensity.value) * 18;
+    const temporalFogAmount = Number(temporalFog?.value || 0);
+    // Full fog is reached roughly a fifth of the song away from the playhead,
+    // so the effect scales with the track rather than with a fixed frame count.
+    const temporalFogSpan = Math.max(60, state.map.frames.length * 0.2);
 
     const projected = [];
     const byIndex = new Map();
@@ -1987,6 +2190,14 @@ export function createRenderModule(runtime) {
       }
 
       const radius = clamp(frame.size * sizeScale * p.perspective * 0.09, 0.45, 22);
+      // Temporal fog: recession keyed to distance from the playhead in *time*
+      // rather than from the camera in space, so "now" is sharp and "then"
+      // recedes regardless of where the camera happens to be.
+      const timeFade =
+        temporalFogAmount > 0.001 && activeIndexFloat >= 0
+          ? 1 - temporalFogAmount * clamp(Math.abs(i - activeIndexFloat) / temporalFogSpan, 0, 1)
+          : 1;
+
       const item = {
         index: i,
         frame,
@@ -1994,7 +2205,8 @@ export function createRenderModule(runtime) {
         y: p.y,
         depth: p.depth,
         fog: p.fog,
-        nearFade: p.nearFade,
+        nearFade: p.nearFade * timeFade,
+        timeFade,
         radius,
         activity,
         pulse,
@@ -2010,7 +2222,9 @@ export function createRenderModule(runtime) {
     updateHoverPick(projected);
 
     if (!nodesOnly.checked) {
+        drawTemporalGhosts(activeIndexFloat, nowSec);
         drawEdges(byIndex, visibleIndices, activeIndex, nowSec, activeIndexFloat);
+        drawSectionArcs(byIndex, activeIndexFloat, nowSec);
         drawObservatoryOverlay(projected, activeIndex, nowSec);
         drawCathedralOverlay(projected, activeIndex, nowSec);
     }
@@ -2057,6 +2271,9 @@ export function createRenderModule(runtime) {
     drawCathedralOverlay,
     drawPoints,
     drawHoverHighlight,
+    drawTemporalGhosts,
+    drawSectionArcs,
+    drawTimeTube,
     updateHoverPick,
     drawMap,
   };
