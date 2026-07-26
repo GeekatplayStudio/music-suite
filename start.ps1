@@ -23,12 +23,15 @@ if ($env:MUSIC_SUITE_STARTUP_TIMEOUT_SECONDS) {
     if ($envTimeout -and $envTimeout -ge 30) { $StartupTimeoutSeconds = $envTimeout }
 }
 
-New-Item -ItemType Directory -Path $logDir -Force | Out-Null
-
 $nullInput = Join-Path $logDir ".empty-stdin"
-Set-Content -LiteralPath $nullInput -Value "" -Encoding ascii
 
 function New-ServiceLogPair([string]$Name) {
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    # A service from an earlier launch may still hold this file open as its stdin, so only
+    # create it when it is missing; an existing empty file is already what every service needs.
+    if (-not (Test-Path -LiteralPath $nullInput)) {
+        Set-Content -LiteralPath $nullInput -Value "" -Encoding ascii
+    }
     $stdout = Join-Path $logDir "$Name.log"
     $stderr = Join-Path $logDir "$Name.error.log"
     foreach ($path in @($stdout, $stderr)) { Set-Content -LiteralPath $path -Value "" -Encoding utf8 }
