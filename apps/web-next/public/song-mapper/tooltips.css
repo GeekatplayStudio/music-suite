@@ -1,90 +1,120 @@
 
-/* ===== Tooltip Icons (SVG Style) ===== */
+/* ===== Help affordance badge ===== */
+/* Control rows are grid/flex containers, so a badge added as a direct child
+   would claim its own row and break the layout. Direct-child badges are taken
+   out of flow and pinned to the row corner; badges placed inside a .label-head
+   sit inline next to the existing value chip. */
+[data-help] {
+  position: relative;
+}
+
+[data-help] > .info-icon {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  margin-left: 0;
+}
+
+.switch-row label[data-help],
+.file-pill[data-help] {
+  padding-right: 22px;
+}
+
+.label-head > .info-icon {
+  position: static;
+}
+
 .info-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   margin-left: 6px;
-  background-color: rgba(255, 255, 255, 0.15);
+  background-color: rgba(255, 255, 255, 0.12);
   border-radius: 50%;
   cursor: help;
-  position: relative;
-  transition: all 0.2s ease;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #cfe2f7;
   vertical-align: middle;
+  flex: none;
+  transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
 
-.info-icon svg {
-  width: 10px;
-  height: 10px;
-  fill: #e7eef9;
-  pointer-events: none;
-}
-
-.info-icon:hover {
+[data-help]:hover > .info-icon,
+[data-help]:hover .label-head > .info-icon,
+[data-help]:focus-within .info-icon {
   background-color: var(--accent-cyan);
-  transform: scale(1.1);
-  box-shadow: 0 0 8px rgba(75, 196, 255, 0.6);
+  color: #04121d;
+  box-shadow: 0 0 10px rgba(75, 196, 255, 0.55);
 }
 
-.info-icon:hover svg {
-  fill: #000;
-}
-
-/* Tooltip Popup */
-.info-icon::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: 140%;
-  left: 50%;
-  transform: translateX(-50%) translateY(4px);
-  width: max-content;
-  max-width: 220px;
-  padding: 8px 12px;
-  background: rgba(12, 20, 30, 0.96);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 8px;
-  color: #fff;
-  font-size: 0.76rem;
-  font-weight: 400;
-  line-height: 1.4;
-  text-align: left;
-  white-space: pre-wrap;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
-  opacity: 0;
-  visibility: hidden;
-  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-  pointer-events: none;
+/* ===== Hover-and-hold help popup =====
+   Positioned in viewport coordinates by app/tooltips.js so it is never clipped
+   by the scrolling control panel and can flip above/below near a screen edge. */
+.help-tip {
+  position: fixed;
   z-index: 10000;
-}
-
-.info-icon:hover::after {
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(-50%) translateY(0);
-}
-
-/* Tooltip Arrow */
-.info-icon::before {
-  content: "";
-  position: absolute;
-  bottom: 110%;
-  left: 50%;
-  transform: translateX(-50%) translateY(4px);
-  border: 5px solid transparent;
-  border-top-color: rgba(255, 255, 255, 0.22);
+  left: 0;
+  top: 0;
+  width: max-content;
+  max-width: 320px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  background: rgba(10, 17, 26, 0.97);
+  border: 1px solid rgba(120, 190, 245, 0.34);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.7);
+  color: #e7eef9;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  text-align: left;
+  pointer-events: none;
   opacity: 0;
   visibility: hidden;
-  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-  pointer-events: none;
-  z-index: 10001;
+  transform: translateY(4px);
+  transition: opacity 140ms ease, transform 140ms ease, visibility 140ms;
 }
 
-.info-icon:hover::before {
+.help-tip.is-visible {
   opacity: 1;
   visibility: visible;
-  transform: translateX(-50%) translateY(0);
+  transform: translateY(0);
+}
+
+.help-tip[data-placement="below"] {
+  transform: translateY(-4px);
+}
+
+.help-tip[data-placement="below"].is-visible {
+  transform: translateY(0);
+}
+
+.help-tip-title {
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+  margin-bottom: 5px;
+}
+
+.help-tip-what {
+  color: #c2d3e8;
+}
+
+.help-tip-when {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: #96e0b4;
+  font-size: 0.74rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .help-tip {
+    transition: none;
+  }
 }
 
 /* ===== Help Modal Styling ===== */

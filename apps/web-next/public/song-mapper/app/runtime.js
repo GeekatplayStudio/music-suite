@@ -9,6 +9,10 @@ export function createRuntime() {
   const playToggle = document.getElementById("play-toggle");
   const pauseAudioBtn = document.getElementById("pause-audio");
   const resetViewBtn = document.getElementById("reset-view");
+  const playbackSpeed = document.getElementById("playback-speed");
+  const playbackSpeedValue = document.getElementById("playback-speed-value");
+  const preservePitch = document.getElementById("preserve-pitch");
+  const speedChips = Array.from(document.querySelectorAll(".speed-chip[data-speed]"));
   const sessionState = document.getElementById("session-state");
   const trackCaption = document.getElementById("track-caption");
   
@@ -241,6 +245,10 @@ export function createRuntime() {
     trail: [],
     lastTrailIndex: -1,
     lastPlaybackTime: 0,
+    // Playback rate is mirrored here so time-based decay can advance on the
+    // audio clock rather than the wall clock. Without this, slowing playback
+    // would shorten every trail instead of slowing it down.
+    playbackRate: 1,
     lastFrameAt: performance.now(),
     frameDtMs: 16.7,
     renderEmaMs: 16.7,
@@ -361,6 +369,10 @@ export function createRuntime() {
     playToggle,
     pauseAudioBtn,
     resetViewBtn,
+    playbackSpeed,
+    playbackSpeedValue,
+    preservePitch,
+    speedChips,
     sessionState,
     trackCaption,
     drawerToggle,

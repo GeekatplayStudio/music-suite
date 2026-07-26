@@ -29,6 +29,7 @@ export function createWorkflowModule(runtime) {
     setSessionLabel,
     formatTrackCaption,
     safeFilenameBase,
+    resizeCanvas,
     clamp,
     computeRanges,
     normalizeValue,
@@ -782,10 +783,14 @@ export function createWorkflowModule(runtime) {
     }
   
     controlDrawer.classList.toggle("is-collapsed", !state.drawerOpen);
+    // The docked column reserves canvas width, so collapsing it gives that
+    // width back to the stage and the canvas has to be re-measured.
+    document.body.classList.toggle("dock-collapsed", !state.drawerOpen);
     drawerToggle.setAttribute("aria-expanded", String(state.drawerOpen));
     drawerToggle.setAttribute("aria-label", state.drawerOpen ? "Hide controls" : "Show controls");
     drawerToggle.setAttribute("title", state.drawerOpen ? "Hide controls" : "Show controls");
     drawerToggle.textContent = state.drawerOpen ? "Hide" : "Show";
+    requestAnimationFrame(resizeCanvas);
   }
   
   function setActiveTab(tabId) {

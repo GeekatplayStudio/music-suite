@@ -113,6 +113,17 @@ Important behavior:
 - A single explicit output selection should trigger a single file save action.
 - If multiple save prompts appear unexpectedly, refresh run detail and verify only one output id is selected.
 
+## 8b) Song Geometry Mapper
+
+![Song Geometry Mapper controls docked beside the stage, with hover help open](images/mapper-help.png)
+
+- **Per-control help**: rest the pointer on any adjustment for about half a second to get a popup describing what it does and when to reach for it. Keyboard focus shows the same help; `Esc` dismisses it.
+- **Playback speed**: the Session tab exposes 0.05x-2x plus 0.1x / 0.25x / 0.5x / 1x / 2x presets. `[` and `]` step the rate, `\` returns to 1x, and the choice persists between sessions.
+  - Trail persistence, pulse decay, and ribbon motion run on the *audio* clock, so a trail looks the same at 0.25x as at 1x — it simply advances more slowly.
+  - Pausing freezes the trail instead of letting it fade, so a single moment can be inspected.
+  - `Preserve pitch` is on by default; turn it off for tape-style pitch shifting.
+- **Controls are docked** to a resizable right-hand column on displays 900px and wider, so they never cover the geometry. Drag the divider to resize, or use `Hide` to reclaim the full width. Narrower screens keep the original bottom sheet.
+
 ## 9) Troubleshooting
 
 - `Failed to fetch`:

@@ -79,7 +79,12 @@ export function createRenderModule(runtime) {
       return;
     }
   
-    const pulseDecay = dtMs * 0.001 * 2.6;
+    // Trail and pulse lifetimes advance on the audio clock, not the wall clock.
+    // At 0.25x the playhead reaches a quarter as many nodes per second, so decay
+    // must also run at a quarter speed or the trail collapses to a few points.
+    // A paused transport therefore freezes the trail for inspection.
+    const audioDtMs = player.paused ? 0 : dtMs * (state.playbackRate || 1);
+    const pulseDecay = audioDtMs * 0.001 * 2.6;
     for (const [idx, value] of state.activationPulse.entries()) {
       const next = value - pulseDecay;
       if (next <= 0.03) {
@@ -161,7 +166,7 @@ export function createRenderModule(runtime) {
       const node = state.trail[i];
       const tailAge = 1 - i / length;
       const tailFadeBoost = 1 + tailAge * (1.6 + speedBoost);
-      const decay = dtMs * 0.001 * decayBase * (1.12 - node.volume * 0.42) * tailFadeBoost;
+      const decay = audioDtMs * 0.001 * decayBase * (1.12 - node.volume * 0.42) * tailFadeBoost;
       node.life -= decay;
     }
   

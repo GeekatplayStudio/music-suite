@@ -885,3 +885,207 @@ body.focus-mode .tabs-dock {
   margin-top: 1.5rem;
   border-bottom: 1px solid #333;
   padding-bottom: 0.5rem;
+}
+
+/* ============================================================
+   Playback speed
+   ============================================================ */
+.speed-block {
+  margin-top: 8px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  display: grid;
+  gap: 7px;
+}
+
+.speed-row {
+  display: grid;
+  gap: 5px;
+}
+
+.speed-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.speed-chip {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  border-radius: 8px;
+  padding: 4px 9px;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+}
+
+.speed-chip:hover {
+  border-color: rgba(255, 255, 255, 0.45);
+  color: #e8f2ff;
+}
+
+.speed-chip.is-active {
+  border-color: rgba(178, 246, 98, 0.62);
+  color: #f0fff0;
+  background: linear-gradient(115deg, rgba(75, 196, 255, 0.24), rgba(178, 246, 98, 0.18));
+}
+
+/* Beats the generic `.control-block label { display: grid }` rule. */
+.control-block label.speed-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.8rem;
+  padding-right: 22px;
+}
+
+.speed-note {
+  margin: 0;
+  font-size: 0.71rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.speed-note kbd {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  font-family: inherit;
+  font-size: 0.68rem;
+}
+
+/* ============================================================
+   Side-docked control column
+
+   The drawer used to float over the centre-bottom of the stage, which covered
+   the geometry it is meant to control. It is now a column pinned to the right
+   edge; the canvas is inset by the same width so the two never overlap.
+   ============================================================ */
+:root {
+  --dock-width: 340px;
+}
+
+@media (min-width: 900px) {
+  /* A canvas is a replaced element, so `width: auto` would resolve to its
+     intrinsic bitmap width and leave `right` ignored. The width has to be
+     stated explicitly for the stage to actually give up the docked column. */
+  body.dock-side #preview-canvas {
+    left: 0;
+    right: var(--dock-width);
+    width: calc(100% - var(--dock-width));
+  }
+
+  body.dock-side.dock-collapsed #preview-canvas {
+    right: 0;
+    width: 100%;
+  }
+
+  body.dock-side .hud-top {
+    right: calc(var(--dock-width) + clamp(14px, 2vw, 26px));
+  }
+
+  body.dock-side.dock-collapsed .hud-top {
+    right: clamp(14px, 2vw, 26px);
+  }
+
+  body.dock-side .control-drawer {
+    left: auto;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--dock-width);
+    max-height: none;
+    transform: none;
+    border-radius: 0;
+    border-top: none;
+    border-right: none;
+    border-bottom: none;
+    border-left: 1px solid rgba(255, 255, 255, 0.16);
+    display: flex;
+    flex-direction: column;
+  }
+
+  body.dock-side .control-drawer.is-collapsed {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  body.dock-side .drawer-grid {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 10px 10px 4px;
+  }
+
+  body.dock-side .control-drawer .tab-panel.is-active {
+    grid-template-columns: minmax(0, 1fr);
+    max-height: none;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* The tab bar belongs to the column, not the middle of the stage. */
+  body.dock-side .tabs-dock {
+    left: auto;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    width: var(--dock-width);
+    max-width: var(--dock-width);
+    border-radius: 0;
+    border-left: 1px solid rgba(255, 255, 255, 0.16);
+    border-right: none;
+    border-bottom: none;
+    justify-content: center;
+    overflow-x: auto;
+  }
+
+  body.dock-side.dock-collapsed .tabs-dock {
+    width: auto;
+    max-width: calc(100vw - 18px);
+    right: 10px;
+    bottom: 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+  }
+
+  /* Drag handle for resizing the column. */
+  .dock-resizer {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    right: var(--dock-width);
+    z-index: 33;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 160ms ease;
+  }
+
+  .dock-resizer:hover,
+  .dock-resizer.is-dragging {
+    background: rgba(75, 196, 255, 0.35);
+  }
+
+  body:not(.dock-side) .dock-resizer,
+  body.dock-collapsed .dock-resizer,
+  body.focus-mode .dock-resizer {
+    display: none;
+  }
+}
+
+/* Below 900px there is no room for a column, so keep the original bottom sheet. */
+@media (max-width: 899px) {
+  .dock-resizer {
+    display: none;
+  }
+}

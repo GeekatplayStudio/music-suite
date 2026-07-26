@@ -2,6 +2,7 @@ import { createRuntime } from "./app/runtime.js";
 import { createAnalysisModule } from "./app/analysis-module.js";
 import { createRenderModule } from "./app/render-module.js";
 import { createWorkflowModule } from "./app/workflow-module.js";
+import { decorateControls, initTooltips } from "./app/tooltips.js";
 
 const runtime = createRuntime();
 Object.assign(runtime, createAnalysisModule(runtime));
@@ -16,6 +17,10 @@ const {
   playToggle,
   pauseAudioBtn,
   resetViewBtn,
+  playbackSpeed,
+  playbackSpeedValue,
+  preservePitch,
+  speedChips,
   drawerToggle,
   tabButtons,
   mappingMode,
@@ -478,6 +483,150 @@ function updateSupportButtonTheme() {
   supportVladBtn.style.borderColor = `rgba(${hiR}, ${hiG}, ${hiB}, ${(0.62 * intensity).toFixed(3)})`;
   supportVladBtn.style.color = "#ecf6ff";
   supportVladBtn.style.boxShadow = `0 0 14px rgba(${r}, ${g}, ${b}, ${(glowAlpha * intensity).toFixed(3)})`;
+}
+
+const DOCK_WIDTH_KEY = "sgm.dock-width";
+const DOCK_MIN = 280;
+const DOCK_MAX = 520;
+const DOCK_BREAKPOINT = 900;
+
+function setDockWidth(px, { persist = true } = {}) {
+  const width = clamp(Math.round(px), DOCK_MIN, Math.min(DOCK_MAX, window.innerWidth - 360));
+  document.documentElement.style.setProperty("--dock-width", `${width}px`);
+  if (persist) {
+    try {
+      window.localStorage.setItem(DOCK_WIDTH_KEY, String(width));
+    } catch {
+      // Ignore storage failures; the layout still works for this session.
+    }
+  }
+  requestAnimationFrame(resizeCanvas);
+}
+
+function initSideDock() {
+  // Only dock on viewports wide enough to keep a usable stage; narrower screens
+  // keep the original bottom sheet.
+  const applyMode = () => {
+    document.body.classList.toggle("dock-side", window.innerWidth >= DOCK_BREAKPOINT);
+    requestAnimationFrame(resizeCanvas);
+  };
+  applyMode();
+  window.addEventListener("resize", applyMode);
+
+  let stored = null;
+  try {
+    stored = window.localStorage.getItem(DOCK_WIDTH_KEY);
+  } catch {
+    stored = null;
+  }
+  setDockWidth(stored === null ? 340 : Number(stored), { persist: false });
+
+  const resizer = document.createElement("div");
+  resizer.className = "dock-resizer";
+  resizer.setAttribute("role", "separator");
+  resizer.setAttribute("aria-orientation", "vertical");
+  resizer.setAttribute("aria-label", "Resize control panel");
+  document.body.appendChild(resizer);
+
+  let dragging = false;
+  resizer.addEventListener("pointerdown", (event) => {
+    dragging = true;
+    resizer.setPointerCapture(event.pointerId);
+    resizer.classList.add("is-dragging");
+    event.preventDefault();
+  });
+  resizer.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    setDockWidth(window.innerWidth - event.clientX, { persist: false });
+  });
+  const endDrag = (event) => {
+    if (!dragging) return;
+    dragging = false;
+    resizer.classList.remove("is-dragging");
+    if (resizer.hasPointerCapture(event.pointerId)) {
+      resizer.releasePointerCapture(event.pointerId);
+    }
+    const current = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue("--dock-width"),
+      10,
+    );
+    if (Number.isFinite(current)) setDockWidth(current);
+  };
+  resizer.addEventListener("pointerup", endDrag);
+  resizer.addEventListener("pointercancel", endDrag);
+}
+
+const SPEED_MIN = 0.05;
+const SPEED_MAX = 2;
+const SPEED_STORAGE_KEY = "sgm.playback-speed";
+
+function applyPlaybackSpeed(rate, { persist = true } = {}) {
+  const next = clamp(Number(rate) || 1, SPEED_MIN, SPEED_MAX);
+  state.playbackRate = next;
+
+  if (player) {
+    player.playbackRate = next;
+    // Chrome/Safari ship `preservesPitch`; older Safari used a webkit prefix.
+    const preserve = preservePitch ? preservePitch.checked : true;
+    if ("preservesPitch" in player) {
+      player.preservesPitch = preserve;
+    } else if ("webkitPreservesPitch" in player) {
+      player.webkitPreservesPitch = preserve;
+    }
+  }
+
+  if (playbackSpeed && Number(playbackSpeed.value) !== next) {
+    playbackSpeed.value = String(next);
+  }
+  if (playbackSpeedValue) {
+    playbackSpeedValue.textContent = `${next.toFixed(2)}x`;
+  }
+  for (const chip of speedChips) {
+    chip.classList.toggle("is-active", Math.abs(Number(chip.dataset.speed) - next) < 0.001);
+  }
+
+  if (persist) {
+    try {
+      window.localStorage.setItem(SPEED_STORAGE_KEY, String(next));
+    } catch {
+      // Private-mode storage failures must not break playback.
+    }
+  }
+}
+
+function nudgePlaybackSpeed(direction) {
+  const step = state.playbackRate < 0.5 ? 0.05 : 0.1;
+  applyPlaybackSpeed(state.playbackRate + step * direction);
+}
+
+function bindPlaybackSpeed() {
+  if (!playbackSpeed) {
+    return;
+  }
+
+  let stored = null;
+  try {
+    stored = window.localStorage.getItem(SPEED_STORAGE_KEY);
+  } catch {
+    stored = null;
+  }
+  applyPlaybackSpeed(stored === null ? 1 : Number(stored), { persist: false });
+
+  playbackSpeed.addEventListener("input", () => applyPlaybackSpeed(playbackSpeed.value));
+  for (const chip of speedChips) {
+    chip.addEventListener("click", () => applyPlaybackSpeed(chip.dataset.speed));
+  }
+  if (preservePitch) {
+    preservePitch.addEventListener("change", () => applyPlaybackSpeed(state.playbackRate));
+  }
+
+  // Assigning a new src resets the element's playbackRate to 1, so the chosen
+  // rate has to be reasserted on every load. Do not mirror `ratechange` back
+  // into the stored value: that reset would be indistinguishable from a user
+  // change and would silently overwrite the saved preference with 1x.
+  for (const event of ["loadstart", "loadedmetadata", "canplay"]) {
+    player.addEventListener(event, () => applyPlaybackSpeed(state.playbackRate, { persist: false }));
+  }
 }
 
 function bindEvents() {
@@ -995,6 +1144,22 @@ function bindEvents() {
       return;
     }
 
+    if (event.key === "[") {
+      event.preventDefault();
+      nudgePlaybackSpeed(-1);
+      return;
+    }
+    if (event.key === "]") {
+      event.preventDefault();
+      nudgePlaybackSpeed(1);
+      return;
+    }
+    if (event.key === "\\") {
+      event.preventDefault();
+      applyPlaybackSpeed(1);
+      return;
+    }
+
     const step = event.shiftKey ? 0.04 : 0.02;
     if (event.code === "ArrowLeft") {
       event.preventDefault();
@@ -1106,7 +1271,11 @@ function init() {
   resizeCanvas();
   createStars();
   refreshCustomPresetOptions();
+  decorateControls();
+  initTooltips();
+  initSideDock();
   bindEvents();
+  bindPlaybackSpeed();
   setActiveTab(state.activeTab);
   updateLegend();
   toggleDrawer(false);
