@@ -25,11 +25,16 @@ if ($env:MUSIC_SUITE_STARTUP_TIMEOUT_SECONDS) {
 
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
+$nullInput = Join-Path $logDir ".empty-stdin"
+Set-Content -LiteralPath $nullInput -Value "" -Encoding ascii
+
 function New-ServiceLogPair([string]$Name) {
     $stdout = Join-Path $logDir "$Name.log"
     $stderr = Join-Path $logDir "$Name.error.log"
     foreach ($path in @($stdout, $stderr)) { Set-Content -LiteralPath $path -Value "" -Encoding utf8 }
-    return [PSCustomObject]@{ StdOut = $stdout; StdErr = $stderr }
+    # Redirecting stdin as well keeps a background service from inheriting the caller's console
+    # handles, so `npm run start` and start.bat return to the prompt instead of appearing to hang.
+    return [PSCustomObject]@{ StdOut = $stdout; StdErr = $stderr; StdIn = $nullInput }
 }
 
 function Get-LogTail($LogPair, [int]$LineCount = 20) {
@@ -226,7 +231,7 @@ $comfyProcess = $null
 try {
     $apiLog = New-ServiceLogPair "api"
     $apiArgs = @("-m", "uvicorn", "apps.api.main:app", "--host", "127.0.0.1", "--port", $selectedApiPort)
-    $apiProcess = Start-Process -FilePath $venvPython -ArgumentList $apiArgs -WorkingDirectory $root -WindowStyle Hidden -PassThru -RedirectStandardOutput $apiLog.StdOut -RedirectStandardError $apiLog.StdErr
+    $apiProcess = Start-Process -FilePath $venvPython -ArgumentList $apiArgs -WorkingDirectory $root -WindowStyle Hidden -PassThru -RedirectStandardInput $apiLog.StdIn -RedirectStandardOutput $apiLog.StdOut -RedirectStandardError $apiLog.StdErr
     $apiRuntimePid = Wait-ForListener $selectedApiPort $apiProcess "Music Suite API" $apiLog
 
     if (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) {
@@ -240,7 +245,7 @@ try {
     $previousApiUrl = $env:MUSIC_SUITE_API_URL
     $env:MUSIC_SUITE_API_URL = "http://127.0.0.1:$selectedApiPort"
     try {
-        $webProcess = Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", $webCommand) -WorkingDirectory $webDir -WindowStyle Hidden -PassThru -RedirectStandardOutput $webLog.StdOut -RedirectStandardError $webLog.StdErr
+        $webProcess = Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", $webCommand) -WorkingDirectory $webDir -WindowStyle Hidden -PassThru -RedirectStandardInput $webLog.StdIn -RedirectStandardOutput $webLog.StdOut -RedirectStandardError $webLog.StdErr
     } finally {
         $env:MUSIC_SUITE_API_URL = $previousApiUrl
     }
@@ -261,7 +266,7 @@ try {
 
     if ($comfyLaunch) {
         $comfyLog = New-ServiceLogPair "comfyui"
-        $comfyProcess = Start-Process -FilePath $comfyLaunch.Python -ArgumentList @($comfyLaunch.Main, "--listen", "127.0.0.1", "--port", $selectedComfyPort) -WorkingDirectory $comfyLaunch.Root -WindowStyle Hidden -PassThru -RedirectStandardOutput $comfyLog.StdOut -RedirectStandardError $comfyLog.StdErr
+        $comfyProcess = Start-Process -FilePath $comfyLaunch.Python -ArgumentList @($comfyLaunch.Main, "--listen", "127.0.0.1", "--port", $selectedComfyPort) -WorkingDirectory $comfyLaunch.Root -WindowStyle Hidden -PassThru -RedirectStandardInput $comfyLog.StdIn -RedirectStandardOutput $comfyLog.StdOut -RedirectStandardError $comfyLog.StdErr
         $state.comfyui_port = $selectedComfyPort
         $state.comfyui_launcher_pid = $comfyProcess.Id
         $state.comfyui_pid = Wait-ForListener $selectedComfyPort $comfyProcess "ComfyUI" $comfyLog

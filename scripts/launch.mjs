@@ -31,7 +31,13 @@ function resolveLauncher() {
 }
 
 const { command, args } = resolveLauncher();
-const child = spawn(command, args, { cwd: ROOT, stdio: "inherit" });
+// Forward output through our own pipes rather than handing this process's stdio down.
+// Windows starts the detached services with handle inheritance enabled, so an inherited
+// stdout pipe would stay open for the lifetime of the servers and `npm run start` would
+// never return to the prompt even though startup already finished.
+const child = spawn(command, args, { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] });
+child.stdout.pipe(process.stdout);
+child.stderr.pipe(process.stderr);
 child.on("error", (error) => {
   console.error(`Failed to run ${action}: ${error.message}`);
   process.exit(1);
