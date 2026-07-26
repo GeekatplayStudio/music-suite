@@ -190,6 +190,11 @@ export const HELP_CONTENT = {
     what: "Boosts ribbon displacement when the source audio is too quiet or too compressed to produce visible shape.",
     when: "Raise it for heavily limited masters where every frame has similar amplitude.",
   },
+  "edge-wave-harmonics": {
+    title: "Harmonic Detail",
+    what: "Sets how many partials build each connection's waveform. At 0 an edge is a pure sine; higher values stack overtones whose weighting comes from the frames' own spectral flatness, so tonal passages stay smooth while noisy or percussive ones draw a dense, ragged wave.",
+    when: "Raise it to read the difference between a sustained pad and a drum fill at a glance. Lower it when the graph is dense and you want clean, legible lines.",
+  },
   "trail-persistence": {
     title: "Trail Persistence",
     what: "How long the playhead's motion trail stays on screen. Persistence is measured against the audio clock, so it looks the same at any playback speed.",

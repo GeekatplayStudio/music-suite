@@ -42,6 +42,7 @@ export function createRuntime() {
   const edgeRibbonSoftness = document.getElementById("edge-ribbon-softness");
   const edgeRibbonWaveSpeed = document.getElementById("edge-ribbon-wave-speed");
   const edgeRibbonFlexibility = document.getElementById("edge-ribbon-flexibility");
+  const edgeWaveHarmonics = document.getElementById("edge-wave-harmonics");
   const edgeSolidness = document.getElementById("edge-solidness");
   const edgeTrailLength = document.getElementById("edge-trail-length");
   const edgeTailFade = document.getElementById("edge-tail-fade");
@@ -125,6 +126,38 @@ export function createRuntime() {
   const MAX_KNN_EDGES = 9500;
   const EPSILON = 1e-12;
   const CUSTOM_PRESETS_KEY = "sgm.custom-presets.v1";
+
+  // Camera limits. The old clamp bottomed out at 0.55, which was not far enough
+  // back to frame a whole cloud, so "zoom out" appeared not to work at all.
+  const ZOOM_MIN = 0.12;
+  const ZOOM_MAX = 4;
+
+  // Perspective is focal/depth, so a node that drifts close to the camera used
+  // to explode in size and blow out the fill rate. Clamping the divisor bounds
+  // the on-screen radius instead of letting one node cost a whole frame.
+  const NEAR_CLAMP_DEPTH = 2.2;
+  // Nodes fade out over this depth band instead of being rejected outright.
+  // The old hard `depth < 0.9` cut made points pop in and out when flying in.
+  const NEAR_FADE_START = 6;
+  const NEAR_FADE_END = 1.2;
+
+  // Adaptive quality tiers.
+  //
+  // Every adaptive knob used to threshold directly on an EMA of frame cost:
+  // decimation stride, kNN stride, the edge visibility cutoff, and whether
+  // usage-heat colouring ran at all. The EMA jitters by a few milliseconds
+  // every frame, so it crossed those thresholds several times a second and a
+  // third of the cloud - plus thousands of edges - appeared and vanished with
+  // it. That is the close-up flicker. Tiers are now latched: a change requires
+  // the smoothed cost to stay past a margin for QUALITY_DWELL_MS, and the
+  // upgrade and downgrade thresholds do not touch, so a tier cannot oscillate.
+  const QUALITY_TIERS = [
+    { decimation: 1, edgeBudget: 5200, waveDetail: 1, quality: 1, upgradeBelowMs: 0, downgradeAboveMs: 20 },
+    { decimation: 1, edgeBudget: 3000, waveDetail: 0.8, quality: 0.82, upgradeBelowMs: 13, downgradeAboveMs: 27 },
+    { decimation: 2, edgeBudget: 1700, waveDetail: 0.6, quality: 0.64, upgradeBelowMs: 19, downgradeAboveMs: 38 },
+    { decimation: 3, edgeBudget: 900, waveDetail: 0.42, quality: 0.45, upgradeBelowMs: 27, downgradeAboveMs: Infinity },
+  ];
+  const QUALITY_DWELL_MS = 900;
   
   const PRESET_PALETTES = {
     cinematic: [
@@ -243,6 +276,8 @@ export function createRuntime() {
     sourceFileInfo: null,
     map: null,
     trail: [],
+    // Interpolated position of the playhead between two analysis frames.
+    trailHead: null,
     lastTrailIndex: -1,
     lastPlaybackTime: 0,
     // Playback rate is mirrored here so time-based decay can advance on the
@@ -253,12 +288,21 @@ export function createRuntime() {
     frameDtMs: 16.7,
     renderEmaMs: 16.7,
     renderQuality: 1,
+    // Latched quality tier (index into QUALITY_TIERS) plus the timestamp at
+    // which the current tier first became a candidate for change.
+    qualityTier: 0,
+    qualityTierPendingSince: 0,
     lastRenderedAt: 0,
     userYaw: 0,
     userPitch: 0.2,
     userZoom: 1,
+    // Zoom is eased toward its target so a wheel flick glides instead of
+    // snapping, which also stops the near-plane fade from strobing.
+    userZoomTarget: 1,
     userPanX: 0,
     userPanY: 0,
+    // Radius of the mapped cloud in world units; drives fit-to-cloud framing.
+    cloudRadius: 18,
     autoYaw: 0,
     autoPitch: 0,
     autoZoom: 1,
@@ -359,6 +403,77 @@ export function createRuntime() {
     state.stars = stars;
   }
 
+  function qualityTier() {
+    return QUALITY_TIERS[clamp(state.qualityTier, 0, QUALITY_TIERS.length - 1)];
+  }
+
+  /**
+   * Latches the adaptive quality tier. A candidate tier has to hold for
+   * QUALITY_DWELL_MS before it is adopted, so a noisy frame-cost EMA can no
+   * longer make the node count and edge budget strobe.
+   */
+  function updateQualityTier(nowMs) {
+    const ema = Number(state.renderEmaMs) || 16.7;
+    const tier = qualityTier();
+
+    let desired = state.qualityTier;
+    if (ema > tier.downgradeAboveMs) {
+      desired = Math.min(QUALITY_TIERS.length - 1, state.qualityTier + 1);
+    } else if (ema < tier.upgradeBelowMs) {
+      desired = Math.max(0, state.qualityTier - 1);
+    }
+
+    if (desired === state.qualityTier) {
+      state.qualityTierPendingSince = 0;
+    } else if (!state.qualityTierPendingSince) {
+      state.qualityTierPendingSince = nowMs;
+    } else if (nowMs - state.qualityTierPendingSince >= QUALITY_DWELL_MS) {
+      state.qualityTier = desired;
+      state.qualityTierPendingSince = 0;
+    }
+
+    // Keep the legacy 0..1 scalar in step, but ease it so anything still
+    // reading it (step counts, star stride) changes gradually.
+    state.renderQuality = lerp(state.renderQuality, qualityTier().quality, 0.06);
+  }
+
+  /**
+   * Zoom that frames the whole mapped cloud. Perspective depth is
+   * `24 / zoom - z`, so the cloud spans roughly `cloudRadius` world units
+   * either side of the origin and needs the camera pulled back past it.
+   */
+  function fitZoomForCloud() {
+    // X and Z are multiplied by the frequency-spread control at projection
+    // time, so the on-screen extent is larger than the raw frame coordinates.
+    const spread = Math.max(0.6, Number(freqSpread?.value) || 1);
+    const radius = Math.max(4, (Number(state.cloudRadius) || 18) * spread);
+    return clamp(24 / (radius * 1.28), ZOOM_MIN, ZOOM_MAX);
+  }
+
+  /**
+   * Radius that contains the bulk of the mapped frames.
+   *
+   * Deliberately a high percentile rather than the true maximum: PCA and helix
+   * maps both throw a handful of outliers well past the body of the cloud, and
+   * framing to those left the song a speck in the middle of an empty stage.
+   * The tail is allowed to sit near or slightly past the edge.
+   */
+  function measureCloudRadius(map = state.map) {
+    const frames = map && Array.isArray(map.frames) ? map.frames : null;
+    if (!frames || frames.length === 0) {
+      return 18;
+    }
+
+    const radii = new Float64Array(frames.length);
+    for (let i = 0; i < frames.length; i += 1) {
+      const frame = frames[i];
+      radii[i] = Math.sqrt(frame.x * frame.x + frame.y * frame.y + frame.z * frame.z);
+    }
+    radii.sort();
+    const idx = Math.min(radii.length - 1, Math.floor(radii.length * 0.92));
+    return Math.max(4, radii[idx]);
+  }
+
   return {
     canvas,
     ctx,
@@ -399,6 +514,7 @@ export function createRuntime() {
     edgeRibbonSoftness,
     edgeRibbonWaveSpeed,
     edgeRibbonFlexibility,
+    edgeWaveHarmonics,
     edgeSolidness,
     edgeTrailLength,
     edgeTailFade,
@@ -473,6 +589,12 @@ export function createRuntime() {
     MAX_KNN_EDGES,
     EPSILON,
     CUSTOM_PRESETS_KEY,
+    ZOOM_MIN,
+    ZOOM_MAX,
+    NEAR_CLAMP_DEPTH,
+    NEAR_FADE_START,
+    NEAR_FADE_END,
+    QUALITY_TIERS,
     PRESET_PALETTES,
     PRESET_BACKGROUND,
     PRESET_CONTROL_EXCLUSIONS,
@@ -489,5 +611,9 @@ export function createRuntime() {
     normalizeValue,
     resizeCanvas,
     createStars,
+    qualityTier,
+    updateQualityTier,
+    fitZoomForCloud,
+    measureCloudRadius,
   };
 }

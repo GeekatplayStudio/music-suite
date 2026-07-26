@@ -46,6 +46,8 @@ export function createWorkflowModule(runtime) {
     computeViewSpacePoint,
     getFrameIndexAtTime,
     activityForIndex,
+    measureCloudRadius,
+    fitZoomForCloud,
   } = runtime;
 
   const DESCRIPTOR_KEYS = ["rms", "centroidHz", "spreadHz", "rolloffHz", "flatness", "zcr", "peakHz", "flux"];
@@ -328,12 +330,19 @@ export function createWorkflowModule(runtime) {
   
   function resetMapRuntimeState() {
     state.trail = [];
+    state.trailHead = null;
     state.lastTrailIndex = -1;
     state.lastPlaybackTime = 0;
     state.trailVelocity = 0;
     state.activationPulse.clear();
     state.connectionUsage.clear();
     state.connectionUsageMax = 0;
+    // Frame the new cloud. Mapping modes differ in scale by several times over,
+    // so a fixed starting zoom either clipped the song or left it a speck.
+    state.cloudRadius = measureCloudRadius();
+    const fit = fitZoomForCloud();
+    state.userZoom = fit;
+    state.userZoomTarget = fit;
   }
   
   function setAudioFromFile(file) {
@@ -814,10 +823,18 @@ export function createWorkflowModule(runtime) {
     }
   }
   
+  /**
+   * Frames the whole cloud rather than returning to a fixed 1x zoom. A helix
+   * map is several times larger than a manifold one, so a constant zoom left
+   * either half the song off screen or a speck in the middle of it.
+   */
   function resetCamera() {
+    state.cloudRadius = measureCloudRadius();
+    const fit = fitZoomForCloud();
     state.userYaw = 0;
     state.userPitch = 0.2;
-    state.userZoom = 1;
+    state.userZoom = fit;
+    state.userZoomTarget = fit;
     state.userPanX = 0;
     state.userPanY = 0;
     state.autoYaw = 0;

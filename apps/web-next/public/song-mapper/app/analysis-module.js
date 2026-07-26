@@ -1312,6 +1312,59 @@ export function createAnalysisModule(runtime) {
     return Math.min(frames.length - 1, Math.floor(ratio * (frames.length - 1)));
   }
   
+  /**
+   * Fractional playhead position in frame-index space.
+   *
+   * `getFrameIndexAtTime` snaps to the nearest frame, which is right for array
+   * lookups but wrong for motion: at 0.25x the playhead sits between two
+   * frames for the best part of a second, so anything driven by the integer
+   * index stands still and then jumps. Activity falloff, the trail head, and
+   * the temporal effects use this instead so they glide.
+   */
+  function getFrameIndexFloatAtTime(currentTime) {
+    if (!state.map || state.map.frames.length === 0) {
+      return -1;
+    }
+
+    const frames = state.map.frames;
+    if (frames.length === 1) {
+      return 0;
+    }
+
+    const firstT = Number(frames[0]?.t);
+    const lastT = Number(frames[frames.length - 1]?.t);
+
+    if (!Number.isFinite(firstT) || !Number.isFinite(lastT) || lastT <= firstT) {
+      const duration = state.map.duration || player.duration || 1;
+      const ratio = clamp(currentTime / Math.max(EPSILON, duration), 0, 1);
+      return ratio * (frames.length - 1);
+    }
+
+    const targetTime = mapPlaybackTimeToAnalysisTime(currentTime, lastT);
+    let low = 0;
+    let high = frames.length - 1;
+
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (Number(frames[mid].t) < targetTime) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+
+    const right = Math.min(frames.length - 1, low);
+    if (right <= 0) {
+      return 0;
+    }
+
+    const left = right - 1;
+    const leftT = Number(frames[left].t);
+    const rightT = Number(frames[right].t);
+    const span = Math.max(EPSILON, rightT - leftT);
+    return left + clamp((targetTime - leftT) / span, 0, 1);
+  }
+
   function mapPlaybackTimeToAnalysisTime(currentTime, explicitAnalysisDuration = null) {
     const safeTime = Math.max(0, Number(currentTime) || 0);
     const playerDuration = Number(player.duration);
@@ -1492,6 +1545,7 @@ export function createAnalysisModule(runtime) {
     loadCustomPaletteFromFile,
     analyzeSong,
     getFrameIndexAtTime,
+    getFrameIndexFloatAtTime,
     mapPlaybackTimeToAnalysisTime,
     getInterpolatedFrameAtTime,
     activityForIndex,

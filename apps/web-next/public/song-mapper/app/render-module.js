@@ -6,6 +6,59 @@ import {
   computeMicroDolly,
 } from "../visual_utils.js";
 
+// Batching buckets for the quiet edge backbone.
+//
+// Profiling a 2600-point cloud put 69% of the frame inside drawEdges: every one
+// of ~4700 edges paid for its own multi-segment path, its own stroke(), and its
+// own createLinearGradient(). Almost all of those edges are a dim static web far
+// from the playhead, where a gradient and a wave are invisible. Those are now
+// collected into a few dozen buckets by quantised colour and alpha and emitted
+// as one stroke each, leaving the animated treatment for the edges that are
+// actually near the playhead.
+const QUIET_ALPHA_STEPS = 3;
+const QUIET_BUCKET_COUNT = 64 * QUIET_ALPHA_STEPS;
+const quietBuckets = [];
+for (let i = 0; i < QUIET_BUCKET_COUNT; i += 1) {
+  quietBuckets.push({ points: [], r: 0, g: 0, b: 0, width: 0, count: 0 });
+}
+
+// Harmonic stack used to shape connection waveforms. Partial amplitudes are
+// derived per edge from spectral flatness, so this is only the multiplier set.
+const WAVE_PARTIAL_MULTS = [1, 2, 3, 5, 8];
+const wavePartialAmps = new Float64Array(WAVE_PARTIAL_MULTS.length);
+
+/**
+ * Fills `wavePartialAmps` for one edge and returns the number of live partials.
+ *
+ * How much energy sits above the fundamental *is* spectral flatness: a peaked
+ * spectrum is tonal, a flat one is noise-like. So a tonal passage gets a 1/k
+ * rolloff that is nearly a pure sine, and a percussive one gets a much flatter
+ * stack that draws as a ragged, harmonically dense wave. That is the difference
+ * between the old single sine - which read as a wobbling rope - and something
+ * that actually looks like sound.
+ */
+function buildWavePartials(noisiness, detail) {
+  const count = Math.max(1, Math.min(WAVE_PARTIAL_MULTS.length, Math.round(1 + detail * (1 + noisiness * 3.2))));
+  let total = 0;
+
+  for (let i = 0; i < count; i += 1) {
+    const k = WAVE_PARTIAL_MULTS[i];
+    const tonal = 1 / k;
+    const noisy = Math.pow(k, -0.22);
+    const amp = tonal + (noisy - tonal) * noisiness;
+    wavePartialAmps[i] = amp;
+    total += amp;
+  }
+
+  // Normalise so the peak excursion stays inside the caller's amplitude budget
+  // no matter how many partials are live.
+  const inv = total > 0 ? 1 / total : 0;
+  for (let i = 0; i < count; i += 1) {
+    wavePartialAmps[i] *= inv;
+  }
+  return count;
+}
+
 export function createRenderModule(runtime) {
   const {
     ctx,
@@ -42,6 +95,7 @@ export function createRenderModule(runtime) {
     edgeRibbonSoftness,
     edgeRibbonWaveSpeed,
     edgeRibbonFlexibility,
+    edgeWaveHarmonics,
     edgeSolidness,
     edgeTrailLength,
     waveAmplification,
@@ -68,10 +122,17 @@ export function createRenderModule(runtime) {
     shiftToInfra,
     mixColor,
     getFrameIndexAtTime,
+    getFrameIndexFloatAtTime,
     getInterpolatedFrameAtTime,
     activityForIndex,
     edgeFrequencyFactor,
     sampleFrameAt,
+    qualityTier,
+    ZOOM_MIN,
+    ZOOM_MAX,
+    NEAR_CLAMP_DEPTH,
+    NEAR_FADE_START,
+    NEAR_FADE_END,
   } = runtime;
 
   function updateTrail(dtMs) {
@@ -169,8 +230,24 @@ export function createRenderModule(runtime) {
       const decay = audioDtMs * 0.001 * decayBase * (1.12 - node.volume * 0.42) * tailFadeBoost;
       node.life -= decay;
     }
-  
-    state.trail = state.trail.filter((node) => node.life > 0.02);
+
+    // Compact in place. `filter` allocated a fresh array of up to 620 objects
+    // on every single frame, which is pure GC pressure in the hot path.
+    let write = 0;
+    for (let read = 0; read < state.trail.length; read += 1) {
+      const node = state.trail[read];
+      if (node.life > 0.02) {
+        state.trail[write] = node;
+        write += 1;
+      }
+    }
+    state.trail.length = write;
+
+    // The trail head tracks the *fractional* playhead. Without this the head
+    // sits on the last whole analysis frame and jumps a whole hop at a time,
+    // which is exactly the stutter you see at 0.25x.
+    const headIndex = getFrameIndexFloatAtTime(player.currentTime);
+    state.trailHead = headIndex >= 0 ? sampleFrameAt(headIndex) : null;
   }
   
   function updateCameraMotion(nowSec, dtMs) {
@@ -178,7 +255,17 @@ export function createRenderModule(runtime) {
     const orbitSpeed = Number(rotationSpeed.value);
     const pulse = !player.paused ? 1 : 0.4;
     const motion = Number(motionStrength.value);
-  
+
+    // Ease the user zoom toward its target. A wheel flick then glides instead
+    // of snapping, which also stops the near-plane fade from strobing when the
+    // camera crosses the cloud.
+    const zoomEase = clamp(dtMs / 110, 0, 1);
+    state.userZoom = clamp(
+      state.userZoom + (state.userZoomTarget - state.userZoom) * zoomEase,
+      ZOOM_MIN,
+      ZOOM_MAX,
+    );
+
     state.autoYaw += orbitSpeed * dtMs * 0.00034;
     state.autoPitch = 0;
     state.autoZoom = 1;
@@ -242,10 +329,10 @@ export function createRenderModule(runtime) {
     const yPitch = py * cosP - zYaw * sinP;
     const zPitch = py * sinP + zYaw * cosP;
   
-    const zoom = clamp(state.userZoom * state.autoZoom, 0.55, 2.2);
+    const zoom = clamp(state.userZoom * state.autoZoom, ZOOM_MIN, ZOOM_MAX);
     const cameraDistance = 24 / zoom;
     const depth = cameraDistance - zPitch;
-  
+
     return {
       x: xYaw,
       y: yPitch,
@@ -253,20 +340,32 @@ export function createRenderModule(runtime) {
       depth,
     };
   }
-  
+
   function projectPoint3D(x, y, z, nowSec, activity = 0) {
     const view = computeViewSpacePoint(x, y, z, nowSec, activity);
-    if (!view || view.depth < 0.9) {
+    // Only reject what is genuinely behind the camera. The old `depth < 0.9`
+    // cut made nodes pop out of existence on the way in; they now fade across
+    // the NEAR_FADE band instead.
+    if (!view || view.depth <= NEAR_FADE_END) {
       return null;
     }
-  
+
     const focal = Math.min(state.width, state.height) * 0.96;
-    const perspective = focal / view.depth;
+    // Clamping the divisor bounds the on-screen radius of a node that drifts
+    // near the camera, so one close node cannot blow out the fill rate.
+    const perspective = focal / Math.max(NEAR_CLAMP_DEPTH, view.depth);
+    const nearFade = clamp(
+      (view.depth - NEAR_FADE_END) / Math.max(0.001, NEAR_FADE_START - NEAR_FADE_END),
+      0,
+      1,
+    );
+
     return {
       x: state.width * (0.53 + state.userPanX) + view.x * perspective,
       y: state.height * (0.54 + state.userPanY) + view.y * perspective,
       depth: view.depth,
       perspective,
+      nearFade,
       fog: clamp((view.depth - 6) / 26, 0, 1),
     };
   }
@@ -338,7 +437,20 @@ export function createRenderModule(runtime) {
         projected.push({ ...p, node });
       }
     }
-  
+
+    // Extend the trail to the interpolated playhead so the head glides between
+    // analysis frames rather than stepping from one to the next.
+    const head = state.trailHead;
+    if (head && !player.paused) {
+      const hp = projectPoint3D(head.x, head.y, head.z, nowSec, 1);
+      if (hp) {
+        projected.push({
+          ...hp,
+          node: { index: -1, x: head.x, y: head.y, z: head.z, color: head.color, volume: head.volume, flux: head.flux, life: 1 },
+        });
+      }
+    }
+
     if (projected.length < 2) {
       return;
     }
@@ -507,11 +619,11 @@ export function createRenderModule(runtime) {
     ctx.restore();
   }
   
-  function drawEdges(byIndex, visibleIndices, activeIndex, nowSec) {
+  function drawEdges(byIndex, visibleIndices, activeIndex, nowSec, activeIndexFloat = activeIndex) {
     if (!state.map || !showConnections.checked) {
       return;
     }
-  
+
     const mode = edgeMode.value;
     const edgeStrength = Number(edgeOpacity.value);
     const edgeLightBoost = Number(edgeBrightness?.value || 1);
@@ -527,10 +639,13 @@ export function createRenderModule(runtime) {
     const ribbonFlexibility = Number(edgeRibbonFlexibility?.value || 1);
     const ribbonSoftness = Number(edgeRibbonSoftness?.value || 0.55);
     const nodeHitPulseStrength = Number(nodeHitPulse.value);
-    const perfMs = Number(state.renderEmaMs || 16.7);
-    const perfLoad = clamp((perfMs - 16.7) / 14, 0, 1);
-    const edgeVisibilityCutoff = 0.012 + perfLoad * 0.01;
-    const useUsageHeat = perfLoad < 0.88;
+    // Budgets come from the latched quality tier rather than from a raw EMA of
+    // frame cost. Thresholding the EMA directly made the edge stride and the
+    // visibility cutoff change several times a second, which is what read as
+    // flickering when the camera was close in.
+    const tier = qualityTier();
+    const waveDetail = tier.waveDetail;
+    const edgeVisibilityCutoff = 0.014;
     const cinemaBoost = cinemaMode.checked ? 1.15 : 0.72;
     const glowShiftAmt = Number(glowShift.value);
     const idleVisibility = activeIndex < 0 ? 0.52 : 1;
@@ -540,6 +655,67 @@ export function createRenderModule(runtime) {
     const useWave = style === "wave";
     const useRibbon = style === "ribbon";
     const lowUseColor = { r: 74, g: 106, b: 236 };
+    const harmonicDetail = Number(edgeWaveHarmonics?.value ?? 0.6);
+    // Live spectral flatness decides how harmonically dense the waveforms are.
+    const liveNoisiness = clamp(Number(liveFrame?.flatnessN ?? 0.4), 0, 1);
+
+    // Only edges this close to the playhead earn the animated waveform, the
+    // per-edge gradient, and the comet head. Everything else is batched.
+    const ACTIVE_EDGE_MIN = 0.055;
+
+    for (const bucket of quietBuckets) {
+      bucket.points.length = 0;
+      bucket.count = 0;
+      bucket.r = 0;
+      bucket.g = 0;
+      bucket.b = 0;
+      bucket.width = 0;
+    }
+
+    /**
+     * Files one dim edge into a colour/alpha bucket instead of stroking it.
+     * Colour is quantised to 4 levels per channel and alpha to 3 levels; at the
+     * alphas these edges draw at, the quantisation error is not visible.
+     */
+    const pushQuietEdge = (ax, ay, bx, by, color, alpha, width) => {
+      const alphaStep = Math.min(QUIET_ALPHA_STEPS - 1, Math.floor((alpha / 0.34) * QUIET_ALPHA_STEPS));
+      const colorKey = ((color.r >> 6) << 4) | ((color.g >> 6) << 2) | (color.b >> 6);
+      const bucket = quietBuckets[alphaStep * 64 + colorKey];
+      bucket.points.push(ax, ay, bx, by);
+      bucket.r += color.r;
+      bucket.g += color.g;
+      bucket.b += color.b;
+      bucket.width += width;
+      bucket.count += 1;
+    };
+
+    const flushQuietEdges = () => {
+      for (let i = 0; i < QUIET_BUCKET_COUNT; i += 1) {
+        const bucket = quietBuckets[i];
+        if (bucket.count === 0) {
+          continue;
+        }
+
+        const inv = 1 / bucket.count;
+        const alphaStep = Math.floor(i / 64);
+        const alpha = ((alphaStep + 0.5) / QUIET_ALPHA_STEPS) * 0.34;
+        ctx.strokeStyle = rgba(
+          { r: bucket.r * inv, g: bucket.g * inv, b: bucket.b * inv },
+          alpha.toFixed(3),
+        );
+        ctx.lineWidth = Math.max(0.24, bucket.width * inv);
+        ctx.beginPath();
+        for (let p = 0; p < bucket.points.length; p += 4) {
+          ctx.moveTo(bucket.points[p], bucket.points[p + 1]);
+          ctx.lineTo(bucket.points[p + 2], bucket.points[p + 3]);
+        }
+        ctx.stroke();
+      }
+    };
+
+    // Usage heat now only tracks edges that actually animate, so the decay walk
+    // below stays in the low hundreds of entries instead of the low thousands.
+    const useUsageHeat = true;
 
     if (!player.paused && state.connectionUsage.size > 0) {
       let decayedMax = 0;
@@ -592,7 +768,7 @@ export function createRenderModule(runtime) {
       return mixColor(lowUseColor, baseColor, usageMix);
     };
   
-    const drawCometSegmentWave = (ax, ay, bx, by, color, alpha, width, phaseSeed, activity, edgeA, edgeB, freqFactor) => {
+    const drawCometSegmentWave = (ax, ay, bx, by, color, alpha, width, phaseSeed, activity, edgeA, edgeB, freqFactor, noisiness) => {
       const phase = (playbackTime * (0.65 + motionValue * 0.24) + phaseSeed) % 1;
       const lenRatio = clamp(trailLength * (0.45 + activity * 0.9), 0.16, 1);
       const t1 = phase;
@@ -615,20 +791,28 @@ export function createRenderModule(runtime) {
       const waveFreq = 1.1 + freqFactor * 9.5;
       const waveAmp = Math.min(dist * 0.2, (1.25 + freqFactor * 3.9) * (0.42 + activity * 1.15) * waveAmpBoost);
       const waveSpeed = 0.55 + freqFactor * 2.2 + motionValue * 0.55;
-  
+      const partialCount = buildWavePartials(noisiness, harmonicDetail);
+      const timePhase = playbackTime * waveSpeed * Math.PI * 2;
+
       const getWavePoint = (t) => {
         const lx = ax + dx * t;
         const ly = ay + dy * t;
-        // Envelope pins wave exactly at both nodes.
+        // Envelope pins the wave exactly at both nodes.
         const envelope = Math.sin(t * Math.PI);
-        const angle = t * Math.PI * 2 * waveFreq + playbackTime * waveSpeed * Math.PI * 2;
-        const offset = Math.sin(angle) * waveAmp * envelope;
+        // A fundamental plus its partials, weighted by how noise-like the
+        // spectrum is, so the line reads as a waveform rather than a rope.
+        let sum = 0;
+        for (let k = 0; k < partialCount; k += 1) {
+          const mult = WAVE_PARTIAL_MULTS[k];
+          sum += wavePartialAmps[k] * Math.sin(t * Math.PI * 2 * waveFreq * mult + timePhase * mult);
+        }
+        const offset = sum * waveAmp * envelope;
         return {
           x: lx + px * offset,
           y: ly + py * offset,
         };
       };
-  
+
       const tailColor = shiftToInfra(color, clamp(glowShiftAmt * (0.22 + (1 - activity) * 0.5), 0, 1));
       const backboneAlpha = clamp(alpha * (0.08 + solidness * (0.62 + tailFade * 0.16)), 0.006, 0.56);
   
@@ -636,7 +820,9 @@ export function createRenderModule(runtime) {
       ctx.strokeStyle = rgba(tailColor, backboneAlpha.toFixed(3));
       ctx.lineWidth = Math.max(0.24, 0.34 + width * (0.16 + solidness * 0.08));
       ctx.beginPath();
-      const stepWidth = 3 + (1 - state.renderQuality) * 5;
+      // More partials need more sample points, or the harmonics alias into a
+      // zigzag. Tie the step count to the live partial count and the tier.
+      const stepWidth = (3 + (1 - waveDetail) * 5) / Math.max(1, 0.55 + partialCount * 0.3);
       const steps = Math.max(9, Math.floor(dist / stepWidth));
       for (let i = 0; i <= steps; i++) {
         const p = getWavePoint(i / steps);
@@ -786,7 +972,7 @@ export function createRenderModule(runtime) {
       }
     };
 
-    const drawCometSegmentRibbon = (ax, ay, bx, by, color, alpha, width, phaseSeed, activity, edgeA, edgeB, freqFactor) => {
+    const drawCometSegmentRibbon = (ax, ay, bx, by, color, alpha, width, phaseSeed, activity, edgeA, edgeB, freqFactor, noisiness) => {
       const phase = (playbackTime * (0.62 + motionValue * 0.22) + phaseSeed) % 1;
       const lenRatio = clamp(trailLength * (0.42 + activity * 0.98), 0.14, 1);
       const t1 = phase;
@@ -819,14 +1005,20 @@ export function createRenderModule(runtime) {
       );
       const waveSpeed = (0.35 + freqFactor * 1.7 + motionValue * 0.44) * ribbonWaveSpeedBoost;
       const ribbonHalfWidth = Math.max(1.05, width * (0.74 + activity * 0.86));
+      const partialCount = buildWavePartials(noisiness, harmonicDetail);
+      const timePhase = playbackTime * waveSpeed * Math.PI * 2;
 
       const centerPoint = (t) => {
         const lx = ax + dx * t;
         const ly = ay + dy * t;
         const envelope = Math.sin(t * Math.PI);
         const bendBias = Math.sin(playbackTime * (0.7 + adaptiveFreq * 0.14) + t * Math.PI * 2) * ribbonFlexibility * (0.2 + musicShape * 0.5);
-        const angle = t * Math.PI * 2 * adaptiveFreq + playbackTime * waveSpeed * Math.PI * 2 + bendBias;
-        const offset = Math.sin(angle) * waveAmp * envelope;
+        let sum = 0;
+        for (let k = 0; k < partialCount; k += 1) {
+          const mult = WAVE_PARTIAL_MULTS[k];
+          sum += wavePartialAmps[k] * Math.sin(t * Math.PI * 2 * adaptiveFreq * mult + timePhase * mult + bendBias);
+        }
+        const offset = sum * waveAmp * envelope;
         return {
           x: lx + px * offset,
           y: ly + py * offset,
@@ -835,7 +1027,7 @@ export function createRenderModule(runtime) {
       };
 
       const tailColor = shiftToInfra(color, clamp(glowShiftAmt * (0.18 + (1 - activity) * 0.5), 0, 1));
-      const stepWidth = 3.2 + (1 - state.renderQuality) * 5;
+      const stepWidth = (3.2 + (1 - waveDetail) * 5) / Math.max(1, 0.55 + partialCount * 0.28);
       const steps = Math.max(10, Math.floor(dist / stepWidth));
       const top = [];
       const bottom = [];
@@ -918,6 +1110,23 @@ export function createRenderModule(runtime) {
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
   
+    /** Dispatches one active edge to the renderer for the selected style. */
+    const drawActiveEdge = (a, b, edgeA, edgeB, color, alpha, width, activity, seed) => {
+      const freqFactor = edgeFrequencyFactor(a.frame, b.frame, liveFrame, activity);
+      // Blend the two endpoints' own flatness toward the live frame's, so a
+      // waveform near the playhead takes the character of what is sounding now.
+      const edgeNoise = clamp((a.frame.flatnessN + b.frame.flatnessN) * 0.5, 0, 1);
+      const noisiness = lerp(edgeNoise, liveNoisiness, clamp(activity * 1.3, 0, 1));
+
+      if (useRibbon) {
+        drawCometSegmentRibbon(a.x, a.y, b.x, b.y, color, alpha, width, seed, activity, edgeA, edgeB, freqFactor, noisiness);
+      } else if (useWave) {
+        drawCometSegmentWave(a.x, a.y, b.x, b.y, color, alpha, width, seed, activity, edgeA, edgeB, freqFactor, noisiness);
+      } else {
+        drawCometSegmentLine(a.x, a.y, b.x, b.y, color, alpha, width, seed, activity, edgeA, edgeB);
+      }
+    };
+
     if (mode === "temporal" || mode === "both") {
       for (let i = 1; i < visibleIndices.length; i += 1) {
         const edgeA = visibleIndices[i - 1];
@@ -927,146 +1136,100 @@ export function createRenderModule(runtime) {
         if (!a || !b) {
           continue;
         }
-  
+
         const activity = Math.max(
-          activityForIndex(edgeA, activeIndex, window),
-          activityForIndex(edgeB, activeIndex, window),
+          activityForIndex(edgeA, activeIndexFloat, window),
+          activityForIndex(edgeB, activeIndexFloat, window),
         );
-  
-        const alpha = clamp((0.04 + activity * 0.42) * edgeStrength * edgeLightBoost * cinemaBoost * idleVisibility, 0.01, 0.96);
-        if (alpha < edgeVisibilityCutoff && activity < 0.06) {
+
+        const nearFade = Math.min(a.nearFade, b.nearFade);
+        const alpha = clamp(
+          (0.04 + activity * 0.42) * edgeStrength * edgeLightBoost * cinemaBoost * idleVisibility * nearFade,
+          0.001,
+          0.96,
+        );
+        if (alpha < edgeVisibilityCutoff && activity < ACTIVE_EDGE_MIN) {
           continue;
         }
         const width = (0.52 + activity * 2.25) * edgeThicknessBoost;
         const baseColor = activity > 0.04 ? b.frame.color : { r: 105, g: 118, b: 138 };
-        const usageKey = useUsageHeat ? edgeKey("t", edgeA, edgeB) : "";
+
+        if (activity < ACTIVE_EDGE_MIN) {
+          pushQuietEdge(a.x, a.y, b.x, b.y, baseColor, alpha, width);
+          continue;
+        }
+
+        const usageKey = edgeKey("t", edgeA, edgeB);
         registerConnectionUsage(usageKey, activity);
         const color = connectionColorByUsage(baseColor, usageKey, activity);
-        const freqFactor = edgeFrequencyFactor(a.frame, b.frame, liveFrame, activity);
-  
-        if (useWave) {
-          drawCometSegmentWave(
-            a.x,
-            a.y,
-            b.x,
-            b.y,
-            color,
-            alpha,
-            width,
-            edgeA * 0.019 + edgeB * 0.013,
-            activity,
-            edgeA,
-            edgeB,
-            freqFactor,
-          );
-        } else if (useRibbon) {
-          drawCometSegmentRibbon(
-            a.x,
-            a.y,
-            b.x,
-            b.y,
-            color,
-            alpha,
-            width,
-            edgeA * 0.019 + edgeB * 0.013,
-            activity,
-            edgeA,
-            edgeB,
-            freqFactor,
-          );
-        } else {
+
+        if (!useWave && !useRibbon) {
           const curve = (0.08 + motionValue * 0.07 + activity * 0.28) * Math.sin(playbackTime * 0.8 + edgeA * 0.02);
           const cx = (a.x + b.x) * 0.5 + (b.y - a.y) * curve;
           const cy = (a.y + b.y) * 0.5 - (b.x - a.x) * curve;
           drawCometSegmentCurve(a, b, cx, cy, color, alpha, width, edgeA * 0.019 + edgeB * 0.013, activity, edgeA, edgeB);
+        } else {
+          drawActiveEdge(a, b, edgeA, edgeB, color, alpha, width, activity, edgeA * 0.019 + edgeB * 0.013);
         }
       }
     }
-  
+
     if (mode === "knn" || mode === "both") {
-      const baseStride = state.map.knnEdges.length > 6200 ? 2 : 1;
-      const adaptiveStrideBoost = perfLoad > 0.72 ? 2 : perfLoad > 0.42 ? 1 : 0;
-      const stride = baseStride + adaptiveStrideBoost;
-  
-      for (let i = 0; i < state.map.knnEdges.length; i += stride) {
-        const edge = state.map.knnEdges[i];
+      const knnEdges = state.map.knnEdges;
+      // A fixed stride derived from the latched tier. Because the tier only
+      // changes after a sustained cost change, the same edges stay on screen
+      // frame to frame instead of half the web blinking with the EMA.
+      const stride = Math.max(1, Math.ceil(knnEdges.length / Math.max(1, tier.edgeBudget)));
+
+      for (let i = 0; i < knnEdges.length; i += 1) {
+        const edge = knnEdges[i];
         const a = byIndex.get(edge.a);
         const b = byIndex.get(edge.b);
         if (!a || !b) {
           continue;
         }
-  
+
         const activity = Math.max(
-          activityForIndex(edge.a, activeIndex, window * 0.86),
-          activityForIndex(edge.b, activeIndex, window * 0.86),
+          activityForIndex(edge.a, activeIndexFloat, window * 0.86),
+          activityForIndex(edge.b, activeIndexFloat, window * 0.86),
         );
-  
+
+        // Edges near the playhead are never decimated: those are the ones the
+        // viewer is actually reading. The budget only thins the quiet web.
+        if (activity < ACTIVE_EDGE_MIN && i % stride !== 0) {
+          continue;
+        }
+
+        const nearFade = Math.min(a.nearFade, b.nearFade);
         const alpha = clamp(
           (0.025 + edge.weight * 0.16 * neighborVisibility + activity * 0.26)
             * edgeStrength
             * edgeLightBoost
             * (cinemaMode.checked ? 1 : 0.8)
-            * idleVisibility,
-          0.008,
+            * idleVisibility
+            * nearFade,
+          0.001,
           0.95,
         );
         if (alpha < edgeVisibilityCutoff) {
           continue;
         }
         const width = (0.5 + edge.weight * 1.42 * neighborVisibility + activity * 1.2) * edgeThicknessBoost;
-        const usageKey = useUsageHeat ? edgeKey("k", edge.a, edge.b) : "";
+
+        if (activity < ACTIVE_EDGE_MIN) {
+          pushQuietEdge(a.x, a.y, b.x, b.y, b.frame.color, alpha, width);
+          continue;
+        }
+
+        const usageKey = edgeKey("k", edge.a, edge.b);
         registerConnectionUsage(usageKey, activity);
         const edgeColor = connectionColorByUsage(b.frame.color, usageKey, activity);
-        const freqFactor = edgeFrequencyFactor(a.frame, b.frame, liveFrame, activity);
-  
-        if (useRibbon) {
-          drawCometSegmentRibbon(
-            a.x,
-            a.y,
-            b.x,
-            b.y,
-            edgeColor,
-            alpha,
-            width,
-            edge.a * 0.017 + edge.b * 0.021,
-            activity,
-            edge.a,
-            edge.b,
-            freqFactor,
-          );
-        } else if (!useWave) {
-          drawCometSegmentLine(
-            a.x,
-            a.y,
-            b.x,
-            b.y,
-            edgeColor,
-            alpha,
-            width,
-            edge.a * 0.017 + edge.b * 0.021,
-            activity,
-            edge.a,
-            edge.b,
-          );
-        } else {
-          drawCometSegmentWave(
-            a.x,
-            a.y,
-            b.x,
-            b.y,
-            edgeColor,
-            alpha,
-            width,
-            edge.a * 0.017 + edge.b * 0.021,
-            activity,
-            edge.a,
-            edge.b,
-            freqFactor,
-          );
-        }
+        drawActiveEdge(a, b, edge.a, edge.b, edgeColor, alpha, width, activity, edge.a * 0.017 + edge.b * 0.021);
       }
     }
-  
+
+    flushQuietEdges();
+
     ctx.restore();
   }
   
@@ -1600,7 +1763,13 @@ export function createRenderModule(runtime) {
       const atmosphereMix = computeAtmosphereMix(fogFactor, item.depth);
       const baseColor = mixColor(tintedBase, atmosphereColor, atmosphereMix);
   
-      const baseAlpha = clamp((0.18 + item.frame.rmsN * 0.4 - fogFactor * 0.18) * pointAlpha * (0.74 + solidness * 0.78), 0.1, 0.98);
+      // nearFade replaces the old hard near-plane rejection: a node flying past
+      // the camera now dissolves instead of blinking out of existence.
+      const baseAlpha = clamp(
+        (0.18 + item.frame.rmsN * 0.4 - fogFactor * 0.18) * pointAlpha * (0.74 + solidness * 0.78) * item.nearFade,
+        0.004,
+        0.98,
+      );
       const pulsePhase = Math.sin(nowSec * 18 + item.index * 0.41) * 0.5 + 0.5;
       const pulseEnvelope = clamp((item.activity * 0.58 + item.pulse * 1.45 + item.connectionPulse * 1.25) * pulseControl, 0, 3.8);
       const pulseScale = 1 + pulseEnvelope * (0.16 + 0.28 * pulsePhase);
@@ -1661,8 +1830,8 @@ export function createRenderModule(runtime) {
       const px = item.x;
       const py = item.y;
       const glowPower = clamp(
-        glowActivity * (0.3 + item.frame.rmsN * 0.86) * (0.42 + bloom * 0.52) * pointAlpha * glowGain * (0.8 + pulsePhase * 0.24),
-        0.02,
+        glowActivity * (0.3 + item.frame.rmsN * 0.86) * (0.42 + bloom * 0.52) * pointAlpha * glowGain * (0.8 + pulsePhase * 0.24) * item.nearFade,
+        0.004,
         0.78,
       );
       const glowRadius = item.radius * (1.2 + item.activity * 3.1 + bloom * 1.4 + item.connectionPulse * 0.65);
@@ -1731,27 +1900,32 @@ export function createRenderModule(runtime) {
       return;
     }
   
-    const adaptiveDecimation = state.renderQuality < 0.58 ? 3 : state.renderQuality < 0.8 ? 2 : 1;
-    const decimate = Math.max(adaptiveDecimation, Number(displayDecimation.value));
+    // Decimation comes from the latched tier, so the node count no longer
+    // changes several times a second as the frame-cost EMA wobbles.
+    const decimate = Math.max(qualityTier().decimation, Number(displayDecimation.value));
     const sizeScale = Number(pointScale.value);
     const activeIndex = !player.paused ? getFrameIndexAtTime(player.currentTime) : -1;
+    // Activity falls off around the *fractional* playhead. Snapping it to the
+    // nearest analysis frame made every highlight stair-step, which is most
+    // obvious at 0.25x where a frame lasts the better part of a second.
+    const activeIndexFloat = !player.paused ? getFrameIndexFloatAtTime(player.currentTime) : -1;
     const activityWindow = 6 + Number(flowDensity.value) * 18;
-  
+
     const projected = [];
     const byIndex = new Map();
     const visibleIndices = [];
     state.connectionPulse.clear();
-  
+
     for (let i = 0; i < state.map.frames.length; i += decimate) {
       const frame = state.map.frames[i];
       const pulse = state.activationPulse.get(i) || 0;
-      const activity = clamp(activityForIndex(i, activeIndex, activityWindow) + pulse * 1.15, 0, 2.2);
+      const activity = clamp(activityForIndex(i, activeIndexFloat, activityWindow) + pulse * 1.15, 0, 2.2);
       const p = projectPoint3D(frame.x, frame.y, frame.z, nowSec, activity);
-  
+
       if (!p) {
         continue;
       }
-  
+
       const radius = clamp(frame.size * sizeScale * p.perspective * 0.09, 0.45, 22);
       const item = {
         index: i,
@@ -1760,21 +1934,22 @@ export function createRenderModule(runtime) {
         y: p.y,
         depth: p.depth,
         fog: p.fog,
+        nearFade: p.nearFade,
         radius,
         activity,
         pulse,
         connectionPulse: 0,
       };
-  
+
       projected.push(item);
       byIndex.set(i, item);
       visibleIndices.push(i);
     }
-  
+
     projected.sort((a, b) => b.depth - a.depth);
-  
+
     if (!nodesOnly.checked) {
-        drawEdges(byIndex, visibleIndices, activeIndex, nowSec);
+        drawEdges(byIndex, visibleIndices, activeIndex, nowSec, activeIndexFloat);
         drawObservatoryOverlay(projected, activeIndex, nowSec);
         drawCathedralOverlay(projected, activeIndex, nowSec);
     }

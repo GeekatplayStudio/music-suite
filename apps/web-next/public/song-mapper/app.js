@@ -100,6 +100,11 @@ const {
   drawMap,
   updateLegend,
   getFrameIndexAtTime,
+  updateQualityTier,
+  measureCloudRadius,
+  fitZoomForCloud,
+  ZOOM_MIN,
+  ZOOM_MAX,
   FFT_SIZE,
   HOP_SIZE,
 } = runtime;
@@ -733,6 +738,9 @@ function bindEvents() {
 
   function remapAndRefreshSpread() {
     remapFrames();
+    // Mapping modes differ in scale by several times over, so re-frame.
+    state.cloudRadius = measureCloudRadius();
+    state.userZoomTarget = clamp(fitZoomForCloud(), ZOOM_MIN, ZOOM_MAX);
     refreshSpreadUi();
   }
 
@@ -1124,9 +1132,13 @@ function bindEvents() {
 
     canvas.addEventListener("wheel", (event) => {
       event.preventDefault();
-      const delta = event.deltaY > 0 ? -0.08 : 0.08;
-      state.userZoom = clamp(state.userZoom + delta, 0.55, 2.4);
-    });
+      // Multiplicative so each notch changes the framing by the same *ratio*.
+      // The old additive step with a 0.55 floor could not pull the camera far
+      // enough back to see a whole cloud, which is why zooming out looked
+      // broken; the projection clamp capped it at 0.55 as well.
+      const scale = Math.exp(-event.deltaY * 0.0016);
+      state.userZoomTarget = clamp(state.userZoomTarget * scale, ZOOM_MIN, ZOOM_MAX);
+    }, { passive: false });
   }
 
   window.addEventListener("resize", resizeCanvas);
@@ -1157,6 +1169,12 @@ function bindEvents() {
     if (event.key === "\\") {
       event.preventDefault();
       applyPlaybackSpeed(1);
+      return;
+    }
+    if (event.key === "f" || event.key === "F") {
+      event.preventDefault();
+      state.cloudRadius = measureCloudRadius();
+      state.userZoomTarget = clamp(fitZoomForCloud(), ZOOM_MIN, ZOOM_MAX);
       return;
     }
 
@@ -1197,7 +1215,7 @@ function tick(nowMs) {
     return;
   }
 
-  const targetInterval = state.renderQuality < 0.58 ? 1000 / 30 : state.renderQuality < 0.8 ? 1000 / 45 : 0;
+  const targetInterval = state.qualityTier >= 3 ? 1000 / 30 : state.qualityTier >= 2 ? 1000 / 45 : 0;
   if (targetInterval && nowMs - state.lastRenderedAt < targetInterval) {
     scheduleTick();
     return;
@@ -1237,8 +1255,9 @@ function tick(nowMs) {
   state.renderEmaMs = state.renderEmaMs
     ? state.renderEmaMs * 0.88 + renderCostMs * 0.12
     : renderCostMs;
-  const desiredQuality = clamp(16.7 / Math.max(16.7, state.renderEmaMs), 0.45, 1);
-  state.renderQuality = state.renderQuality * 0.92 + desiredQuality * 0.08;
+  // Quality is a latched tier, not a bare function of the EMA. See
+  // updateQualityTier in runtime.js for why the direct mapping flickered.
+  updateQualityTier(nowMs);
   scheduleTick();
 }
 
