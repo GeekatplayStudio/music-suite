@@ -1,4 +1,5 @@
 import { sanitizePresetName, sortPresetEntries } from "../preset_utils.js";
+import { accumulateChroma, estimateMusicalKey, estimateTempoBpm } from "../visual_utils.js";
 
 export function createAnalysisModule(runtime) {
   const {
@@ -106,6 +107,11 @@ export function createAnalysisModule(runtime) {
     return mono;
   }
   
+  // Band split for the live low/mid/high meter. 250 Hz and 4 kHz are the usual
+  // boundaries between "body", "presence" and "air" in mix terms.
+  const BAND_LOW_HZ = 250;
+  const BAND_HIGH_HZ = 4000;
+
   function computeFrameDescriptor(mono, start, sampleRate, re, im, mag, prevMag) {
     let rmsSum = 0;
     let zcr = 0;
@@ -135,22 +141,33 @@ export function createAnalysisModule(runtime) {
     let peakMag = -1;
     let peakHz = 0;
     let flux = 0;
-  
+    let bandLow = 0;
+    let bandMid = 0;
+    let bandHigh = 0;
+
     for (let k = 1; k < half; k += 1) {
       const magnitude = Math.hypot(re[k], im[k]);
       const hz = k * binHz;
       const safe = magnitude + EPSILON;
-  
+
       mag[k] = magnitude;
       sumMag += magnitude;
       weighted += magnitude * hz;
       arithmetic += safe;
       logSum += Math.log(safe);
-  
+
+      if (hz < BAND_LOW_HZ) {
+        bandLow += magnitude;
+      } else if (hz < BAND_HIGH_HZ) {
+        bandMid += magnitude;
+      } else {
+        bandHigh += magnitude;
+      }
+
       const rising = magnitude - prevMag[k];
       flux += rising > 0 ? rising : 0;
       prevMag[k] = magnitude;
-  
+
       if (magnitude > peakMag) {
         peakMag = magnitude;
         peakHz = hz;
@@ -190,6 +207,9 @@ export function createAnalysisModule(runtime) {
       zcr: zcr / FFT_SIZE,
       peakHz,
       flux: flux / Math.max(1, half - 1),
+      bandLow: sumMag > 0 ? bandLow / sumMag : 0,
+      bandMid: sumMag > 0 ? bandMid / sumMag : 0,
+      bandHigh: sumMag > 0 ? bandHigh / sumMag : 0,
     };
   }
   
@@ -482,6 +502,9 @@ export function createAnalysisModule(runtime) {
 
       if (modeKey === "manifold") {
         const c = pcaCoords[i];
+        // Kept so the node inspector can show which component put the frame
+        // where it is, rather than asserting that it did.
+        frame.pca = c;
         frame.x = (c[0] - 0.5) * 28 + (tNorm - 0.5) * 1.8;
         frame.y = (c[1] - 0.5) * 20 + (frame.rmsN - 0.5) * 3;
         frame.z = (c[2] - 0.5) * 21 + (frame.fluxN - 0.5) * 4;
@@ -490,6 +513,7 @@ export function createAnalysisModule(runtime) {
 
       if (modeKey === "hybrid") {
         const c = pcaCoords[i];
+        frame.pca = c;
         const tCentered = tNorm - 0.5;
         const arc = tCentered * Math.PI * 1.55;
         const timeX = Math.sin(arc) * 17;
@@ -1166,6 +1190,145 @@ export function createAnalysisModule(runtime) {
   async function nextAnimationFrame() {
     await new Promise((resolve) => requestAnimationFrame(resolve));
   }
+
+  // Chroma needs a much longer window than the geometry descriptors do.
+  //
+  // The 1024-point analysis FFT has 43 Hz bins, whose main lobe spans ~172 Hz.
+  // Two notes a minor third apart at 150 Hz are 28 Hz apart, so they collapse
+  // into a single unresolved peak that interpolates to a pitch class neither of
+  // them is - which is why key detection named the same wrong key for every
+  // track. At 8192 points the lobe is ~22 Hz and the interval resolves. This
+  // pass is cheap because it only needs a couple of windows per second of
+  // audio, not one per hop.
+  const CHROMA_FFT_SIZE = 8192;
+  const CHROMA_WINDOWS_PER_SECOND = 2;
+
+  const chromaWindow = new Float32Array(CHROMA_FFT_SIZE);
+  for (let i = 0; i < CHROMA_FFT_SIZE; i += 1) {
+    chromaWindow[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (CHROMA_FFT_SIZE - 1)));
+  }
+
+  /** Song-level chroma from a long-window FFT, sampled across the track. */
+  function computeSongChroma(mono, sampleRate) {
+    const chroma = new Float64Array(12);
+    if (!mono || mono.length < CHROMA_FFT_SIZE) {
+      return chroma;
+    }
+
+    const re = new Float64Array(CHROMA_FFT_SIZE);
+    const im = new Float64Array(CHROMA_FFT_SIZE);
+    const half = CHROMA_FFT_SIZE >> 1;
+    const mag = new Float64Array(half);
+    const binHz = sampleRate / CHROMA_FFT_SIZE;
+    const hop = Math.max(CHROMA_FFT_SIZE, Math.floor(sampleRate / CHROMA_WINDOWS_PER_SECOND));
+
+    for (let start = 0; start + CHROMA_FFT_SIZE <= mono.length; start += hop) {
+      for (let i = 0; i < CHROMA_FFT_SIZE; i += 1) {
+        re[i] = (mono[start + i] || 0) * chromaWindow[i];
+        im[i] = 0;
+      }
+      fftInPlace(re, im);
+      for (let k = 1; k < half; k += 1) {
+        mag[k] = Math.hypot(re[k], im[k]);
+      }
+      accumulateChroma(mag, half, binHz, chroma);
+    }
+
+    return chroma;
+  }
+
+  const WAVEFORM_BUCKETS = 1600;
+
+  /**
+   * Peak envelope for the scrubber strip: max absolute sample per bucket.
+   * Peak rather than RMS, because a peak envelope is what a DAW draws and what
+   * makes transients and section boundaries legible at a glance.
+   */
+  function buildWaveformPeaks(mono) {
+    if (!mono || mono.length === 0) {
+      return null;
+    }
+
+    const buckets = Math.min(WAVEFORM_BUCKETS, Math.max(1, mono.length));
+    const peaks = new Float32Array(buckets);
+    const perBucket = mono.length / buckets;
+
+    for (let b = 0; b < buckets; b += 1) {
+      const start = Math.floor(b * perBucket);
+      const end = Math.min(mono.length, Math.floor((b + 1) * perBucket));
+      let peak = 0;
+      // Sample rather than scan every value: a 10-minute track at 48 kHz is
+      // ~29M samples and the strip is only ~1600 px wide.
+      const step = Math.max(1, Math.floor((end - start) / 512));
+      for (let i = start; i < end; i += step) {
+        const v = Math.abs(mono[i]);
+        if (v > peak) {
+          peak = v;
+        }
+      }
+      peaks[b] = peak;
+    }
+
+    return peaks;
+  }
+
+  /**
+   * Song-level descriptors that are true of the whole track rather than one
+   * frame: tempo, key, and the average band balance. Every value carries a
+   * confidence, and the HUD is expected to hide a low-confidence estimate
+   * rather than present a guess as a fact.
+   */
+  function buildSongProfile(frames, chromaAccum, durationSec) {
+    if (!Array.isArray(frames) || frames.length === 0) {
+      return null;
+    }
+
+    const analysisSpan = Number(frames[frames.length - 1]?.t) - Number(frames[0]?.t);
+    const frameRate =
+      analysisSpan > EPSILON
+        ? (frames.length - 1) / analysisSpan
+        : durationSec > EPSILON
+          ? frames.length / durationSec
+          : 0;
+
+    const flux = new Float64Array(frames.length);
+    let bandLow = 0;
+    let bandMid = 0;
+    let bandHigh = 0;
+    let centroidSum = 0;
+    let flatnessSum = 0;
+    let rmsSum = 0;
+
+    for (let i = 0; i < frames.length; i += 1) {
+      const frame = frames[i];
+      flux[i] = frame.flux;
+      bandLow += frame.bandLow;
+      bandMid += frame.bandMid;
+      bandHigh += frame.bandHigh;
+      centroidSum += frame.centroidHz;
+      flatnessSum += frame.flatness;
+      rmsSum += frame.rms;
+    }
+
+    const inv = 1 / frames.length;
+    const tempo = estimateTempoBpm(flux, frameRate);
+    const key = estimateMusicalKey(chromaAccum);
+
+    return {
+      frameRate,
+      chroma: Array.from(chromaAccum),
+      tempoBpm: tempo.bpm,
+      tempoConfidence: tempo.confidence,
+      key: key.key,
+      keyConfidence: key.confidence,
+      bandLow: bandLow * inv,
+      bandMid: bandMid * inv,
+      bandHigh: bandHigh * inv,
+      meanCentroidHz: centroidSum * inv,
+      meanFlatness: flatnessSum * inv,
+      meanRms: rmsSum * inv,
+    };
+  }
   
   async function analyzeSong(audioBuffer, progressCb) {
     const mono = extractMonoSamples(audioBuffer);
@@ -1228,6 +1391,9 @@ export function createAnalysisModule(runtime) {
         peakN,
         flux: d.flux,
         fluxN,
+        bandLow: d.bandLow ?? 0,
+        bandMid: d.bandMid ?? 0,
+        bandHigh: d.bandHigh ?? 0,
         featureVec: [centroidN, spreadN, rolloffN, flatnessN, zcrN, rmsN, peakN, fluxN],
         x: 0,
         y: 0,
@@ -1260,6 +1426,8 @@ export function createAnalysisModule(runtime) {
       peakRangeKhz,
       temporalEdges,
       knnEdges,
+      songProfile: buildSongProfile(frames, computeSongChroma(mono, sampleRate), audioBuffer.duration),
+      waveformPeaks: buildWaveformPeaks(mono),
     };
 
     applySongAwareFreqSpread(map);

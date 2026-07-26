@@ -309,6 +309,11 @@ export function createRuntime() {
     dragging: false,
     dragStartX: 0,
     dragStartY: 0,
+    // Pointer position in canvas pixel space, and the node it is resting on.
+    // Null pointer means the cursor is not over the stage at all.
+    pointerX: null,
+    pointerY: null,
+    hoverNode: null,
     drawerOpen: true,
     activeTab: "session",
     stars: [],

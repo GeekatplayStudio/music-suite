@@ -2,12 +2,14 @@ import { createRuntime } from "./app/runtime.js";
 import { createAnalysisModule } from "./app/analysis-module.js";
 import { createRenderModule } from "./app/render-module.js";
 import { createWorkflowModule } from "./app/workflow-module.js";
+import { createHudModule } from "./app/hud-module.js";
 import { decorateControls, initTooltips } from "./app/tooltips.js";
 
 const runtime = createRuntime();
 Object.assign(runtime, createAnalysisModule(runtime));
 Object.assign(runtime, createRenderModule(runtime));
 Object.assign(runtime, createWorkflowModule(runtime));
+Object.assign(runtime, createHudModule(runtime));
 
 const {
   canvas,
@@ -100,6 +102,10 @@ const {
   drawMap,
   updateLegend,
   getFrameIndexAtTime,
+  initSongHud,
+  updateSongHud,
+  updateNodeInspector,
+  drawWaveformStrip,
   updateQualityTier,
   measureCloudRadius,
   fitZoomForCloud,
@@ -1101,7 +1107,24 @@ function bindEvents() {
       canvas.setPointerCapture(event.pointerId);
     });
 
+    // Pointer position is kept in canvas pixel space so the renderer can
+    // hit-test against already-projected nodes without converting per node.
+    const trackPointer = (event) => {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.max(1, state.dpr || 1);
+      state.pointerX = (event.clientX - rect.left) * dpr;
+      state.pointerY = (event.clientY - rect.top) * dpr;
+    };
+
+    canvas.addEventListener("pointerleave", () => {
+      state.pointerX = null;
+      state.pointerY = null;
+      state.hoverNode = null;
+    });
+
     canvas.addEventListener("pointermove", (event) => {
+      trackPointer(event);
+
       if (!state.dragging) {
         return;
       }
@@ -1250,6 +1273,9 @@ function tick(nowMs) {
   }
 
   updateMathPanel(nowMs);
+  updateSongHud(nowMs);
+  updateNodeInspector();
+  drawWaveformStrip();
 
   const renderCostMs = performance.now() - renderStartedAt;
   state.renderEmaMs = state.renderEmaMs
@@ -1293,6 +1319,7 @@ function init() {
   decorateControls();
   initTooltips();
   initSideDock();
+  initSongHud();
   bindEvents();
   bindPlaybackSpeed();
   setActiveTab(state.activeTab);

@@ -1895,6 +1895,66 @@ export function createRenderModule(runtime) {
     ctx.restore();
   }
   
+  /**
+   * Picks the node nearest the pointer, if it is close enough to have been
+   * aimed at. Runs against the already-projected list, so hit-testing costs a
+   * single pass rather than a second projection.
+   *
+   * Nearest-in-screen-space wins ties by depth because `projected` is sorted
+   * far-to-near, and a later equal-distance candidate overwrites an earlier
+   * one - so the front-most of two overlapping nodes is the one you get, which
+   * is the one you can actually see.
+   */
+  function updateHoverPick(projected) {
+    if (state.pointerX === null || state.dragging) {
+      state.hoverNode = null;
+      return;
+    }
+
+    const dpr = Math.max(1, state.dpr || 1);
+    const maxDistance = 26 * dpr;
+    let best = null;
+    let bestDistanceSq = maxDistance * maxDistance;
+
+    for (const item of projected) {
+      const dx = item.x - state.pointerX;
+      const dy = item.y - state.pointerY;
+      const distanceSq = dx * dx + dy * dy;
+      // Large nodes should be grabbable across their whole face.
+      const reach = Math.max(maxDistance, item.radius * 1.6);
+      if (distanceSq <= Math.max(bestDistanceSq, reach * reach)) {
+        best = item;
+        bestDistanceSq = distanceSq;
+      }
+    }
+
+    state.hoverNode = best;
+  }
+
+  /** Ring around the hovered node, so the pick is unambiguous. */
+  function drawHoverHighlight() {
+    const hover = state.hoverNode;
+    if (!hover) {
+      return;
+    }
+
+    const dpr = Math.max(1, state.dpr || 1);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = "rgba(190, 238, 255, 0.92)";
+    ctx.lineWidth = 1.6 * dpr;
+    ctx.beginPath();
+    ctx.arc(hover.x, hover.y, Math.max(7 * dpr, hover.radius * 2.1), 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(190, 238, 255, 0.34)";
+    ctx.lineWidth = 1 * dpr;
+    ctx.beginPath();
+    ctx.arc(hover.x, hover.y, Math.max(12 * dpr, hover.radius * 3.4), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawMap(nowSec) {
     if (!state.map) {
       return;
@@ -1947,6 +2007,7 @@ export function createRenderModule(runtime) {
     }
 
     projected.sort((a, b) => b.depth - a.depth);
+    updateHoverPick(projected);
 
     if (!nodesOnly.checked) {
         drawEdges(byIndex, visibleIndices, activeIndex, nowSec, activeIndexFloat);
@@ -1959,11 +2020,13 @@ export function createRenderModule(runtime) {
     }
   
     drawPoints(projected, activeIndex, nowSec);
-    
+
     if (!nodesOnly.checked) {
         drawLabels(projected, activeIndex);
         drawFlowParticles(activeIndex, nowSec);
     }
+
+    drawHoverHighlight();
   
     let active = byIndex.get(activeIndex);
     if (!active && activeIndex >= 0) {
@@ -1993,6 +2056,8 @@ export function createRenderModule(runtime) {
     drawObservatoryOverlay,
     drawCathedralOverlay,
     drawPoints,
+    drawHoverHighlight,
+    updateHoverPick,
     drawMap,
   };
 }

@@ -227,11 +227,255 @@ h1 {
 body.focus-mode .hud-top,
 body.focus-mode .legend,
 body.focus-mode .math-panel,
+body.focus-mode .song-hud,
+body.focus-mode .waveform-strip,
 body.focus-mode .control-drawer,
 body.focus-mode .tabs-dock {
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
+}
+
+/* ============================================================
+   Always-on song readout
+
+   The Math HUD is a hidden table for when you want every number. This is the
+   opposite: a permanently visible, deliberately quiet summary that makes the
+   song legible at a glance over a dark scene. Bottom-left, because the title
+   owns the top-left and the colour legend owns the middle-left.
+   ============================================================ */
+.song-hud {
+  position: absolute;
+  left: clamp(14px, 2vw, 26px);
+  bottom: clamp(14px, 2vw, 24px);
+  z-index: 20;
+  width: 234px;
+  padding: 10px 12px 11px;
+  border-radius: 14px;
+  background: rgba(6, 11, 18, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+
+.song-hud.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.song-hud-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.song-hud-time {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+}
+
+.song-hud-time strong {
+  font-size: 1.02rem;
+  color: #eaf5ff;
+  letter-spacing: 0.02em;
+}
+
+.song-hud-time span {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.song-hud-pill {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 0.62rem !important;
+  color: #cfe0f4 !important;
+}
+
+.song-hud-pill + .song-hud-pill {
+  margin-left: 4px;
+}
+
+.song-hud-sub {
+  margin-top: 5px;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 0.63rem;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.song-hud-sub strong {
+  color: #d7e6f8;
+  font-weight: 600;
+}
+
+.song-hud-sub .is-uncertain {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+.song-hud-meter {
+  display: block;
+  width: 100%;
+  height: 48px;
+  margin-top: 8px;
+}
+
+.song-hud-axes {
+  margin-top: 6px;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.6rem;
+  line-height: 1.35;
+  color: #9fb2c9;
+}
+
+.song-hud-axes-title {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.52rem;
+  color: #7f93ab;
+}
+
+/* ============================================================
+   Node inspector
+
+   Follows the pointer when it rests near a node. Answers two questions: what
+   this one time slice of the song measures, and why the mapping put it where
+   it is. Never captures pointer events - the canvas below it still orbits.
+   ============================================================ */
+.node-inspector {
+  position: fixed;
+  z-index: 60;
+  max-width: 300px;
+  padding: 9px 11px 10px;
+  border-radius: 12px;
+  background: rgba(6, 11, 18, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease;
+}
+
+.node-inspector.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+body.focus-mode .node-inspector {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.node-inspector-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.node-inspector-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+
+.node-inspector-time {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+  font-size: 0.82rem;
+  color: #eaf5ff;
+}
+
+.node-inspector-index {
+  margin-left: auto;
+  font-size: 0.6rem;
+  color: var(--text-muted);
+}
+
+.node-inspector-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 10px;
+  font-size: 0.63rem;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+}
+
+.node-inspector-grid span {
+  color: #8fa3ba;
+}
+
+.node-inspector-grid strong {
+  float: right;
+  color: #dbe8f7;
+  font-weight: 500;
+}
+
+.node-inspector-why {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.61rem;
+  line-height: 1.45;
+  color: #a6bad0;
+}
+
+.node-inspector-why b {
+  color: #7fd0ff;
+  font-weight: 600;
+}
+
+/* ============================================================
+   Waveform scrubber strip
+
+   A peak envelope of the whole song across the top of the stage, tinted by
+   the active colour metric, with a draggable playhead. Clicking anywhere in
+   it seeks. It is inset by --dock-width so it never runs under the controls.
+   ============================================================ */
+.waveform-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 46px;
+  z-index: 18;
+  cursor: pointer;
+  background: linear-gradient(180deg, rgba(4, 8, 14, 0.72), rgba(4, 8, 14, 0));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  transition: opacity 200ms ease;
+}
+
+.waveform-strip.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.waveform-strip canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.waveform-readout {
+  position: absolute;
+  right: 10px;
+  bottom: 3px;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+  font-size: 0.62rem;
+  color: #b9cade;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
 .legend {
@@ -994,6 +1238,16 @@ body.focus-mode .tabs-dock {
 
   body.dock-side.dock-collapsed .hud-top {
     right: clamp(14px, 2vw, 26px);
+  }
+
+  /* The scrubber spans the stage, so it has to surrender the docked column
+     too, or its right end and its playhead sit underneath the controls. */
+  body.dock-side .waveform-strip {
+    right: var(--dock-width);
+  }
+
+  body.dock-side.dock-collapsed .waveform-strip {
+    right: 0;
   }
 
   body.dock-side .control-drawer {

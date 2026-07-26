@@ -27,6 +27,8 @@
           </div>
           <div class="status-actions">
             <button id="help-btn" class="btn btn-sm" type="button" aria-label="About">About</button>
+            <button id="toggle-song-hud" class="btn btn-sm" type="button" aria-label="Toggle song readout" aria-pressed="true">Song Info</button>
+            <button id="toggle-waveform-strip" class="btn btn-sm" type="button" aria-label="Toggle waveform scrubber" aria-pressed="true">Waveform</button>
             <button id="toggle-math-panel" class="btn btn-sm" type="button" aria-label="Toggle math analysis panel" aria-pressed="false">Math HUD</button>
             <a
               id="support-vlad-btn"
@@ -153,6 +155,32 @@
           </div>
         </div>
       </div>
+
+      <section id="waveform-strip" class="waveform-strip" aria-label="Song waveform scrubber">
+        <canvas id="waveform-canvas" width="1600" height="72"></canvas>
+        <span id="waveform-readout" class="waveform-readout">0:00</span>
+      </section>
+
+      <div id="node-inspector" class="node-inspector" role="status" aria-live="polite"></div>
+
+      <aside id="song-hud" class="song-hud" aria-label="Song readout">
+        <div class="song-hud-row song-hud-time">
+          <strong id="hud-elapsed">0:00</strong>
+          <span id="hud-total">/ 0:00</span>
+          <span id="hud-rate" class="song-hud-pill">1.00x</span>
+          <span id="hud-percent" class="song-hud-pill">0%</span>
+        </div>
+        <div class="song-hud-row song-hud-sub">
+          <span>Frame <strong id="hud-frame">-</strong></span>
+          <span id="hud-tempo">Tempo -</span>
+          <span id="hud-key">Key -</span>
+        </div>
+        <canvas id="hud-meter" class="song-hud-meter" width="440" height="96"></canvas>
+        <div class="song-hud-row song-hud-axes">
+          <span class="song-hud-axes-title">Position</span>
+          <span id="hud-axes">-</span>
+        </div>
+      </aside>
 
       <aside class="legend" aria-hidden="true">
         <span class="legend-title">Spectral Spread (kHz)</span>
