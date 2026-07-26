@@ -153,7 +153,7 @@ def test_a_good_model_answer_is_used_but_keeps_the_measured_reading(monkeypatch)
 
     captured = {}
 
-    def post(url, json=None, timeout=None):  # noqa: A002 - mirrors requests' signature
+    def post(url, json=None, timeout=None):
         captured["url"] = url
         captured["json"] = json
         captured["timeout"] = timeout
@@ -186,7 +186,7 @@ def test_the_prompt_carries_the_measurements_and_forbids_invention(monkeypatch) 
         def json():
             return {"response": "A long enough answer to pass the length guard for this test case."}
 
-    def post(url, json=None, timeout=None):  # noqa: A002
+    def post(url, json=None, timeout=None):
         captured["prompt"] = json["prompt"]
         return Response()
 
