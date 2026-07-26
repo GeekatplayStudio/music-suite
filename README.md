@@ -15,7 +15,7 @@ Created by **Vladimir Chopine** · [GeekatplayStudio/music-suite](https://github
 
 <img src="docs/images/geometry-mapper.png" alt="Song Geometry Mapper rendering a full-song 3D spectral map" width="100%">
 
-<sub>Song Geometry Mapper — a full-song 3D spectral map with reactive trails and cinematic depth.</sub>
+<sub>Song Geometry Mapper — a full-song 3D spectral map with an always-on readout, a seekable waveform scrubber, and structural arcs linking passages that recur.</sub>
 
 </div>
 
@@ -32,7 +32,8 @@ The former **AudioQI Analyzer** and **Sonic Visual AI** projects now share one c
 | 🎚️ **Measure** | Loudness (LUFS), true peak, crest, LRA, stereo correlation, phase, spectrum, and four spectrogram types |
 | 🤖 **Master** | Internal, FFmpeg, Pedalboard, and Matchering paths with marker-aware refinement and rollback |
 | 🌈 **Visualize** | 60 FPS Spectrum, Orbit, and Waveform modes driven by the Web Audio analyser |
-| 🪐 **Map** | Full-song 3D geometry with presets, overlays, exports, and adaptive rendering |
+| 🪐 **Map** | Full-song 3D geometry with tempo and key estimation, structural repeat detection, per-node inspection, presets, overlays, and exports |
+| 🧠 **Describe** | Local Ollama model writes the track's style, always shown beside the description derived from the measurements |
 | 🔌 **Integrate** | Guarded local MCP server, plus optional ComfyUI nodes for music generation |
 | 🔒 **Stay local** | Loopback-only binding, no cloud calls for audio, explicit opt-in for every mutation |
 
@@ -72,6 +73,14 @@ Every suggestion states its reasoning, and the source-aware preflight explains w
 Findings are ranked by severity and tied to concrete time windows rather than generic advice.
 
 <img src="docs/images/markers.png" alt="Remastering recommendations and markers near the playhead" width="100%">
+
+### Song geometry you can read
+
+Every point is one analysis frame. Hover any node for its eight spectral descriptors and a sentence explaining why the active mapping mode placed it at that coordinate — the axes are never left unexplained.
+
+<img src="docs/images/mapper-readout.png" alt="Song Geometry Mapper node inspector showing one frame's descriptors and the reason for its position" width="100%">
+
+The lower-left readout carries elapsed time, playback rate, position, frame index, a low/mid/high band meter, and the estimated tempo and key. **Both estimates carry a confidence and read `unclear` rather than printing a number the data does not support** — tempo comes from autocorrelating the spectral-flux onset envelope, key from Krumhansl-Schmuckler correlation over a long-window chroma.
 
 ### Chart studio
 
@@ -184,6 +193,18 @@ The frontend reaches the selected API through a same-origin streaming proxy, so 
 
 Geometry Mapper runs inside the normal Music Suite web process — Docker and a separate mapper server are not required. Classic analysis runs in the browser; Voice / Deep analysis uses the same loopback FastAPI service and caches under `data/song-mapper`. Optional Demucs stem separation can be enabled with `pip install -e ".[geometry]"`; without it the analyzer falls back to the full mix.
 
+### Inside the mapper
+
+- **Mapping modes** decide how eight descriptors become three coordinates. *Manifold (PCA)* answers "what sounds like what" — distance is timbral difference and time is not an axis. *Time Spine* answers "what happened when". *Hybrid Flow* keeps chronology while pulling repeats together. *Helix Orbit* winds the timeline into a spiral. The About panel and `docs/HELP_GUIDE.md` set out the axes for each.
+- **Time as a visible dimension** — temporal fog that fades by distance from the playhead *in time* rather than from the camera, ghost layers showing where the music was and is heading, a time tube encoding loudness along the trail, and section arcs linking passages that recur.
+- **Connections are waveforms**, not ropes: a fundamental plus partials whose weighting comes from each frame's own spectral flatness, so tonal passages draw near-pure sine and percussive ones draw a dense, ragged wave.
+- **Scene styles** — an X-Ray mode that composites rim outlines additively so dense clouds stay readable, and a colour haze whose hue follows spectral centroid and whose density follows loudness.
+- **AI music style** — with a local Ollama model running, the Session tab describes the track's genre, instrumentation, mood and production. The rule-based description derived from the measurements is always shown too, because a language model will confidently name a genre the numbers do not support. No local model is a normal state, not an error.
+- **Playback 0.05x–2x** on the audio clock, so trails and ribbons keep their shape at every speed and pausing freezes the scene for inspection.
+- **Camera** — scroll to zoom 0.12x–4x, drag to orbit or pan, `F` to frame the whole cloud.
+
+No third-party JavaScript is used anywhere in the mapper: it is vanilla ES modules and Canvas 2D, so it runs offline from a folder with no CDN, no build step, and no supply chain.
+
 ---
 
 ## Safe in-app updates
@@ -264,9 +285,15 @@ pnpm.cmd exec tsc --noEmit
 pnpm.cmd lint
 pnpm.cmd build
 pnpm.cmd audit --prod
+cd public\song-mapper
+node --test "tests/*.test.js"
 ```
 
-Further reading: [Help guide](docs/HELP_GUIDE.md) · [Product requirements](docs/PRD.md) · [Technical requirements](docs/TRD.md) · [References](docs/REFERENCES.md)
+The mapper's own unit tests cover the pure analysis helpers — tempo and key
+estimation, chroma folding, and the visual density maths — including the cases
+where an estimate must be refused rather than guessed.
+
+Further reading: [Help guide](docs/HELP_GUIDE.md) · [Competitive analysis](docs/MAPPER_COMPETITIVE_ANALYSIS.md) · [Product requirements](docs/PRD.md) · [Technical requirements](docs/TRD.md) · [References](docs/REFERENCES.md)
 
 ---
 
