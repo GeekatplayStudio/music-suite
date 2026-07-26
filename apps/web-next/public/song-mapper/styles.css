@@ -343,6 +343,82 @@ body.focus-mode .tabs-dock {
 }
 
 /* ============================================================
+   AI music style panel
+   ============================================================ */
+.style-block {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 9px 9px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.style-status-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.style-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.style-status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.32);
+  flex: 0 0 auto;
+}
+
+.style-status.is-online::before {
+  background: var(--accent-lime);
+  box-shadow: 0 0 8px rgba(178, 246, 98, 0.7);
+}
+
+.style-status.is-offline::before {
+  background: var(--accent-gold);
+}
+
+.style-toggle {
+  display: flex !important;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.76rem;
+}
+
+.style-output {
+  width: 100%;
+  resize: vertical;
+  min-height: 110px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(4, 8, 14, 0.7);
+  color: #dbe8f7;
+  font-family: inherit;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.style-output:focus {
+  outline: none;
+  border-color: rgba(75, 196, 255, 0.6);
+}
+
+.style-note {
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+/* ============================================================
    Node inspector
 
    Follows the pointer when it rests near a node. Answers two questions: what

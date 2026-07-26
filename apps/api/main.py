@@ -30,6 +30,7 @@ from audioqi.conversion import (
     write_conversion_state,
 )
 from audioqi.core.analyzer import analyze_audio_file
+from audioqi.core.music_style import StyleAnalysisError, analyze_music_style, ollama_status
 from audioqi.db import SessionLocal, init_db
 from audioqi.geometry_mapper.service import analyze_mapper_upload, clear_mapper_cache
 from audioqi.io.metadata import normalize_metadata_payload
@@ -362,6 +363,39 @@ def analyze_song_geometry(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Song mapper analysis failed: {exc}") from exc
+
+
+@app.get("/song-mapper/api/style/status")
+def song_style_status(model: str = Query(default="")) -> dict[str, Any]:
+    """Whether a local Ollama model is reachable, and which one would be used."""
+    try:
+        return ollama_status(requested_model=model)
+    except StyleAnalysisError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/song-mapper/api/style/analyze")
+def song_style_analyze(payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    """
+    Describes a track's musical style from the mapper's own measurements.
+
+    The rule-based description is always returned; an Ollama description is
+    added when a local model answers. A missing model is a normal state, so it
+    is reported in the body rather than raised as an error.
+    """
+    features = payload.get("features")
+    if not isinstance(features, dict):
+        raise HTTPException(status_code=400, detail="A 'features' object is required.")
+
+    try:
+        return analyze_music_style(
+            features,
+            model=str(payload.get("model") or ""),
+            style=str(payload.get("style") or "prose"),
+            extra_context=str(payload.get("context") or ""),
+        )
+    except StyleAnalysisError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/song-mapper/api/voice/cache/clear")

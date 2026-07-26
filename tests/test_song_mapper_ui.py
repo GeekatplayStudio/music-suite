@@ -354,6 +354,37 @@ def test_section_arcs_come_from_existing_similarity_data() -> None:
     assert "buildSectionLinks" in rebuild
 
 
+def test_style_panel_exists_and_probes_the_local_model_on_load() -> None:
+    """The panel should say up front whether a model is available, rather than
+    discovering it at the moment the user presses the button."""
+    index = _read(INDEX)
+    style_js = _read(MAPPER / "app" / "style-module.js")
+
+    for element_id in ("style-engine-status", "style-model", "style-format",
+                       "style-auto", "style-analyze", "style-output"):
+        assert f'id="{element_id}"' in index, f"missing {element_id}"
+
+    assert "api/style/status" in style_js
+    assert "api/style/analyze" in style_js
+    assert "void refreshStatus()" in style_js
+
+
+def test_style_panel_keeps_the_measured_reading_next_to_the_generated_one() -> None:
+    """A language model will confidently name a genre the numbers do not
+    support, so the derived description has to stay visible beside it."""
+    style_js = _read(MAPPER / "app" / "style-module.js")
+    assert "rule_based" in style_js
+    assert "Measured reading:" in style_js
+
+
+def test_style_requests_stay_on_the_loopback_music_suite_api() -> None:
+    """GUARDRAILS.md: no direct third-party calls from the browser."""
+    style_js = _read(MAPPER / "app" / "style-module.js")
+    assert "VOICE_API_BASE" in style_js
+    assert "11434" not in style_js, "the browser must not talk to Ollama directly"
+    assert "http://" not in style_js.replace("http://127.0.0.1", "")
+
+
 def test_axis_semantics_cover_every_mapping_mode() -> None:
     """A mode with no documented axes would silently fall back to another
     mode's explanation, which would be actively misleading."""

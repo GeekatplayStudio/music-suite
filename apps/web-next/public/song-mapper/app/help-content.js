@@ -33,6 +33,21 @@ export const HELP_CONTENT = {
     what: "Keeps the original musical pitch when speed changes, using the browser's time-stretch. Turn it off for classic tape-style pitch shifting.",
     when: "Leave on for musical inspection. Turn off when the raw slowed-down waveform is what you want to hear.",
   },
+  "style-model": {
+    title: "Ollama Model",
+    what: "Which locally installed model writes the style description. Auto-select picks the best general-purpose text model you have; vision, embedding and code models are skipped because they cannot describe music usefully.",
+    when: "Set it explicitly if you have a favourite. Leave on Auto otherwise. If no model is listed, Ollama is not running on this machine.",
+  },
+  "style-format": {
+    title: "Report Style",
+    what: "Description writes two short paragraphs about genre, instrumentation, mood and production. Style Tags writes a single comma-separated tag list of the kind Suno and Udio take as input.",
+    when: "Use Tags when you want to feed the result into a generative music tool; use Description when you want something to read.",
+  },
+  "style-auto": {
+    title: "Analyze Automatically",
+    what: "Runs the style analysis as soon as a song finishes analyzing, instead of waiting for you to press the button.",
+    when: "Leave on for a hands-off workflow. Turn off if you have no local model, or if you want to change model or format before spending the time.",
+  },
   "show-connections": {
     title: "Connections",
     what: "Draws the edges between related frames. With edges off you see only the node cloud.",

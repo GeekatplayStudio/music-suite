@@ -3,6 +3,7 @@ import { createAnalysisModule } from "./app/analysis-module.js";
 import { createRenderModule } from "./app/render-module.js";
 import { createWorkflowModule } from "./app/workflow-module.js";
 import { createHudModule } from "./app/hud-module.js";
+import { createStyleModule } from "./app/style-module.js";
 import { decorateControls, initTooltips } from "./app/tooltips.js";
 
 const runtime = createRuntime();
@@ -10,6 +11,7 @@ Object.assign(runtime, createAnalysisModule(runtime));
 Object.assign(runtime, createRenderModule(runtime));
 Object.assign(runtime, createWorkflowModule(runtime));
 Object.assign(runtime, createHudModule(runtime));
+Object.assign(runtime, createStyleModule(runtime));
 
 const {
   canvas,
@@ -103,6 +105,8 @@ const {
   updateLegend,
   getFrameIndexAtTime,
   initSongHud,
+  initStyleModule,
+  onSongAnalyzed,
   updateSongHud,
   updateNodeInspector,
   drawWaveformStrip,
@@ -855,10 +859,17 @@ function bindEvents() {
       return Promise.resolve();
     }
 
+    const done = () => {
+      refreshSpreadUi();
+      // Style analysis runs off the finished map, so it has to wait for the
+      // load to resolve rather than firing alongside it.
+      onSongAnalyzed();
+    };
+
     if (file.name.toLowerCase().endsWith(".json")) {
-      return Promise.resolve(loadAnalysisJson(file)).finally(refreshSpreadUi);
+      return Promise.resolve(loadAnalysisJson(file)).finally(done);
     }
-    return Promise.resolve(loadAndAnalyzeFile(file)).finally(refreshSpreadUi);
+    return Promise.resolve(loadAndAnalyzeFile(file)).finally(done);
   }
 
   window.localStorage.removeItem(VOICE_CACHE_DIR_KEY);
@@ -1329,6 +1340,7 @@ async function loadIntegratedSong() {
     const extension = blob.type.includes("mpeg") ? ".mp3" : blob.type.includes("flac") ? ".flac" : blob.type.includes("ogg") ? ".ogg" : ".wav";
     const filename = /\.[a-z0-9]{2,5}$/i.test(requestedName) ? requestedName : `${requestedName}${extension}`;
     await loadAndAnalyzeFile(new File([blob], filename, { type: blob.type || "audio/wav" }));
+    onSongAnalyzed();
   } catch (error) {
     console.error(error);
     setSessionLabel("Music Suite Song Load Failed", false);
@@ -1343,6 +1355,7 @@ function init() {
   initTooltips();
   initSideDock();
   initSongHud();
+  initStyleModule();
   bindEvents();
   bindPlaybackSpeed();
   setActiveTab(state.activeTab);

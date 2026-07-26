@@ -298,6 +298,41 @@
               <p class="speed-note">Hold <kbd>[</kbd> / <kbd>]</kbd> to step speed. Geometry follows the audio clock, so trails keep their shape at any speed.</p>
             </div>
 
+            <div class="control-group-title">AI Music Style</div>
+            <div class="style-block">
+              <div class="style-status-row">
+                <span id="style-engine-status" class="style-status">Checking local model...</span>
+              </div>
+              <label>
+                Ollama Model
+                <select id="style-model">
+                  <option value="">Auto-select</option>
+                </select>
+              </label>
+              <label>
+                Report Style
+                <select id="style-format">
+                  <option value="prose" selected>Description</option>
+                  <option value="tags">Style Tags</option>
+                </select>
+              </label>
+              <label class="style-toggle">
+                <input id="style-auto" type="checkbox" checked /> Analyze automatically after loading a song
+              </label>
+              <div class="button-row">
+                <button id="style-analyze" class="btn" type="button" disabled>Analyze Style</button>
+                <button id="style-copy" class="btn" type="button">Copy</button>
+              </div>
+              <textarea
+                id="style-output"
+                class="style-output"
+                rows="9"
+                readonly
+                placeholder="Load a song to generate a style analysis from its measured features."
+              ></textarea>
+              <small id="style-note" class="style-note"></small>
+            </div>
+
             <div class="switch-row">
               <label><input id="show-connections" type="checkbox" checked /> Connections</label>
               <label><input id="show-labels" type="checkbox" checked /> Labels</label>
