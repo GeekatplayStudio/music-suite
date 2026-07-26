@@ -242,14 +242,12 @@ export function estimateTempoBpm(fluxSeries, frameRate, { minBpm = 60, maxBpm = 
   const scores = new Float64Array(maxLag - minLag + 1);
   let bestLag = -1;
   let bestScore = -Infinity;
-  let scoreSum = 0;
 
   for (let lag = minLag; lag <= maxLag; lag += 1) {
     let sum = 0;
     for (let i = lag; i < n; i += 1) sum += onset[i] * onset[i - lag];
     const score = sum / (n - lag);
     scores[lag - minLag] = score;
-    scoreSum += score;
     if (score > bestScore) {
       bestScore = score;
       bestLag = lag;
