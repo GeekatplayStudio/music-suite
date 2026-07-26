@@ -120,11 +120,42 @@
             </p>
             <h3>The 3D Construction</h3>
             <p>
-              <strong>Analysis:</strong> We extract RMS, centroid, spread, rolloff, flatness, peak frequency, zero-crossing rate, and flux per frame.
+              <strong>Analysis:</strong> The track is cut into overlapping 1024-sample frames, each windowed and transformed with an FFT. From every frame we measure
+              eight descriptors: RMS (loudness), spectral centroid (where the energy sits, i.e. brightness), spectral spread (how wide the energy is around that centre),
+              spectral rolloff (the frequency below which 85% of the energy falls), flatness (how noise-like versus tonal it is), zero-crossing rate (transient and noise density),
+              peak frequency, and flux (how much the spectrum changed since the previous frame). One frame becomes one node.
             </p>
+
+            <h3>Why a node sits where it does</h3>
             <p>
-              <strong>Mapping:</strong> Choose <em>Manifold (PCA)</em> for structure clusters, <em>Time Spine</em> for chronology, <em>Hybrid Flow</em> for both, or <em>Helix Orbit</em> for spiral timeline motion.
-              Similar sounding regions become spatially closer in manifold-style modes.
+              Three dimensions and eight descriptors means something has to be chosen. That choice <em>is</em> the mapping mode, and each mode answers a different question.
+              Hover any node on the stage to see its own numbers and the reason for its exact position.
+            </p>
+            <ul>
+              <li>
+                <strong>Manifold (PCA)</strong> &mdash; asks <em>what sounds like what</em>. Principal component analysis finds the three directions in which this
+                particular song's eight descriptors vary the most, and uses those as X, Y and Z. Nothing is thrown away arbitrarily: the axes are the ones that carry the
+                most information about this track. Distance means timbral difference, so a chorus lands near its other choruses. Time is not an axis at all here.
+              </li>
+              <li>
+                <strong>Time Spine</strong> &mdash; asks <em>what happened when</em>. X is elapsed time, left to right. Y is peak frequency lifted by centroid, so the line
+                rises as the music gets higher. Z combines spread, tonality, loudness and flux, so texture pushes toward and away from you. Every node's neighbours are its
+                musical neighbours in time.
+              </li>
+              <li>
+                <strong>Hybrid Flow</strong> &mdash; bends the timeline into an arc and then pulls it toward the PCA layout. You can still follow the song in order, but
+                passages that sound alike bend back toward each other, so repeats are visible without losing chronology.
+              </li>
+              <li>
+                <strong>Helix Orbit</strong> &mdash; winds the timeline into a spiral. Y is elapsed time along the spiral axis; X and Z are the angle at that moment, at a
+                radius set by spectral spread and loudness. One turn is a fixed span of the song, so loud, wide passages bulge outward and quiet narrow ones pull in.
+              </li>
+            </ul>
+            <p>
+              <strong>Why 3D at all:</strong> a spectrogram already shows time against frequency. What it cannot show is which moments <em>resemble</em> each other.
+              Placing frames in space turns similarity into distance, so structure you would otherwise have to hear repeatedly becomes something you can see at once.
+              <em>3D Frequency Spread</em> scales the X and Z axes if the cloud is too tight or too sparse, and the X/Y/Z offsets shift it bodily &mdash; neither changes
+              what the axes mean.
             </p>
             <p>
               <strong>Observatory Layer:</strong> The <em>Observatory</em> preset adds a more analytical presentation with structural scan halos and orbit rings, while keeping the original geometry modes intact.
@@ -151,6 +182,12 @@
               <li><strong>Scene Defaults:</strong> Selecting Observatory or Cathedral also loads recommended camera and FX defaults, and switching back to a legacy preset restores your prior non-scene settings.</li>
               <li><strong>Refine Geometry:</strong> Use song-aware auto spread or manual spread plus X/Y/Z offsets.</li>
               <li><strong>Visibility:</strong> Use "Nodes Only" to hide edges and effects for a cleaner view.</li>
+              <li><strong>Song Info:</strong> An always-on readout in the lower left shows elapsed time, playback rate, position, frame index, a low/mid/high band meter, and the estimated tempo and key. Estimates that are not trustworthy say "unclear" rather than showing a number.</li>
+              <li><strong>Waveform:</strong> The strip across the top is the whole song's peak envelope, tinted by the active colour metric. Click or drag anywhere in it to seek.</li>
+              <li><strong>Node Inspector:</strong> Rest the pointer near any node to see that frame's measurements and an explanation of why the current mapping mode placed it there.</li>
+              <li><strong>Time &amp; Structure:</strong> Temporal Fog fades by distance from the playhead in time; Ghost Layers show where the music was and is going; Time Tube turns the trail into a loudness ribbon; Section Arcs link passages that sound alike but sit far apart, so choruses visibly connect back.</li>
+              <li><strong>Camera:</strong> Scroll to zoom, drag to orbit or pan, and press <kbd>F</kbd> (or Reset Camera) to frame the whole cloud.</li>
+              <li><strong>AI Music Style:</strong> The Session tab describes the track's style from its measured features, using a local Ollama model when one is running. The measured description is always shown too, so it is clear which claims come from measurement and which from a language model.</li>
             </ul>
              <p style="margin-top: 2rem; font-size: 0.85rem; opacity: 0.7;">
                 Created by <strong>Geekatplay Studio</strong>. See repository docs for full math, setup, and research references.

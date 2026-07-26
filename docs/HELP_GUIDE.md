@@ -123,6 +123,39 @@ Important behavior:
   - Pausing freezes the trail instead of letting it fade, so a single moment can be inspected.
   - `Preserve pitch` is on by default; turn it off for tape-style pitch shifting.
 - **Controls are docked** to a resizable right-hand column on displays 900px and wider, so they never cover the geometry. Drag the divider to resize, or use `Hide` to reclaim the full width. Narrower screens keep the original bottom sheet.
+- **Song Info** (lower left, toggled from the top bar) shows elapsed/total time, playback rate, position, frame index, a low/mid/high band meter with peak hold, and the estimated tempo and key. Both estimates carry a confidence and read `unclear` rather than printing a number the data does not support.
+- **Waveform strip** (top, toggled from the top bar) is the whole song's peak envelope tinted by the active colour metric. Click or drag anywhere in it to seek. Imported and backend-analysed maps have no sample-level envelope, so those fall back to the per-frame RMS curve.
+- **Node inspector**: rest the pointer near any node to see that frame's eight descriptors plus a sentence explaining why the current mapping mode put it at that coordinate.
+- **Camera**: scroll to zoom (0.12x-4x), drag to orbit or pan, `F` or `Reset Camera` frames the whole cloud.
+
+### How a frame becomes a point in space
+
+Each analysis frame is one node. Eight descriptors are measured per frame — RMS, spectral centroid, spread, rolloff, flatness, zero-crossing rate, peak frequency, and flux — and the mapping mode decides how those eight numbers become three coordinates:
+
+| Mode | X | Y | Z | Answers |
+| --- | --- | --- | --- | --- |
+| Manifold (PCA) | 1st principal component | 2nd, nudged by loudness | 3rd, nudged by flux | "What sounds like what" — distance is timbral difference, time is not an axis |
+| Time Spine | Elapsed time | Peak frequency, lifted by centroid | Spread + tonality + loudness + flux | "What happened when" |
+| Hybrid Flow | Time arc blended 62% toward PC1 | Time blended 46% toward PC2 | Arc depth blended toward PC3 | Chronology you can follow, with repeats bending together |
+| Helix Orbit | cos(angle) × radius | Elapsed time along the spiral | sin(angle) × radius | Fixed span per turn; loud, wide passages bulge outward |
+
+PCA picks the three directions in which *this* song's descriptors vary most, so the axes carry the most available information rather than being an arbitrary choice of three descriptors. `3D Frequency Spread` scales X and Z, and the X/Y/Z offsets shift the cloud bodily; neither changes what the axes mean.
+
+### Time and structure
+
+- **Temporal Fog** fades nodes by distance from the playhead *in time*, unlike `Fog Depth` which follows the camera — so it keeps working while you orbit.
+- **Ghost Layers** draw faint echoes of the cloud N seconds behind (cool) and ahead (warm).
+- **Time Tube** extrudes the trail into a ribbon whose thickness is loudness.
+- **Section Arcs** link moments that sound alike but sit far apart in the song, taken from the nearest-neighbour graph. A verse/chorus track shows many; a through-composed piece shows almost none. The Math HUD reports how many were found.
+
+### AI music style
+
+The Session tab describes the track's style from its measured features.
+
+- If a local **Ollama** model is running on loopback it writes the description; the panel probes on load and names the model it will use. Vision, embedding and code models are skipped because they cannot describe music usefully.
+- A **rule-based description derived from the measurements is always produced and always shown**, even when a model answers. A language model will confidently name a genre the numbers do not support, so both are visible and it stays clear which claims trace to a measurement.
+- No local model is a normal state, not an error — the measured description still appears.
+- Requests go through the Music Suite API, never from the browser to Ollama directly, and carry explicit time and output-token budgets.
 
 ## 9) Troubleshooting
 
