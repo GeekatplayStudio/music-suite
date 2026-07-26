@@ -99,6 +99,7 @@ const {
   resetCamera,
   updateCameraMotion,
   drawBackground,
+  drawColorHaze,
   updateTrail,
   drawTrail,
   drawMap,
@@ -1289,6 +1290,9 @@ function tick(nowMs) {
   updateCameraMotion(nowSec, dtMs);
 
   drawBackground(nowSec);
+  // Haze sits between the background and the graph, so it reads as air the
+  // nodes are inside rather than as a wash over the top of them.
+  drawColorHaze(nowSec);
 
   if (state.map) {
     updateTrail(dtMs);

@@ -62,6 +62,9 @@ export function createRuntime() {
   const motionBlur = document.getElementById("motion-blur");
   const rotationSpeed = document.getElementById("rotation-speed");
   
+  const renderStyle = document.getElementById("render-style");
+  const sceneHaze = document.getElementById("scene-haze");
+  const hazeDrift = document.getElementById("haze-drift");
   const visualPreset = document.getElementById("visual-preset");
   const observatoryOverlay = document.getElementById("observatory-overlay");
   const cathedralOverlay = document.getElementById("cathedral-overlay");
@@ -328,6 +331,10 @@ export function createRuntime() {
     connectionUsage: new Map(),
     connectionUsageMax: 0,
     customPaletteStops: null,
+    // Eased haze state, so a single percussive frame cannot make the whole
+    // atmosphere jump hue.
+    hazeHue: 0.45,
+    hazeEnergy: 0.35,
     recording: null,
     lastRecordedWebmFilename: "",
     recordingAudioGraph: null,
@@ -543,6 +550,9 @@ export function createRuntime() {
     motionStrength,
     motionBlur,
     rotationSpeed,
+    renderStyle,
+    sceneHaze,
+    hazeDrift,
     visualPreset,
     observatoryOverlay,
     cathedralOverlay,

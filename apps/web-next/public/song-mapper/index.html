@@ -598,6 +598,23 @@
               <button id="delete-custom-preset" class="btn" type="button">Delete Preset</button>
             </div>
 
+            <div class="control-group-title">Scene Style</div>
+            <label>
+              Render Style
+              <select id="render-style">
+                <option value="solid" selected>Solid Spheres</option>
+                <option value="xray">X-Ray</option>
+              </select>
+            </label>
+            <label>
+              Colour Haze
+              <input id="scene-haze" type="range" min="0" max="1" value="0" step="0.01" />
+            </label>
+            <label>
+              Haze Drift
+              <input id="haze-drift" type="range" min="0" max="2" value="1" step="0.05" />
+            </label>
+
             <div class="control-group-title">Glow &amp; Bloom</div>
             <label>
               Bloom

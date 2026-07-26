@@ -79,6 +79,9 @@ export function createRenderModule(runtime) {
     sectionArcs,
     motionStrength,
     rotationSpeed,
+    renderStyle,
+    sceneHaze,
+    hazeDrift,
     cameraPreset,
     observatoryOverlay,
     cathedralOverlay,
@@ -381,7 +384,17 @@ export function createRenderModule(runtime) {
         ctx.fillRect(0, 0, state.width, state.height);
         return;
     }
-    const preset = PRESET_BACKGROUND[visualPreset.value] || PRESET_BACKGROUND.cinematic;
+    const basePreset = PRESET_BACKGROUND[visualPreset.value] || PRESET_BACKGROUND.cinematic;
+    // X-ray reads as bright structure on a near-black plate, so the preset's
+    // aura and vignette are dimmed rather than replaced - the scene keeps its
+    // colour identity, it just stops competing with the outlines.
+    const preset = isXrayStyle()
+      ? {
+          core: basePreset.core.map((c) => Math.round(c * 0.3)),
+          aura: basePreset.aura.map((c) => Math.round(c * 0.28)),
+          vignette: basePreset.vignette.map((c) => Math.round(c * 0.35)),
+        }
+      : basePreset;
     const blur = Number(motionBlur.value);
     const veilAlpha = clamp(0.02 + blur * 0.07, 0.01, 0.12);
   
@@ -484,6 +497,96 @@ export function createRenderModule(runtime) {
     ctx.closePath();
     ctx.fillStyle = gradient;
     ctx.fill();
+  }
+
+  /** True when the scene should render as bright outlines rather than solids. */
+  function isXrayStyle() {
+    return (renderStyle?.value || "solid") === "xray";
+  }
+
+  // Haze anchor colours, cold to hot. Which one the haze sits on is decided by
+  // the music's spectral centroid, so a dark bass-heavy passage hazes deep blue
+  // and a bright one hazes amber. Reused each frame rather than reallocated.
+  const HAZE_ANCHORS = [
+    { r: 38, g: 86, b: 190 },
+    { r: 96, g: 72, b: 208 },
+    { r: 196, g: 74, b: 168 },
+    { r: 236, g: 126, b: 96 },
+    { r: 240, g: 196, b: 118 },
+  ];
+
+  /** Samples the haze ramp at t, so the hue slides continuously with centroid. */
+  function hazeColorAt(t) {
+    const scaled = clamp(t, 0, 1) * (HAZE_ANCHORS.length - 1);
+    const index = Math.min(HAZE_ANCHORS.length - 2, Math.floor(scaled));
+    return mixColor(HAZE_ANCHORS[index], HAZE_ANCHORS[index + 1], scaled - index);
+  }
+
+  /**
+   * Colour-shifting volumetric haze.
+   *
+   * A handful of very large, very soft radial gradients drifting across the
+   * stage. It is keyed to the music rather than being decoration: hue follows
+   * spectral centroid, density follows loudness, and the drift rate follows
+   * spectral flux, so the atmosphere of a quiet dark passage and a bright busy
+   * one genuinely differ.
+   *
+   * Drawn after the background and before the graph, so it reads as air the
+   * nodes sit inside rather than as a wash over the top of them.
+   */
+  function drawColorHaze(nowSec) {
+    const strength = Number(sceneHaze?.value || 0);
+    if (strength <= 0.001 || nodesOnly.checked) {
+      return;
+    }
+
+    const frame = state.map && player.src ? getInterpolatedFrameAtTime(player.currentTime) : null;
+    const centroid = clamp(Number(frame?.centroidN ?? 0.45), 0, 1);
+    const energy = clamp(Number(frame?.rmsN ?? 0.35), 0, 1);
+    const flux = clamp(Number(frame?.fluxN ?? 0.3), 0, 1);
+
+    // Colour eases toward its target so a single percussive frame cannot make
+    // the whole atmosphere jump hue.
+    state.hazeHue = lerp(state.hazeHue, centroid, 0.035);
+    state.hazeEnergy = lerp(state.hazeEnergy, energy, 0.06);
+
+    const drift = Number(hazeDrift?.value || 1) * (0.35 + flux * 0.9);
+    const blobs = state.renderQuality > 0.75 ? 5 : 3;
+    const maxDim = Math.max(state.width, state.height);
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+
+    for (let i = 0; i < blobs; i += 1) {
+      const phase = nowSec * drift * (0.05 + i * 0.017) + i * 2.1;
+      const x = state.width * (0.5 + Math.cos(phase) * (0.28 + i * 0.05));
+      const y = state.height * (0.5 + Math.sin(phase * 0.83 + i) * (0.24 + i * 0.04));
+      const radius = maxDim * (0.28 + i * 0.07);
+
+      // Each blob is offset along the ramp, so the haze is a gradient of
+      // related hues rather than one flat colour.
+      const color = hazeColorAt(state.hazeHue + (i - blobs * 0.5) * 0.06);
+      const alpha = clamp(strength * (0.055 + state.hazeEnergy * 0.09) * (1 - i * 0.11), 0.004, 0.2);
+
+      const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+      gradient.addColorStop(0, rgba(color, alpha.toFixed(3)));
+      gradient.addColorStop(0.55, rgba(color, (alpha * 0.4).toFixed(3)));
+      gradient.addColorStop(1, rgba(color, 0));
+      ctx.fillStyle = gradient;
+      // Fill only the blob's own box. Filling the whole canvas per blob was
+      // five full-screen overdraws a frame for gradient stops that are
+      // transparent outside this rectangle anyway.
+      const left = Math.max(0, x - radius);
+      const top = Math.max(0, y - radius);
+      ctx.fillRect(
+        left,
+        top,
+        Math.min(state.width, x + radius) - left,
+        Math.min(state.height, y + radius) - top,
+      );
+    }
+
+    ctx.restore();
   }
 
   function drawTrail(nowSec) {
@@ -1951,10 +2054,57 @@ export function createRenderModule(runtime) {
     const motionNorm = clamp(motion / 3, 0, 1);
     const bg = PRESET_BACKGROUND[visualPreset.value] || PRESET_BACKGROUND.cinematic;
     const atmosphereColor = { r: bg.aura[0], g: bg.aura[1], b: bg.aura[2] };
-  
+    const xray = isXrayStyle();
+
     ctx.save();
-    ctx.globalCompositeOperation = "source-over";
-  
+    // X-ray builds the image out of overlapping bright edges, so it composites
+    // additively: where structure stacks up behind structure it gets brighter,
+    // which is exactly the readability an x-ray buys you.
+    ctx.globalCompositeOperation = xray ? "lighter" : "source-over";
+
+    if (xray) {
+      for (const item of projected) {
+        const radius = Math.max(
+          0.6,
+          item.radius * (0.8 + item.activity * 0.3) * (1 + item.pulse * 0.35),
+        );
+        const alpha = clamp(
+          (0.06 + item.frame.rmsN * 0.34 + item.activity * 0.4) * pointAlpha * item.nearFade,
+          0.008,
+          0.95,
+        );
+
+        // Rim only. The interior stays empty so nodes behind remain visible,
+        // which is the whole point of the style.
+        ctx.strokeStyle = rgba(item.frame.color, alpha.toFixed(3));
+        ctx.lineWidth = Math.max(0.45, radius * (0.16 + solidness * 0.12));
+        ctx.beginPath();
+        ctx.arc(item.x, item.y, radius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        if (item.activity > 0.12 || item.pulse > 0.1) {
+          ctx.fillStyle = rgba(
+            mixColor(item.frame.color, { r: 255, g: 255, b: 255 }, 0.5),
+            clamp(alpha * 0.72, 0.02, 0.9).toFixed(3),
+          );
+          ctx.beginPath();
+          ctx.arc(item.x, item.y, Math.max(0.4, radius * 0.24), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      ctx.restore();
+      if (!cinemaMode.checked) {
+        return;
+      }
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const lensSourceXray = selectLensSource(projected, activeIndex);
+      drawLensArtifacts(lensSourceXray, nowSec, bloom, glowGain, pointAlpha * 0.6);
+      ctx.restore();
+      return;
+    }
+
     for (const item of projected) {
       const fogFactor = clamp(item.fog * fog, 0, 1);
       const darkMix = clamp(0.26 + fogFactor * 0.55 - solidness * 0.14, 0.16, 0.86);
@@ -2263,6 +2413,8 @@ export function createRenderModule(runtime) {
     computeViewSpacePoint,
     projectPoint3D,
     drawBackground,
+    drawColorHaze,
+    isXrayStyle,
     drawTrail,
     drawFlowParticles,
     drawEdges,

@@ -307,6 +307,21 @@ export const HELP_CONTENT = {
     what: "Name used when you save the current settings as a custom preset.",
     when: "Reusing an existing name overwrites that preset.",
   },
+  "render-style": {
+    title: "Render Style",
+    what: "Solid Spheres shades each node as a lit ball. X-Ray draws rim outlines only, composited additively on a darkened plate, so nodes behind other nodes stay visible and overlapping structure gets brighter.",
+    when: "Use X-Ray when the cloud is dense enough that solid nodes hide each other, or when you want to read the shape of the whole graph rather than individual points.",
+  },
+  "scene-haze": {
+    title: "Colour Haze",
+    what: "Adds a drifting volumetric haze between the background and the graph. It is keyed to the music, not decorative: hue follows spectral centroid, so dark bass-heavy passages haze deep blue and bright ones haze amber, and density follows loudness.",
+    when: "Raise it for atmosphere in captures and recordings, or to make the difference between sections visible as a change in the air rather than only in the nodes.",
+  },
+  "haze-drift": {
+    title: "Haze Drift",
+    what: "How quickly the haze moves. The base rate is also modulated by spectral flux, so busy passages stir the atmosphere more than sustained ones.",
+    when: "Lower it for a calm, almost static fog; raise it for restless movement under an energetic track.",
+  },
   "bloom-strength": {
     title: "Bloom",
     what: "Intensity of light bleeding out of bright areas.",

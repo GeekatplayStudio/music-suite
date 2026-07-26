@@ -354,6 +354,40 @@ def test_section_arcs_come_from_existing_similarity_data() -> None:
     assert "buildSectionLinks" in rebuild
 
 
+def test_scene_styles_exist_and_are_documented() -> None:
+    index = _read(INDEX)
+    help_js = _read(HELP_CONTENT)
+
+    for control in ("render-style", "scene-haze", "haze-drift"):
+        assert f'id="{control}"' in index, f"missing control {control}"
+        assert f'"{control}"' in help_js, f"missing help for {control}"
+
+    assert 'value="xray"' in index
+
+
+def test_haze_colour_is_driven_by_the_audio_not_by_the_clock_alone() -> None:
+    """A haze that only drifts on a timer is decoration. The point is that a
+    dark passage and a bright one look different."""
+    render = _read(RENDER_JS)
+    haze = render.split("function drawColorHaze")[1].split("function drawTrail")[0]
+
+    assert "centroidN" in haze, "hue must follow spectral centroid"
+    assert "rmsN" in haze, "density must follow loudness"
+    assert "fluxN" in haze, "drift must follow spectral flux"
+    # Eased, or one percussive frame would jump the whole atmosphere.
+    assert "state.hazeHue = lerp" in haze
+    # And it must respect the clean-view escape hatch.
+    assert "nodesOnly.checked" in haze
+
+
+def test_xray_style_composites_additively_so_depth_stays_readable() -> None:
+    render = _read(RENDER_JS)
+    assert "function isXrayStyle" in render
+    assert 'renderStyle?.value || "solid") === "xray"' in render
+    # Additive compositing is what makes stacked structure brighten.
+    assert 'ctx.globalCompositeOperation = xray ? "lighter" : "source-over"' in render
+
+
 def test_style_panel_exists_and_probes_the_local_model_on_load() -> None:
     """The panel should say up front whether a model is available, rather than
     discovering it at the moment the user presses the button."""
