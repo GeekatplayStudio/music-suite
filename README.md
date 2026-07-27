@@ -30,7 +30,7 @@ The former **AudioQI Analyzer** and **Sonic Visual AI** projects now share one c
 | | |
 |---|---|
 | 🎚️ **Measure** | Loudness (LUFS), true peak, crest, LRA, stereo correlation, phase, spectrum, and four spectrogram types |
-| 🤖 **Master** | Internal, FFmpeg, Pedalboard, and Matchering paths with marker-aware refinement and rollback |
+| 🤖 **Master** | Internal, FFmpeg, Pedalboard, and Matchering paths with per-stage progress, marker-aware refinement, and a regression guard that refuses passes which add glare |
 | 🌈 **Visualize** | 60 FPS Spectrum, Orbit, and Waveform modes driven by the Web Audio analyser |
 | 🪐 **Map** | Full-song 3D geometry with tempo and key estimation, structural repeat detection, per-node inspection, presets, overlays, and exports |
 | 🧠 **Describe** | Local Ollama model writes the track's style, always shown beside the description derived from the measurements |
@@ -68,11 +68,17 @@ Every suggestion states its reasoning, and the source-aware preflight explains w
 
 <img src="docs/images/mastering.png" alt="AI Mastering panel with suggested settings, manual EQ, and file intelligence" width="100%">
 
+Mastering reports every step it starts — high-pass, spectral tilt, de-essing, compression, limiting, then each refinement pass — along with how long the current step has been running. A stage that legitimately takes two minutes is otherwise indistinguishable from a hung one.
+
+The refinement loop will not accept a pass that trades one problem for another: a candidate that materially increases harshness, clipping, true-peak risk, or mono incompatibility is refused however much its aggregate score improves.
+
 ### Actionable remastering notes
 
 Findings are ranked by severity and tied to concrete time windows rather than generic advice.
 
 <img src="docs/images/markers.png" alt="Remastering recommendations and markers near the playhead" width="100%">
+
+> **Reading band-ratio markers.** `harshness_band` and `sub_bass_heavy` are both measured as a share of total energy, so they compete: correcting a bass-heavy master raises the 3–9 kHz *share* even when its absolute energy is unchanged. A master that cuts `sub_bass_heavy` sharply can therefore show more `harshness_band` windows without having gained any actual glare. Compare the self-check's before/after counts as a set rather than judging one marker type alone.
 
 ### Song geometry you can read
 

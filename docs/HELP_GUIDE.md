@@ -90,6 +90,39 @@ Important behavior:
 - `source-aware adaptation`: preflight parameter changes applied before the main mastering render
 - `recommended backend/refine passes`: analyzer-provided safer starting point for the current source
 
+A pass is accepted only if it improves the weighted marker load **and** does not
+materially worsen `harshness_band`, `clipping`, `true_peak_risk`, or
+`mono_incompatibility`. Those four are refused regardless of aggregate score,
+because added glare or clipping cannot be recovered downstream. A high rollback
+count therefore means no safe improvement was available, not that nothing was
+tried.
+
+## 5b) Mastering Progress Stages
+
+Mastering reports the step it is starting, so a long job is legible rather than
+a single frozen percentage. State also carries `started_at` and
+`stage_started_at` so the UI can show how long the *current* step has run.
+
+| Stage | Meaning |
+| --- | --- |
+| `load_source` | Decoding source audio |
+| `profile_source` | Measuring loudness, dynamics, spectral balance |
+| `adapt_settings` | Adapting the chain to this material |
+| `*_highpass` | Filtering sub-sonic rumble below 24 Hz |
+| `*_tilt` | Spectral tilt and tonal balance |
+| `*_deess` | De-essing sibilance |
+| `*_compress` | Broadband compression |
+| `*_limit` | Normalising to loudness and true-peak targets |
+| `refine_pass_N` | Marker-aware corrective pass N |
+| `rollback` | Last pass was not an improvement and was discarded |
+| `stem_fallback` | Stem-rescue pass |
+| `self_check` | Re-measuring the finished master |
+
+The chain prefix names which pass is running: `chain_*` for a single master,
+`variantN_*` while evaluating optimizer variant N in `v2`, and `stem_bass_*`
+and friends while processing stems in `v3`. Limiting is normally the longest
+single stage.
+
 ## 6) Marker Categories
 
 - `clipping`: hard clip segments
@@ -98,6 +131,12 @@ Important behavior:
 - `harshness_band`: persistent 3k-9k energy spikes
 - `sub_bass_heavy`: excessive 20-80 energy share
 - `mono_incompatibility`: negative stereo correlation regions
+
+`harshness_band` and `sub_bass_heavy` are **shares of total energy**, so they
+compete: reducing dominant sub-bass lowers total energy and therefore raises the
+3–9 kHz share even when the absolute 3–9 kHz content has not changed. Judge a
+master by the self-check's `resolved` / `improved` / `worsened` sets together,
+not by one marker type in isolation.
 
 ## 7) Timeline Selection and Marker Review
 
@@ -173,11 +212,22 @@ The Session tab describes the track's style from its measured features.
   - long mel spectrogram work can legitimately take time
   - the frontend warning is advisory; the backend loop guard is the actual stall detector
   - if a fresh run still stays pinned on `Computing mel spectrogram.` for several minutes, capture the new run id before using `Hard Reset`
+- `Mastering looks stuck on one percentage`:
+  - it is almost certainly still working. Mastering reports each step it starts and how long that step has been running, so check whether the in-stage timer is advancing before assuming a hang
+  - the limiting step (`Normalising to loudness and true-peak targets`) is the longest single stage — on the order of 20 s per minute of audio — so on a full-length track it holds one percentage for a while
+  - `v2` runs the whole chain once per optimizer variant, so its total time scales with `Optimizer Variants`
+  - a genuinely hung job stops updating `stage_started_at`; the loop guard in `GET /runs/{id}/mastering` is the authority, not the bar
 - `Mastering unchanged`:
   - inspect `Source-Aware Adaptation` and `Post-Master Self-Check` together
-  - increase `Refine Passes`
+  - increase `Refine Passes` — the default of 1 applies the marker-aware correction only once, and harshness and sub-bass corrections benefit from iterating
   - move from `v1` to `v2` or `v3`
   - review remaining markers and apply mix-level fixes
+  - passes that materially increase harshness, clipping, true-peak risk, or mono incompatibility are refused outright, so a run that reports several rollbacks may simply have found no safe improvement to make
+- `More harshness_band markers after mastering than before`:
+  - check the absolute change, not just the count. `harshness_band` (3–9 kHz) and `sub_bass_heavy` (20–80 Hz) are both measured as a share of **total** energy, so they compete arithmetically
+  - correcting a bass-heavy master reduces total energy, which raises the 3–9 kHz share even when the absolute 3–9 kHz content has not moved at all. A master that takes `sub_bass_heavy` from 71 windows to 2 will often show more `harshness_band` windows purely for this reason
+  - read the `Post-Master Self-Check` counts as a set: `resolved`, `improved` and `worsened` together describe the trade, where one marker type alone does not
+  - genuine added glare shows up as an increase in absolute 3–9 kHz energy, not only in the ratio
 - `matchering not used`:
   - install optional `pro` extras
   - provide valid `Reference Run ID`
