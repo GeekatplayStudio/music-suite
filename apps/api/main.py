@@ -91,6 +91,18 @@ MASTERING_STAGE_DETAILS: dict[str, str] = {
     "idle": "Idle.",
     "queued": "Queued for mastering.",
     "prepare": "Preparing mastering pipeline.",
+    "load_source": "Decoding source audio.",
+    "profile_source": "Measuring source loudness, dynamics, and spectral balance.",
+    "adapt_settings": "Adapting the chain to this source material.",
+    "backend_internal": "Applying internal mastering backend pass.",
+    # Chain sub-stages. Every pass through the mastering chain reports these,
+    # prefixed by which pass it is (chain / variantN / stem_bass / ...), so a
+    # long run names the filter that is actually running.
+    "chain_highpass": "Filtering sub-sonic rumble below 24 Hz.",
+    "chain_tilt": "Applying spectral tilt and tonal balance.",
+    "chain_deess": "De-essing sibilance.",
+    "chain_compress": "Applying broadband compression.",
+    "chain_limit": "Normalising to loudness and true-peak targets.",
     "process": "Applying mastering chain.",
     "backend_ffmpeg": "Applying ffmpeg mastering backend pass.",
     "backend_pedalboard": "Applying pedalboard mastering backend pass.",
@@ -200,11 +212,38 @@ def _analysis_stage_detail(stage: str | None) -> str:
     return f"{cleaned[:1].upper()}{cleaned[1:]}."
 
 
+# Chain sub-stages are emitted with a prefix naming which pass they belong to:
+# "chain_deess" for a single-pass master, "variant3_deess" while evaluating
+# optimizer variant 3, "stem_bass_deess" while processing the bass stem.
+CHAIN_STEP_LABELS: dict[str, str] = {
+    "highpass": "filtering sub-sonic rumble",
+    "tilt": "applying spectral tilt",
+    "deess": "de-essing sibilance",
+    "compress": "applying broadband compression",
+    "limit": "normalising to loudness and true-peak targets",
+}
+
+
 def _mastering_stage_detail(stage: str | None) -> str:
     if not stage:
         return "Mastering in progress."
     if stage in MASTERING_STAGE_DETAILS:
         return MASTERING_STAGE_DETAILS[stage]
+
+    # Resolve a prefixed chain step into a sentence that names both the pass
+    # and the filter, rather than falling through to "Variant3 deess."
+    step = stage.rsplit("_", 1)[-1]
+    if step in CHAIN_STEP_LABELS and "_" in stage:
+        prefix = stage[: -(len(step) + 1)]
+        action = CHAIN_STEP_LABELS[step]
+        if prefix == "chain":
+            return f"Mastering chain: {action}."
+        if prefix.startswith("variant"):
+            return f"Variant {prefix.removeprefix('variant')}: {action}."
+        if prefix.startswith("stem_"):
+            return f"{prefix.removeprefix('stem_').capitalize()} stem: {action}."
+        return f"{prefix.replace('_', ' ')}: {action}."
+
     cleaned = stage.replace("_", " ").strip()
     if not cleaned:
         return "Mastering in progress."
@@ -1186,6 +1225,7 @@ def _run_mastering_job(
         if not source_path.exists():
             raise RuntimeError(f"Source audio not found for mastering: {source_path}")
 
+        job_started_at = datetime.now(UTC).isoformat()
         write_mastering_state(
             run_dir,
             {
@@ -1197,10 +1237,20 @@ def _run_mastering_job(
                 "backend": backend,
                 "stage": "prepare",
                 "detail": _mastering_stage_detail("prepare"),
+                "started_at": job_started_at,
+                "stage_started_at": job_started_at,
             },
         )
 
+        # Only reset the stage clock when the stage actually changes, so the
+        # UI can tell how long the *current* step has been running rather than
+        # how long since the last write.
+        current_stage = {"name": "prepare", "since": job_started_at}
+
         def progress_callback(value: float, stage: str) -> None:
+            if stage != current_stage["name"]:
+                current_stage["name"] = stage
+                current_stage["since"] = datetime.now(UTC).isoformat()
             write_mastering_state(
                 run_dir,
                 {
@@ -1212,6 +1262,8 @@ def _run_mastering_job(
                     "backend": backend,
                     "stage": stage,
                     "detail": _mastering_stage_detail(stage),
+                    "started_at": job_started_at,
+                    "stage_started_at": current_stage["since"],
                 },
             )
 

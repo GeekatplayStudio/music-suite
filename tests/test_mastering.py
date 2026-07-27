@@ -187,3 +187,104 @@ def test_auto_backend_prefers_internal_over_ffmpeg(monkeypatch) -> None:
 
     assert resolved["selected"] == "internal"
     assert resolved["availability"]["ffmpeg"] is True
+
+
+def _profile(**counts: int) -> dict[str, object]:
+    """Minimal quality profile carrying only the marker counts under test."""
+    keys = (
+        "mono_incompatibility",
+        "harshness_band",
+        "sub_bass_heavy",
+        "loudness_dip",
+        "clipping",
+        "true_peak_risk",
+        "loudness_hot",
+        "loudness_quiet",
+        "crest_factor_dense",
+    )
+    marker_counts = {key: int(counts.get(key, 0)) for key in keys}
+    weights = {
+        "mono_incompatibility": 3,
+        "harshness_band": 2,
+        "sub_bass_heavy": 2,
+        "loudness_dip": 2,
+        "clipping": 3,
+        "true_peak_risk": 3,
+        "loudness_hot": 3,
+        "loudness_quiet": 2,
+        "crest_factor_dense": 2,
+    }
+    return {
+        "marker_counts": marker_counts,
+        "issue_score": sum(w for k, w in weights.items() if marker_counts[k] > 0),
+        "integrated_lufs": -14.0,
+        "true_peak_dbfs": -1.2,
+    }
+
+
+def test_marker_load_keeps_a_gradient_above_three_events() -> None:
+    """The load used to be weight * min(count, 3), which saturated at three.
+    Cutting sub-bass events from 71 to 3 then scored as zero improvement, so
+    the refinement loop had nothing to follow and reported no improvement on
+    passes that had in fact helped enormously."""
+    loads = [
+        mastering_module._profile_marker_load(_profile(sub_bass_heavy=n))
+        for n in (0, 3, 10, 38, 71)
+    ]
+    assert loads == sorted(loads), "marker load must be monotonic in the count"
+    assert len(set(loads)) == len(loads), "distinct counts must give distinct loads"
+
+    # Diminishing returns, stated per event: the first marker of a type must
+    # cost more than the seventy-first, so a mostly-clean master is defended
+    # harder than an already-bad one. This is what the min(count, 3) cap was
+    # reaching for before it flattened the curve entirely.
+    def load(n: int) -> float:
+        return mastering_module._profile_marker_load(_profile(sub_bass_heavy=n))
+
+    assert (load(1) - load(0)) > (load(71) - load(70))
+
+
+def test_a_pass_that_triples_harshness_is_rejected() -> None:
+    """Reproduces the real regression: a stem-rescue pass took harshness from
+    3 windows to 7 while removing one sub-bass window, and the saturating load
+    scored that as a two-point improvement, so it was accepted."""
+    before = _profile(harshness_band=3, sub_bass_heavy=3, loudness_dip=1)
+    after = _profile(harshness_band=7, sub_bass_heavy=2, loudness_dip=1)
+
+    assert mastering_module._marker_regression(before, after) == "harshness_band"
+    assert not mastering_module._is_profile_better(
+        before=before, after=after, cfg=PRESETS["streaming"]
+    )
+
+
+def test_a_genuine_improvement_is_still_accepted() -> None:
+    """The guard must not make the optimiser refuse real progress."""
+    before = _profile(harshness_band=3, sub_bass_heavy=38, loudness_dip=1, mono_incompatibility=1)
+    after = _profile(harshness_band=3, sub_bass_heavy=3, loudness_dip=1)
+
+    assert mastering_module._marker_regression(before, after) is None
+    assert mastering_module._is_profile_better(
+        before=before, after=after, cfg=PRESETS["streaming"]
+    )
+
+
+def test_one_extra_marker_window_is_tolerated_as_jitter() -> None:
+    """Band-ratio markers sit on a 0.5 s grid, so a single extra window is
+    measurement noise rather than a real regression."""
+    before = _profile(harshness_band=4, sub_bass_heavy=9)
+    after = _profile(harshness_band=5, sub_bass_heavy=3)
+
+    assert mastering_module._marker_regression(before, after) is None
+    assert mastering_module._is_profile_better(
+        before=before, after=after, cfg=PRESETS["streaming"]
+    )
+
+
+def test_clipping_and_true_peak_regressions_are_refused_outright() -> None:
+    for marker in ("clipping", "true_peak_risk", "mono_incompatibility"):
+        before = _profile(sub_bass_heavy=20, **{marker: 0})
+        after = _profile(sub_bass_heavy=1, **{marker: 4})
+        assert mastering_module._marker_regression(before, after) == marker, marker
+        assert not mastering_module._is_profile_better(
+            before=before, after=after, cfg=PRESETS["streaming"]
+        ), marker

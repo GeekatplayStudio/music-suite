@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -196,6 +197,11 @@ def default_mastering_state() -> dict[str, Any]:
         "backend": "internal",
         "stage": "idle",
         "detail": "Idle.",
+        # When the job and the current stage began. A stage that legitimately
+        # takes two minutes is indistinguishable from a hung one without this,
+        # which is exactly how a silent chain pass got reported as "stuck".
+        "started_at": None,
+        "stage_started_at": None,
         "updated_at": _utc_now_iso(),
     }
 
@@ -332,9 +338,18 @@ def run_mastering(
         "reference_path": str(reference_path) if reference_path else None,
         "max_refine_passes": refine_passes,
     }
+    # Decode, profiling, and source adaptation all used to run before the first
+    # progress callback, so a long file spent that entire time on whatever state
+    # the API had written before queueing the job.
+    if progress:
+        progress(1.0, "load_source")
     audio, sr = _load_working_audio(source_path=source_path, run_dir=run_dir)
+    if progress:
+        progress(3.0, "profile_source")
     source_profile = _quality_profile(audio, sr=sr, cfg=working_cfg)
     source_metrics = _master_metrics(audio, sr=sr)
+    if progress:
+        progress(5.0, "adapt_settings")
     working_cfg, adaptation = _build_source_adaptive_config(
         cfg=working_cfg,
         source_profile=source_profile,
@@ -351,7 +366,18 @@ def run_mastering(
     if mode == "v1":
         if progress:
             progress(8.0, "prepare")
-        mastered = _apply_master_chain(audio, sr, working_cfg, normalize_to_targets=True)
+        # 8 -> 34 was previously one silent call. With the internal backend the
+        # 34% waypoint below is skipped too, so the UI had nothing at all
+        # between 8% and 65% - the reported "stuck at 8%".
+        mastered = _apply_master_chain(
+            audio,
+            sr,
+            working_cfg,
+            normalize_to_targets=True,
+            progress=progress,
+            start_progress=8.0,
+            end_progress=34.0,
+        )
         if resolved_backend["selected"] != "internal":
             if progress:
                 progress(34.0, f"backend_{resolved_backend['selected']}")
@@ -456,7 +482,20 @@ def run_mastering(
 
         for idx, cfg in enumerate(candidate_cfgs, start=1):
             stage = f"variant_{idx}"
-            mastered = _apply_master_chain(audio, sr, cfg, normalize_to_targets=True)
+            # Each variant is a full chain pass. Reporting inside it keeps the
+            # bar moving through what is otherwise the longest silent stretch
+            # of a v2 run, and names the variant being evaluated.
+            variant_span = 78.0 / max(variants, 1)
+            mastered = _apply_master_chain(
+                audio,
+                sr,
+                cfg,
+                normalize_to_targets=True,
+                progress=progress,
+                start_progress=10.0 + variant_span * (idx - 1),
+                end_progress=10.0 + variant_span * idx,
+                stage_prefix=f"variant{idx}",
+            )
             output_id = f"master_v2_variant_{idx}"
             output_path = out_dir / f"{output_id}.wav"
             _write_audio(output_path, mastered, sr)
@@ -602,9 +641,17 @@ def run_mastering(
         }
 
         stem_names = ["bass", "vocals", "drums", "other"]
+        stem_span = 46.0 / len(stem_names)
         for idx, name in enumerate(stem_names, start=1):
             processed[name] = _apply_master_chain(
-                stems[name], sr, stem_cfgs[name], normalize_to_targets=False
+                stems[name],
+                sr,
+                stem_cfgs[name],
+                normalize_to_targets=False,
+                progress=progress,
+                start_progress=8.0 + stem_span * (idx - 1),
+                end_progress=8.0 + stem_span * idx,
+                stage_prefix=f"stem_{name}",
             )
             stem_path = out_dir / f"stem_{name}.wav"
             _write_audio(stem_path, processed[name], sr)
@@ -924,12 +971,40 @@ def _apply_master_chain(
     sr: int,
     cfg: MasterPreset,
     normalize_to_targets: bool,
+    progress: MasteringProgressCallback | None = None,
+    start_progress: float = 0.0,
+    end_progress: float = 0.0,
+    stage_prefix: str = "chain",
 ) -> np.ndarray:
+    """
+    Runs the mastering chain, reporting each processing stage as it starts.
+
+    The chain used to be a single silent call. On a full-length track it is the
+    longest uninterrupted stretch of the whole job, so the UI sat on whatever
+    stage preceded it - "Preparing mastering pipeline" at 8% for v1 - and then
+    jumped straight to 65%. That reads as a hang, and there was no way to tell
+    which filter was actually running. Each step now reports before it starts.
+    """
+    steps = 5
+    span = max(0.0, end_progress - start_progress)
+    step_index = 0
+
+    def report(stage: str) -> None:
+        nonlocal step_index
+        if progress and span > 0:
+            progress(start_progress + span * (step_index / steps), f"{stage_prefix}_{stage}")
+        step_index += 1
+
     y = np.asarray(audio, dtype=np.float64)
+    report("highpass")
     y = _highpass(y, sr=sr, cutoff_hz=24.0)
+    report("tilt")
     y = _spectral_tilt(y, sr=sr, cfg=cfg)
+    report("deess")
     y = _deesser(y, sr=sr, strength=cfg.deess_strength)
+    report("compress")
     y = _broadband_compression(y, sr=sr, threshold_db=cfg.comp_threshold_db, ratio=cfg.comp_ratio)
+    report("limit")
     if normalize_to_targets:
         y = _finalize_master(y, sr=sr, cfg=cfg)
     else:
@@ -1439,6 +1514,12 @@ def _apply_stem_rescue_fallback(
 
 
 def _is_profile_better(before: dict[str, Any], after: dict[str, Any], cfg: MasterPreset) -> bool:
+    # Reject candidates that introduce glare, clipping, or phase problems even
+    # when the aggregate looks better. Checked before anything else so no later
+    # comparison can outvote it.
+    if _marker_regression(before, after) is not None:
+        return False
+
     before_score = int(before.get("issue_score", 0))
     after_score = int(after.get("issue_score", 0))
     if after_score < before_score:
@@ -1499,27 +1580,77 @@ def _profile_objective_distance(profile: dict[str, Any], cfg: MasterPreset) -> f
     return float(lufs_penalty + tp_penalty + marker_load * 2.0)
 
 
+MARKER_WEIGHTS: dict[str, float] = {
+    "mono_incompatibility": 3.0,
+    "harshness_band": 2.0,
+    "sub_bass_heavy": 2.0,
+    "loudness_dip": 2.0,
+    "clipping": 3.0,
+    "true_peak_risk": 3.0,
+    "loudness_hot": 3.0,
+    "loudness_quiet": 2.0,
+    "crest_factor_dense": 2.0,
+}
+
+# Markers the chain must never make materially worse. Adding harshness or
+# sibilance while fixing something else is not a trade worth making: a listener
+# notices new 3-9 kHz glare immediately, and it cannot be undone downstream.
+MARKER_NEVER_WORSEN = frozenset(
+    {"harshness_band", "clipping", "true_peak_risk", "mono_incompatibility"}
+)
+
+
 def _profile_marker_load(profile: dict[str, Any]) -> float:
+    """
+    Weighted marker load, monotonic in the actual counts.
+
+    This used to be `weight * min(count, 3)`, which saturated at three markers
+    of any one type. That made the optimiser blind above the cap in both
+    directions: cutting sub-bass events from 71 to 3 scored as zero
+    improvement, and letting harshness rise from 3 to 7 cost nothing. The
+    refinement loop therefore had no gradient to follow, reported "no
+    improvement detected" on passes that had in fact helped a great deal, and
+    accepted a stem-rescue pass that tripled harshness in exchange for one
+    sub-bass event, because only the sub-bass change was below the cap and
+    therefore visible.
+
+    The square root keeps the diminishing returns that the cap was reaching
+    for - the difference between 40 and 70 events should matter less than the
+    difference between 0 and 3 - while staying strictly increasing, so every
+    real change moves the score.
+    """
     counts = profile.get("marker_counts", {})
     if not isinstance(counts, dict):
         return 0.0
-    weights = {
-        "mono_incompatibility": 3.0,
-        "harshness_band": 2.0,
-        "sub_bass_heavy": 2.0,
-        "loudness_dip": 2.0,
-        "clipping": 3.0,
-        "true_peak_risk": 3.0,
-        "loudness_hot": 3.0,
-        "loudness_quiet": 2.0,
-        "crest_factor_dense": 2.0,
-    }
+
     total = 0.0
-    for key, weight in weights.items():
+    for key, weight in MARKER_WEIGHTS.items():
         raw = counts.get(key, 0)
         count = int(raw) if isinstance(raw, (int, float)) else 0
-        total += weight * min(count, 3)
+        if count > 0:
+            total += weight * math.sqrt(count)
     return total
+
+
+def _marker_regression(before: dict[str, Any], after: dict[str, Any]) -> str | None:
+    """
+    Names the first marker type that a candidate makes materially worse.
+
+    A better aggregate score is not sufficient on its own. Without this guard a
+    pass can buy a small win in one band by introducing a large regression in
+    another, which is how the mastered output ended up with seven harshness
+    windows where the source had one.
+    """
+    before_counts = before.get("marker_counts", {}) or {}
+    after_counts = after.get("marker_counts", {}) or {}
+
+    for key in MARKER_NEVER_WORSEN:
+        was = int(before_counts.get(key, 0) or 0)
+        now = int(after_counts.get(key, 0) or 0)
+        # Allow a single extra window as measurement jitter; reject real growth.
+        if now > was + 1 and now > was * 1.25:
+            return key
+    return None
 
 
 def _event_list(marker_events: dict[str, Any], key: str) -> list[dict[str, Any]]:
@@ -1837,25 +1968,50 @@ def _bandpass(
 
 
 def _spectral_tilt(audio: np.ndarray, sr: int, cfg: MasterPreset) -> np.ndarray:
+    """
+    Corrects tonal balance without manufacturing glare.
+
+    The previous version measured one aggregate "high" ratio across 4-20 kHz
+    and corrected it with a single shelf opened at 4.2 kHz. Those two bands do
+    not match, and the mismatch is not cosmetic: a track with strong 4-9 kHz
+    content but little above 10 kHz reads as *lacking* highs in the aggregate,
+    so the shelf boosted everything above 4.2 kHz - dumping gain straight into
+    the 3-9 kHz harshness band to compensate for missing air. On a resonant
+    source that single stage created eight harshness windows out of nothing,
+    and nothing downstream could take them back: the de-esser only works from
+    5.6 kHz up and only on the loudest decile.
+
+    Boost and cut are now treated asymmetrically, because they carry different
+    risk. A cut across the whole top end is safe, so it is still applied
+    broadly. A boost is only ever applied to air above 9 kHz, which adds
+    openness without glare, and is withheld entirely when the 3-9 kHz band is
+    already hot.
+    """
     mono = np.mean(audio, axis=1).astype(np.float32)
     balance = spectral_balance(mono, sr=sr)
     low = float(balance.get("sub_20_60", 0.0) + balance.get("bass_60_250", 0.0))
-    high = float(
-        balance.get("presence_4k_6k", 0.0)
-        + balance.get("sibilance_6k_10k", 0.0)
-        + balance.get("air_10k_20k", 0.0)
-    )
+    presence = float(balance.get("presence_4k_6k", 0.0) + balance.get("sibilance_6k_10k", 0.0))
+    high = float(presence + balance.get("air_10k_20k", 0.0))
 
     low_gain_db = float(np.clip((cfg.low_target_ratio - low) * 10.0, -1.5, 1.5))
     high_gain_db = float(np.clip((cfg.high_target_ratio - high) * 10.0, -1.5, 1.5))
 
     low_band = _lowpass(audio, sr=sr, cutoff_hz=220.0)
-    high_band = _highpass(audio, sr=sr, cutoff_hz=4200.0)
-    y = (
-        audio
-        + low_band * (_db_to_linear(low_gain_db) - 1.0)
-        + high_band * (_db_to_linear(high_gain_db) - 1.0)
-    )
+    y = audio + low_band * (_db_to_linear(low_gain_db) - 1.0)
+
+    if high_gain_db <= 0.0:
+        # Cutting the top end cannot create harshness, so keep the broad shelf.
+        high_band = _highpass(audio, sr=sr, cutoff_hz=4200.0)
+        y = y + high_band * (_db_to_linear(high_gain_db) - 1.0)
+    else:
+        # Two thirds of the aggregate high window is presence and sibilance. If
+        # that region already carries more than its share, the track is not
+        # dull, it is uneven, and lifting it further is the wrong correction.
+        presence_share = presence / max(high, EPS)
+        if presence_share < 0.72:
+            air_band = _highpass(audio, sr=sr, cutoff_hz=9000.0)
+            y = y + air_band * (_db_to_linear(high_gain_db) - 1.0)
+
     return np.clip(y, -1.5, 1.5)
 
 
