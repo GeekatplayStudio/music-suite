@@ -9,6 +9,14 @@ $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 Push-Location $root
 
+function Install-WithWinget([string]$Id, [string]$FriendlyName) {
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        throw "$FriendlyName is missing and winget is not available to install it. Install $FriendlyName manually."
+    }
+    Write-Host "Installing $FriendlyName via winget..."
+    & winget install --id $Id -e --source winget --accept-package-agreements --accept-source-agreements
+}
+
 function Find-SystemPython {
     $python = Get-Command python -ErrorAction SilentlyContinue
     if ($python) {
@@ -20,7 +28,14 @@ function Find-SystemPython {
         return [PSCustomObject]@{ Executable = $launcher.Source; PrefixArgs = @("-3") }
     }
 
-    throw "Python 3.11 or newer was not found on PATH."
+    Install-WithWinget "Python.Python.3.11" "Python 3.11"
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if ($python) {
+        return [PSCustomObject]@{ Executable = $python.Source; PrefixArgs = @() }
+    }
+    throw "Python was installed but is not yet on PATH. Close this window, reopen a terminal, and re-run install.bat."
 }
 
 function Find-ComfyPython([string]$Path) {
@@ -37,6 +52,22 @@ function Find-ComfyPython([string]$Path) {
 
 try {
     Write-Host "== Music Suite unified installer ==" -ForegroundColor Cyan
+    Write-Host "This will install Python, FFmpeg, and Node.js if they are missing." -ForegroundColor Cyan
+
+    if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+        Install-WithWinget "Gyan.FFmpeg" "FFmpeg"
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+    }
+
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        Install-WithWinget "OpenJS.NodeJS.LTS" "Node.js"
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+    }
+
+    if (-not (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) -and (Get-Command corepack -ErrorAction SilentlyContinue)) {
+        Write-Host "Enabling pnpm via corepack..."
+        & corepack enable
+    }
 
     $venvPython = Join-Path $root ".venv\Scripts\python.exe"
     if (-not (Test-Path -LiteralPath $venvPython)) {

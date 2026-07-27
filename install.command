@@ -5,14 +5,43 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
 echo "Geekatplay Studio Music Suite - Installer"
+echo "This will install Homebrew, Python, FFmpeg, and Node.js if they are missing."
+echo
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "Python 3.11 or newer is required. Install it from https://python.org/"
-  exit 1
+# --- Homebrew (package manager for everything below) ---
+if ! command -v brew >/dev/null 2>&1; then
+  echo "Homebrew not found. Installing Homebrew..."
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  if [[ -x "/opt/homebrew/bin/brew" ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [[ -x "/usr/local/bin/brew" ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
 fi
+
+# --- Python 3.11+ ---
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "Python not found. Installing Python via Homebrew..."
+  brew install python@3.11
+  brew link --overwrite python@3.11 || true
+fi
+
+# --- FFmpeg / ffprobe ---
 if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
-  echo "FFmpeg and ffprobe are required. Install them with: brew install ffmpeg"
-  exit 1
+  echo "FFmpeg not found. Installing FFmpeg via Homebrew..."
+  brew install ffmpeg
+fi
+
+# --- Node.js (needed for pnpm/npm below) ---
+if ! command -v node >/dev/null 2>&1; then
+  echo "Node.js not found. Installing Node.js via Homebrew..."
+  brew install node
+fi
+
+# --- pnpm ---
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "pnpm not found. Installing pnpm via corepack..."
+  corepack enable 2>/dev/null || npm install -g pnpm
 fi
 
 if [[ ! -x ".venv/bin/python" ]]; then
