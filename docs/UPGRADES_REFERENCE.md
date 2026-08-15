@@ -93,11 +93,16 @@ If `pyebur128` is installed, EBU R128 fields are appended to mastering metrics/p
 - `backend` = `auto|internal|ffmpeg|pedalboard|matchering`
 - `reference_run_id` (optional; used for matchering workflows)
 - `max_refine_passes` (1..5)
+- `input_gain_db` (-12..+12; applied to the source before profiling and adaptation)
+- `bass_mono_hz` (0 = off, else 40..250; omit to keep the preset default)
+- `stereo_width` (0.5..1.5, 1.0 = unchanged; omit to keep the preset default)
 
 Validation:
 
 - Invalid backend returns `400`.
 - Missing reference run for `reference_run_id` returns `404`.
+- `input_gain_db` outside -12..+12 returns `422`.
+- `bass_mono_hz` above 250 or `stereo_width` outside 0.5..1.5 returns `422`.
 
 ## UI Additions
 

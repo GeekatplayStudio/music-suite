@@ -146,6 +146,7 @@ export interface MasteringManifest {
   target_true_peak_dbfs: number;
   request_settings?: Record<string, unknown>;
   applied_settings?: Record<string, unknown>;
+  input_gain?: Record<string, unknown>;
   best_output_id?: string;
   outputs: MasteringOutput[];
   adaptation?: Record<string, unknown>;

@@ -292,6 +292,15 @@ const FORMAT_OPTIONS = ["mp3", "wav", "flac", "aac", "ogg", "m4a"] as const;
 const MASTER_MODES = ["v1", "v2", "v3"] as const;
 const MASTER_PRESETS = ["streaming", "club", "film", "voice"] as const;
 const MASTER_BACKENDS = ["auto", "internal", "ffmpeg", "pedalboard", "matchering"] as const;
+// "" keeps whatever the preset (and the adaptive preflight) decides; "0" turns bass mono off.
+const BASS_MONO_OPTIONS = [
+  { value: "", label: "Preset default" },
+  { value: "0", label: "Off" },
+  { value: "80", label: "80 Hz" },
+  { value: "100", label: "100 Hz" },
+  { value: "120", label: "120 Hz" },
+  { value: "150", label: "150 Hz" }
+] as const;
 const ANALYSIS_STALE_WARNING_SECONDS = 300;
 const NORMALIZATION_PROFILE_OPTIONS = [
   {
@@ -784,6 +793,9 @@ export default function HomePage() {
   const [masterReferenceRunId, setMasterReferenceRunId] = useState("");
   const [masterTargetLufsInput, setMasterTargetLufsInput] = useState("-14");
   const [masterTruePeakDbfsInput, setMasterTruePeakDbfsInput] = useState("-1");
+  const [masterInputGainDbInput, setMasterInputGainDbInput] = useState("0");
+  const [masterBassMonoHz, setMasterBassMonoHz] = useState("");
+  const [masterStereoWidthInput, setMasterStereoWidthInput] = useState("");
   const [optimizerVariants, setOptimizerVariants] = useState(4);
   const [maxRefinePasses, setMaxRefinePasses] = useState(2);
   const [statusMessage, setStatusMessage] = useState("Pick an audio file to begin.");
@@ -1709,6 +1721,12 @@ export default function HomePage() {
       const targetLufs =
         parsedTargetLufs === null ? null : Math.max(-30, Math.min(-6, parsedTargetLufs));
       const truePeak = parsedTruePeak === null ? null : Math.max(-6, Math.min(0, parsedTruePeak));
+      const parsedInputGain = parseOptionalNumberInput(masterInputGainDbInput);
+      const inputGainDb = parsedInputGain === null ? 0 : Math.max(-12, Math.min(12, parsedInputGain));
+      const bassMonoHz = masterBassMonoHz === "" ? null : Number(masterBassMonoHz);
+      const parsedStereoWidth = parseOptionalNumberInput(masterStereoWidthInput);
+      const stereoWidth =
+        parsedStereoWidth === null ? null : Math.max(0.5, Math.min(1.5, parsedStereoWidth));
       await runMastering(
         selectedRunId,
         masterMode,
@@ -1719,7 +1737,10 @@ export default function HomePage() {
         normalizationProfile,
         masterBackend,
         masterReferenceRunId.trim() || null,
-        Math.max(1, Math.min(5, maxRefinePasses))
+        Math.max(1, Math.min(5, maxRefinePasses)),
+        inputGainDb,
+        bassMonoHz,
+        stereoWidth
       );
       masteringPromptRequestsRef.current.set(selectedRunId, {
         requestId: nextPromptRequestId("mastering", selectedRunId),
@@ -1728,7 +1749,7 @@ export default function HomePage() {
       });
       await refreshRunDetail(selectedRunId);
       setStatusMessage(
-        `Mastering queued (${masterMode.toUpperCase()}, ${masterPreset}, ${masterBackend}, norm: ${normalizationProfile}).`
+        `Mastering queued (${masterMode.toUpperCase()}, ${masterPreset}, ${masterBackend}, norm: ${normalizationProfile}, input gain: ${inputGainDb >= 0 ? "+" : ""}${inputGainDb.toFixed(1)} dB).`
       );
     } catch (err) {
       masteringPromptRequestsRef.current.delete(selectedRunId);
@@ -1762,6 +1783,9 @@ export default function HomePage() {
       setNormalizationProfile("off");
       setMasterTargetLufsInput("-14");
       setMasterTruePeakDbfsInput("-1");
+      setMasterInputGainDbInput("0");
+      setMasterBassMonoHz("");
+      setMasterStereoWidthInput("");
       setPendingSaveOutputs([]);
       setSaveDialogOpen(false);
       conversionPromptRequestsRef.current.clear();
@@ -1841,6 +1865,13 @@ export default function HomePage() {
   const appliedTargetLufs = maybeNum(appliedSettings.target_lufs);
   const appliedTargetTruePeak = maybeNum(appliedSettings.target_true_peak_dbfs);
   const appliedNormalizationProfile = text(appliedSettings.normalization_profile, "off");
+  const appliedInputGainDb = maybeNum(appliedSettings.input_gain_db);
+  const appliedBassMonoHz = maybeNum(appliedSettings.bass_mono_hz);
+  const appliedStereoWidth = maybeNum(appliedSettings.stereo_width);
+  const inputGainInfo = asRecord(masteringInfo?.manifest?.input_gain);
+  const inputGainNotes = Array.isArray(inputGainInfo.notes)
+    ? inputGainInfo.notes.map((note) => text(note, "")).filter((note) => note.length > 0)
+    : [];
   const appliedMode = text(masteringInfo?.manifest?.mode, "").toLowerCase();
   const appliedPreset = text(masteringInfo?.manifest?.preset, "").toLowerCase();
   const bestOutputVerification = masteringOutputs.find((row) => row.id === bestMasterId);
@@ -1941,6 +1972,13 @@ export default function HomePage() {
   const selectedNormalizationProfile =
     NORMALIZATION_PROFILE_OPTIONS.find((profile) => profile.id === normalizationProfile) ??
     NORMALIZATION_PROFILE_OPTIONS[0];
+  const parsedMasterInputGain = parseOptionalNumberInput(masterInputGainDbInput);
+  const masterInputGainDb =
+    parsedMasterInputGain === null ? 0 : Math.max(-12, Math.min(12, parsedMasterInputGain));
+  const masterInputGainSummary =
+    masterInputGainDb === 0
+      ? "Unity (source level untouched)"
+      : `${masterInputGainDb > 0 ? "+" : ""}${masterInputGainDb.toFixed(1)} dB before the chain`;
   const integratedLufs = metricNumber(metrics, ["loudness", "integrated_lufs"], 0);
   const truePeakDbfs = metricNumber(metrics, ["dynamics", "true_peak_dbfs"], 0);
   const crestFactorDb = metricNumber(metrics, ["dynamics", "crest_factor_db"], 0);
@@ -2750,6 +2788,65 @@ export default function HomePage() {
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Input Gain (dB)</span>
+                    <Input
+                      type="number"
+                      step={0.5}
+                      min={-12}
+                      max={12}
+                      value={masterInputGainDbInput}
+                      onChange={(e) => setMasterInputGainDbInput(e.target.value)}
+                    />
+                  </label>
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Gain Staging</span>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 rounded-xl border border-border/70 bg-secondary/45 px-3 py-2 text-sm text-foreground">
+                        {masterInputGainSummary}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setMasterInputGainDbInput("0")}
+                        disabled={masterInputGainDb === 0}
+                      >
+                        Reset
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Bass Mono</span>
+                    <select
+                      value={masterBassMonoHz}
+                      onChange={(e) => setMasterBassMonoHz(e.target.value)}
+                      className="w-full rounded-xl border border-input bg-input px-3 py-2 text-sm text-foreground"
+                    >
+                      {BASS_MONO_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Stereo Width</span>
+                    <Input
+                      type="number"
+                      step={0.05}
+                      min={0.5}
+                      max={1.5}
+                      placeholder="preset default (1.0)"
+                      value={masterStereoWidthInput}
+                      onChange={(e) => setMasterStereoWidthInput(e.target.value)}
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1 text-xs text-muted-foreground">
                     <span className="font-medium text-foreground">V2 Variants</span>
                     <Input
                       type="number"
@@ -2774,7 +2871,11 @@ export default function HomePage() {
 
                 <p className="text-[11px] text-muted-foreground">
                   Backend notes: `internal` is the safest default, `auto` is for advanced backend selection, and `matchering`
-                  requires a valid Reference Run ID. Refine Passes are loop-guarded. Normalization profile sets
+                  requires a valid Reference Run ID. Input Gain (-12..+12 dB) trims the source before profiling,
+                  adaptation, and every backend pass, so it changes how the chain hears the mix. Bass Mono
+                  collapses out-of-phase side energy below the cutoff (the mid is untouched) and Stereo Width
+                  scales the side channel; leaving both on preset default lets the preflight tighten them when
+                  mono-compatibility markers fire. Refine Passes are loop-guarded. Normalization profile sets
                   platform targets; manual LUFS/TP values override profile defaults. Source-aware adaptation can
                   trim harshness, sub energy, density, or true-peak risk before the main master renders.
                 </p>
@@ -2877,8 +2978,28 @@ export default function HomePage() {
                     {appliedTargetLufs !== null ? `${appliedTargetLufs.toFixed(1)} LUFS` : "N/A"}{" "}
                     | TP{" "}
                     {appliedTargetTruePeak !== null ? `${appliedTargetTruePeak.toFixed(1)} dBFS` : "N/A"} | Norm{" "}
-                    {appliedNormalizationProfile}
+                    {appliedNormalizationProfile} | Input gain{" "}
+                    {appliedInputGainDb !== null
+                      ? `${appliedInputGainDb > 0 ? "+" : ""}${appliedInputGainDb.toFixed(1)} dB`
+                      : "0.0 dB"}
                   </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Stereo stage: bass mono{" "}
+                    {appliedBassMonoHz !== null
+                      ? appliedBassMonoHz > 0
+                        ? `${appliedBassMonoHz.toFixed(0)} Hz`
+                        : "off"
+                      : "N/A"}{" "}
+                    | width{" "}
+                    {appliedStereoWidth !== null ? appliedStereoWidth.toFixed(2) : "N/A"}
+                  </p>
+                  {inputGainNotes.length > 0 ? (
+                    <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-muted-foreground">
+                      {inputGainNotes.map((note) => (
+                        <li key={note}>{note}</li>
+                      ))}
+                    </ul>
+                  ) : null}
                   <p className="mt-1 text-xs text-muted-foreground">
                     AI recommendation match: mode {aiModeMatch === null ? "N/A" : aiModeMatch ? "yes" : "no"} | preset{" "}
                     {aiPresetMatch === null ? "N/A" : aiPresetMatch ? "yes" : "no"} | target{" "}
