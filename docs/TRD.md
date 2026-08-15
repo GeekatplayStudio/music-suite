@@ -173,10 +173,26 @@
   - `internal`, `auto`, `ffmpeg`, `pedalboard`, `matchering`.
   - `internal` is the default deterministic path; `auto` remains available for explicit advanced backend selection.
   - runtime availability detection + graceful fallback.
+- Input gain staging:
+  - `input_gain_db` (-12..+12, clamped) is applied to the decoded source before profiling and adaptation,
+  - so source metrics, adaptive preflight, and every backend pass see the staged level,
+  - manifest records requested/applied gain, source peak before/after, and headroom notes.
+- Stereo stage (bass mono + width):
+  - runs once per render, right after the 24 Hz highpass (v3 applies it to the recombined mix, not per stem),
+  - `bass_mono_hz` (0 = off, 40..250) subtracts the low band from the side channel only, so the mid is untouched,
+  - `stereo_width` (0.5..1.5, 1.0 = unchanged) scales the side channel,
+  - preset defaults: streaming 110 Hz, club 120 Hz, film 80 Hz, voice 120 Hz, all at width 1.0,
+  - the adaptive preflight may only *tighten* these when `mono_incompatibility` markers fire,
+  - an explicitly requested value is locked: the preflight records the skip in `adaptation.locked_skipped`
+    instead of overriding it,
+  - complements the pre-existing marker-local `_apply_mono_compat_fix`, which stays segment-scoped
+    and refinement-gated.
 - API additions:
-  - `/runs/{id}/master` supports `backend`, `reference_run_id`, `max_refine_passes`.
+  - `/runs/{id}/master` supports `backend`, `reference_run_id`, `max_refine_passes`, `input_gain_db`,
+    `bass_mono_hz`, `stereo_width`.
 - Manifest additions:
-  - `adaptation`, `backend`, `refinement`, `pro_features`.
+  - `adaptation`, `backend`, `refinement`, `pro_features`, `input_gain`.
+  - `applied_settings` carries `bass_mono_hz` and `stereo_width`.
 
 ## 11.5 Spectrogram Resilience (Updated)
 

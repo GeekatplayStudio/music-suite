@@ -35,6 +35,15 @@ from audioqi.storage import read_json, write_json
 
 EPS = 1e-12
 
+INPUT_GAIN_MIN_DB = -12.0
+INPUT_GAIN_MAX_DB = 12.0
+
+# Bass mono accepts 0 (off) or a cutoff inside this window.
+BASS_MONO_MIN_HZ = 40.0
+BASS_MONO_MAX_HZ = 250.0
+STEREO_WIDTH_MIN = 0.5
+STEREO_WIDTH_MAX = 1.5
+
 SUPPORTED_MASTERING_MODES = ("v1", "v2", "v3")
 SUPPORTED_MASTERING_PRESETS = ("streaming", "club", "film", "voice")
 SUPPORTED_MASTERING_BACKENDS = (
@@ -121,6 +130,10 @@ class MasterPreset:
     high_target_ratio: float
     limiter_drive: float
     desired_crest_db: float
+    # Stereo stage. bass_mono_hz collapses side energy below the cutoff (0 = off);
+    # stereo_width scales the side channel (1.0 = untouched).
+    bass_mono_hz: float = 110.0
+    stereo_width: float = 1.0
 
 
 PRESETS: dict[str, MasterPreset] = {
@@ -135,6 +148,8 @@ PRESETS: dict[str, MasterPreset] = {
         high_target_ratio=0.23,
         limiter_drive=1.15,
         desired_crest_db=9.5,
+        bass_mono_hz=110.0,
+        stereo_width=1.0,
     ),
     "club": MasterPreset(
         name="club",
@@ -147,6 +162,9 @@ PRESETS: dict[str, MasterPreset] = {
         high_target_ratio=0.22,
         limiter_drive=1.35,
         desired_crest_db=7.5,
+        # Club rigs fold the sub to a single driver; keep it mono a bit higher.
+        bass_mono_hz=120.0,
+        stereo_width=1.0,
     ),
     "film": MasterPreset(
         name="film",
@@ -159,6 +177,9 @@ PRESETS: dict[str, MasterPreset] = {
         high_target_ratio=0.20,
         limiter_drive=1.05,
         desired_crest_db=12.0,
+        # Film mixes carry deliberate low-frequency width; collapse less of it.
+        bass_mono_hz=80.0,
+        stereo_width=1.0,
     ),
     "voice": MasterPreset(
         name="voice",
@@ -171,6 +192,8 @@ PRESETS: dict[str, MasterPreset] = {
         high_target_ratio=0.26,
         limiter_drive=1.1,
         desired_crest_db=8.8,
+        bass_mono_hz=120.0,
+        stereo_width=1.0,
     ),
 }
 
@@ -283,6 +306,82 @@ def parse_mastering_normalization_profile(profile: str | None) -> str | None:
     return None
 
 
+def clamp_bass_mono_hz(bass_mono_hz: float | None) -> float | None:
+    """Clamp the bass-mono cutoff to 0 (off) .. 250 Hz; None keeps the preset default."""
+    if bass_mono_hz is None:
+        return None
+    try:
+        value = float(bass_mono_hz)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value):
+        return None
+    if value <= 0.0:
+        return 0.0
+    return float(max(BASS_MONO_MIN_HZ, min(BASS_MONO_MAX_HZ, value)))
+
+
+def clamp_stereo_width(stereo_width: float | None) -> float | None:
+    """Clamp stereo width to 0.5 .. 1.5 (1.0 = untouched); None keeps the preset default."""
+    if stereo_width is None:
+        return None
+    try:
+        value = float(stereo_width)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value):
+        return None
+    return float(max(STEREO_WIDTH_MIN, min(STEREO_WIDTH_MAX, value)))
+
+
+def clamp_input_gain_db(input_gain_db: float | None) -> float:
+    """Clamp the requested input gain to the safe staging window (+/-12 dB)."""
+    if input_gain_db is None:
+        return 0.0
+    try:
+        value = float(input_gain_db)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(value):
+        return 0.0
+    return float(max(INPUT_GAIN_MIN_DB, min(INPUT_GAIN_MAX_DB, value)))
+
+
+def _apply_input_gain(
+    audio: np.ndarray, gain_db: float, requested_gain_db: float | None
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Trim the source level before profiling so the whole chain sees the staged mix."""
+    peak_before = _peak_dbfs(audio)
+    staged = audio if abs(gain_db) < 1e-6 else audio * _db_to_linear(gain_db)
+    peak_after = _peak_dbfs(staged)
+    notes: list[str] = []
+    requested = clamp_input_gain_db(requested_gain_db)
+    if requested_gain_db is not None and abs(requested - float(requested_gain_db or 0.0)) > 1e-6:
+        notes.append(
+            f"Requested input gain clamped to {gain_db:+.2f} dB "
+            f"(allowed range {INPUT_GAIN_MIN_DB:+.0f}..{INPUT_GAIN_MAX_DB:+.0f} dB)."
+        )
+    if peak_after > 0.0:
+        notes.append(
+            f"Input gain pushes the source peak to {peak_after:+.2f} dBFS; "
+            "the limiter will absorb it, but a lower gain keeps more headroom."
+        )
+    return staged, {
+        "requested_db": (None if requested_gain_db is None else float(requested_gain_db)),
+        "applied_db": gain_db,
+        "source_peak_dbfs_before": peak_before,
+        "source_peak_dbfs_after": peak_after,
+        "notes": notes,
+    }
+
+
+def _peak_dbfs(audio: np.ndarray) -> float:
+    peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+    if peak <= 1e-12:
+        return -120.0
+    return float(20.0 * math.log10(peak))
+
+
 def run_mastering(
     source_path: Path,
     run_dir: Path,
@@ -295,6 +394,9 @@ def run_mastering(
     backend: str = "auto",
     reference_path: Path | None = None,
     max_refine_passes: int = 3,
+    input_gain_db: float = 0.0,
+    bass_mono_hz: float | None = None,
+    stereo_width: float | None = None,
     progress: MasteringProgressCallback | None = None,
 ) -> dict[str, Any]:
     preset_cfg = PRESETS[preset]
@@ -323,8 +425,21 @@ def run_mastering(
             else preset_cfg.target_true_peak_dbfs
         ),
     )
+    requested_bass_mono_hz = clamp_bass_mono_hz(bass_mono_hz)
+    requested_stereo_width = clamp_stereo_width(stereo_width)
+    # An explicit stereo-stage request wins over the adaptive preflight; leaving
+    # a value unset hands that parameter to the preflight to tighten.
+    locked: set[str] = set()
+    if requested_bass_mono_hz is not None:
+        working_cfg = replace(working_cfg, bass_mono_hz=requested_bass_mono_hz)
+        locked.add("bass_mono_hz")
+    if requested_stereo_width is not None:
+        working_cfg = replace(working_cfg, stereo_width=requested_stereo_width)
+        locked.add("stereo_width")
+    stereo_locked_fields = frozenset(locked)
     variants = int(max(2, min(8, optimizer_variants)))
     refine_passes = int(max(1, min(5, max_refine_passes)))
+    applied_input_gain_db = clamp_input_gain_db(input_gain_db)
     resolved_backend = _resolve_mastering_backend(backend=backend, reference_path=reference_path)
 
     request_settings = {
@@ -337,6 +452,9 @@ def run_mastering(
         "backend": backend,
         "reference_path": str(reference_path) if reference_path else None,
         "max_refine_passes": refine_passes,
+        "input_gain_db": applied_input_gain_db,
+        "bass_mono_hz": requested_bass_mono_hz,
+        "stereo_width": requested_stereo_width,
     }
     # Decode, profiling, and source adaptation all used to run before the first
     # progress callback, so a long file spent that entire time on whatever state
@@ -344,6 +462,13 @@ def run_mastering(
     if progress:
         progress(1.0, "load_source")
     audio, sr = _load_working_audio(source_path=source_path, run_dir=run_dir)
+    if progress:
+        progress(2.0, "input_gain")
+    # Input gain is the very front of the chain: profiling, adaptation, and every
+    # backend downstream must see the staged level, not the raw file level.
+    audio, input_gain_info = _apply_input_gain(
+        audio, gain_db=applied_input_gain_db, requested_gain_db=input_gain_db
+    )
     if progress:
         progress(3.0, "profile_source")
     source_profile = _quality_profile(audio, sr=sr, cfg=working_cfg)
@@ -354,11 +479,13 @@ def run_mastering(
         cfg=working_cfg,
         source_profile=source_profile,
         source_metrics=source_metrics,
+        locked_fields=stereo_locked_fields,
     )
     applied_settings = _config_to_dict(working_cfg)
     applied_settings["normalization_profile"] = normalized_profile
     applied_settings["optimizer_variants"] = variants
     applied_settings["max_refine_passes"] = refine_passes
+    applied_settings["input_gain_db"] = applied_input_gain_db
     out_dir = mastering_output_dir(run_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     backend_notes: list[str] = []
@@ -451,6 +578,7 @@ def run_mastering(
             },
             "request_settings": request_settings,
             "applied_settings": applied_settings,
+            "input_gain": input_gain_info,
             "source_file": str(source_path),
             "source_filename": source_path.name,
             "outputs": outputs,
@@ -593,6 +721,7 @@ def run_mastering(
             },
             "request_settings": request_settings,
             "applied_settings": applied_settings,
+            "input_gain": input_gain_info,
             "source_file": str(source_path),
             "source_filename": source_path.name,
             "outputs": outputs,
@@ -652,6 +781,7 @@ def run_mastering(
                 start_progress=8.0 + stem_span * (idx - 1),
                 end_progress=8.0 + stem_span * idx,
                 stage_prefix=f"stem_{name}",
+                stereo_stage=False,
             )
             stem_path = out_dir / f"stem_{name}.wav"
             _write_audio(stem_path, processed[name], sr)
@@ -661,6 +791,7 @@ def run_mastering(
         recombined = (
             processed["bass"] + processed["vocals"] + processed["drums"] + processed["other"]
         )
+        recombined = _apply_stereo_stage(recombined, sr=sr, cfg=working_cfg)
         mastered = _finalize_master(recombined, sr, working_cfg)
 
         if resolved_backend["selected"] != "internal":
@@ -752,6 +883,7 @@ def run_mastering(
             },
             "request_settings": request_settings,
             "applied_settings": applied_settings,
+            "input_gain": input_gain_info,
             "source_file": str(source_path),
             "source_filename": source_path.name,
             "outputs": outputs,
@@ -800,9 +932,18 @@ def _build_source_adaptive_config(
     cfg: MasterPreset,
     source_profile: dict[str, Any],
     source_metrics: dict[str, Any],
+    locked_fields: frozenset[str] = frozenset(),
 ) -> tuple[MasterPreset, dict[str, Any]]:
+    """
+    Tightens preset parameters from the measured source profile.
+
+    `locked_fields` names parameters the caller set explicitly. Preflight leaves
+    those alone: a user who picks "bass mono off" must get bass mono off, even
+    when the source has fold-down markers that would otherwise raise it.
+    """
     adjusted = cfg
     adjustments: list[dict[str, Any]] = []
+    locked_skipped: list[str] = []
     marker_counts = source_profile.get("marker_counts", {})
     counts = marker_counts if isinstance(marker_counts, dict) else {}
     spectral = source_metrics.get("spectral_balance", {})
@@ -814,6 +955,10 @@ def _build_source_adaptive_config(
         before = float(getattr(adjusted, field))
         after = float(value)
         if abs(after - before) < 1e-6:
+            return
+        if field in locked_fields:
+            if field not in locked_skipped:
+                locked_skipped.append(field)
             return
         adjusted = replace(adjusted, **{field: after})
         adjustments.append(
@@ -874,6 +1019,18 @@ def _build_source_adaptive_config(
             max(1.0, adjusted.limiter_drive - 0.04),
             "Backed off limiter drive because mono-compatibility issues were detected.",
         )
+        # Adaptation only ever tightens the stereo stage, so an explicit user
+        # setting can be made safer here but never widened behind their back.
+        apply_change(
+            "bass_mono_hz",
+            min(160.0, max(adjusted.bass_mono_hz, 120.0 + 10.0 * min(mono_count, 3))),
+            "Raised the bass-mono cutoff because out-of-phase low end was detected.",
+        )
+        apply_change(
+            "stereo_width",
+            max(0.82, adjusted.stereo_width - 0.05 - 0.02 * min(mono_count, 3)),
+            "Narrowed stereo width because sections fold down badly to mono.",
+        )
 
     if dip_count > 0:
         apply_change(
@@ -923,6 +1080,8 @@ def _build_source_adaptive_config(
         "enabled": True,
         "adjustment_count": len(adjustments),
         "adjustments": adjustments,
+        "locked_fields": sorted(locked_fields),
+        "locked_skipped": locked_skipped,
         "source_issue_score": int(source_profile.get("issue_score", 0)),
         "source_marker_counts": counts,
         "source_metrics": {
@@ -975,6 +1134,7 @@ def _apply_master_chain(
     start_progress: float = 0.0,
     end_progress: float = 0.0,
     stage_prefix: str = "chain",
+    stereo_stage: bool = True,
 ) -> np.ndarray:
     """
     Runs the mastering chain, reporting each processing stage as it starts.
@@ -985,7 +1145,7 @@ def _apply_master_chain(
     jumped straight to 65%. That reads as a hang, and there was no way to tell
     which filter was actually running. Each step now reports before it starts.
     """
-    steps = 5
+    steps = 6 if stereo_stage else 5
     span = max(0.0, end_progress - start_progress)
     step_index = 0
 
@@ -998,6 +1158,11 @@ def _apply_master_chain(
     y = np.asarray(audio, dtype=np.float64)
     report("highpass")
     y = _highpass(y, sr=sr, cutoff_hz=24.0)
+    # v3 runs this chain once per stem, so the stereo stage is skipped there and
+    # applied once to the recombined mix instead of four times over.
+    if stereo_stage:
+        report("stereo")
+        y = _apply_stereo_stage(y, sr=sr, cfg=cfg)
     report("tilt")
     y = _spectral_tilt(y, sr=sr, cfg=cfg)
     report("deess")
@@ -1956,6 +2121,46 @@ def _lowpass(audio: np.ndarray, sr: int, cutoff_hz: float, order: int = 2) -> np
     return sosfiltfilt(sos, audio, axis=0)
 
 
+def _apply_stereo_stage(audio: np.ndarray, sr: int, cfg: MasterPreset) -> np.ndarray:
+    """
+    Collapses side energy below `bass_mono_hz` and scales overall width.
+
+    The chain used to have no stereo stage at all: the only mono handling was
+    `_apply_mono_compat_fix`, which is marker-local and can be rolled back by
+    the refinement loop, so a mix that folds down badly across its whole length
+    could reach the output untouched while the analyzer kept recommending
+    "mono the low end". This stage is unconditional and runs on every render.
+
+    Bass mono is a fold-down fix, not a width effect: only the side channel is
+    filtered, so the mid - where nearly all low-frequency content lives - is
+    left exactly as it was.
+    """
+    signal = np.asarray(audio, dtype=np.float64)
+    if signal.ndim != 2 or signal.shape[1] < 2:
+        return signal
+    cutoff = float(np.clip(cfg.bass_mono_hz, 0.0, 250.0))
+    width = float(np.clip(cfg.stereo_width, 0.5, 1.5))
+    if cutoff <= 0.0 and abs(width - 1.0) < 1e-6:
+        return signal
+
+    left = signal[:, 0]
+    right = signal[:, 1]
+    mid = 0.5 * (left + right)
+    side = 0.5 * (left - right)
+
+    if abs(width - 1.0) >= 1e-6:
+        side = side * width
+    if cutoff > 0.0 and cutoff < 0.49 * sr:
+        # Subtracting the low band from the side leaves it mono below the cutoff.
+        side_low = _lowpass(side[:, np.newaxis], sr=sr, cutoff_hz=cutoff, order=3)[:, 0]
+        side = side - side_low
+
+    out = np.stack([mid + side, mid - side], axis=1)
+    if signal.shape[1] > 2:
+        out = np.concatenate([out, signal[:, 2:]], axis=1)
+    return out
+
+
 def _bandpass(
     audio: np.ndarray, sr: int, low_hz: float, high_hz: float, order: int = 2
 ) -> np.ndarray:
@@ -2248,6 +2453,8 @@ def _config_to_dict(cfg: MasterPreset) -> dict[str, Any]:
         "high_target_ratio": cfg.high_target_ratio,
         "limiter_drive": cfg.limiter_drive,
         "desired_crest_db": cfg.desired_crest_db,
+        "bass_mono_hz": cfg.bass_mono_hz,
+        "stereo_width": cfg.stereo_width,
     }
 
 

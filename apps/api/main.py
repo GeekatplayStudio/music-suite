@@ -36,6 +36,14 @@ from audioqi.geometry_mapper.service import analyze_mapper_upload, clear_mapper_
 from audioqi.io.metadata import normalize_metadata_payload
 from audioqi.jobs import reset_executor, submit
 from audioqi.mastering import (
+    BASS_MONO_MAX_HZ,
+    INPUT_GAIN_MAX_DB,
+    INPUT_GAIN_MIN_DB,
+    STEREO_WIDTH_MAX,
+    STEREO_WIDTH_MIN,
+    clamp_bass_mono_hz,
+    clamp_input_gain_db,
+    clamp_stereo_width,
     parse_mastering_backend,
     parse_mastering_mode,
     parse_mastering_normalization_profile,
@@ -92,6 +100,7 @@ MASTERING_STAGE_DETAILS: dict[str, str] = {
     "queued": "Queued for mastering.",
     "prepare": "Preparing mastering pipeline.",
     "load_source": "Decoding source audio.",
+    "input_gain": "Applying input gain to the source before analysis.",
     "profile_source": "Measuring source loudness, dynamics, and spectral balance.",
     "adapt_settings": "Adapting the chain to this source material.",
     "backend_internal": "Applying internal mastering backend pass.",
@@ -99,6 +108,7 @@ MASTERING_STAGE_DETAILS: dict[str, str] = {
     # prefixed by which pass it is (chain / variantN / stem_bass / ...), so a
     # long run names the filter that is actually running.
     "chain_highpass": "Filtering sub-sonic rumble below 24 Hz.",
+    "chain_stereo": "Collapsing low-end side energy and setting stereo width.",
     "chain_tilt": "Applying spectral tilt and tonal balance.",
     "chain_deess": "De-essing sibilance.",
     "chain_compress": "Applying broadband compression.",
@@ -217,6 +227,7 @@ def _analysis_stage_detail(stage: str | None) -> str:
 # optimizer variant 3, "stem_bass_deess" while processing the bass stem.
 CHAIN_STEP_LABELS: dict[str, str] = {
     "highpass": "filtering sub-sonic rumble",
+    "stereo": "collapsing low-end side energy and setting width",
     "tilt": "applying spectral tilt",
     "deess": "de-essing sibilance",
     "compress": "applying broadband compression",
@@ -569,6 +580,14 @@ def master_run(
     true_peak_dbfs: float | None = Query(default=None, ge=-6.0, le=0.0),
     optimizer_variants: int = Query(default=4, ge=2, le=8),
     max_refine_passes: int = Query(default=3, ge=1, le=5),
+    input_gain_db: float = Query(
+        default=0.0, ge=INPUT_GAIN_MIN_DB, le=INPUT_GAIN_MAX_DB
+    ),
+    # 0 disables bass mono; omitting the parameter keeps the preset default.
+    bass_mono_hz: float | None = Query(default=None, ge=0.0, le=BASS_MONO_MAX_HZ),
+    stereo_width: float | None = Query(
+        default=None, ge=STEREO_WIDTH_MIN, le=STEREO_WIDTH_MAX
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     run = db.get(AnalysisRun, run_id)
@@ -654,6 +673,9 @@ def master_run(
             true_peak_dbfs=true_peak_dbfs,
             optimizer_variants=optimizer_variants,
             max_refine_passes=max_refine_passes,
+            input_gain_db=clamp_input_gain_db(input_gain_db),
+            bass_mono_hz=clamp_bass_mono_hz(bass_mono_hz),
+            stereo_width=clamp_stereo_width(stereo_width),
         ),
     )
     return _mastering_payload(run_dir)
@@ -1212,6 +1234,9 @@ def _run_mastering_job(
     true_peak_dbfs: float | None,
     optimizer_variants: int,
     max_refine_passes: int,
+    input_gain_db: float = 0.0,
+    bass_mono_hz: float | None = None,
+    stereo_width: float | None = None,
 ) -> None:
     db = SessionLocal()
     try:
@@ -1279,6 +1304,9 @@ def _run_mastering_job(
             true_peak_dbfs=true_peak_dbfs,
             optimizer_variants=optimizer_variants,
             max_refine_passes=max_refine_passes,
+            input_gain_db=input_gain_db,
+            bass_mono_hz=bass_mono_hz,
+            stereo_width=stereo_width,
             progress=progress_callback,
         )
         write_mastering_state(
