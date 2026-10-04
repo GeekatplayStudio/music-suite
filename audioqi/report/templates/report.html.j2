@@ -75,8 +75,8 @@
       <tr><th>True peak estimate (dBFS)</th><td>{{ "%.2f"|format(metrics.dynamics.true_peak_dbfs) }}</td></tr>
       <tr><th>RMS (dBFS)</th><td>{{ "%.2f"|format(metrics.dynamics.rms_dbfs) }}</td></tr>
       <tr><th>Crest factor (dB)</th><td>{{ "%.2f"|format(metrics.dynamics.crest_factor_db) }}</td></tr>
-      <tr><th>Noise floor (dBFS)</th><td>{{ "%.2f"|format(metrics.noise_floor_dbfs) }}</td></tr>
-      <tr><th>LRA approx (LU)</th><td>{{ "%.2f"|format(metrics.loudness.lra_approx) }}</td></tr>
+      <tr><th>Noise floor (dBFS)</th><td>{% if metrics.noise_floor_dbfs is number %}{{ "%.2f"|format(metrics.noise_floor_dbfs) }}{% else %}Not measurable (no quiet gaps){% endif %}</td></tr>
+      <tr><th>LRA, gated approx. (LU)</th><td>{{ "%.2f"|format(metrics.loudness.lra_approx) }}</td></tr>
     </table>
   </section>
 

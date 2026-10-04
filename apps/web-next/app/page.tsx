@@ -146,14 +146,14 @@ const CHART_HELP: Record<string, string> = {
 
 const ELEMENT_GUIDE_ROWS: Array<{ element: string; meaning: string }> = [
   {
-    element: "Compression Loss % of Nyquist",
+    element: "Compression Loss Estimate",
     meaning:
-      "Estimated high-frequency loss as a percentage of Nyquist (sample-rate/2). Higher values can indicate stronger top-end roll-off."
+      "How far below the audible top (20 kHz, or Nyquist for low sample rates) the measured content stops. 0 Hz means nothing audible is missing; a large value on a lossless file suggests it was transcoded from a lossy source."
   },
   {
     element: "Range Detail | Peak to Noise",
     meaning:
-      "Difference between peak level and estimated noise floor. Larger values usually indicate cleaner dynamic span."
+      "Difference between peak level and the measured noise floor. Larger values usually indicate cleaner dynamic span. N/A when the track has no quiet gaps to measure a floor in."
   },
   {
     element: "Range Detail | Peak to LUFS",
@@ -193,7 +193,7 @@ const ELEMENT_GUIDE_ROWS: Array<{ element: string; meaning: string }> = [
   {
     element: "Noise Floor dBFS",
     meaning:
-      "Estimated low-level floor from quieter windows. More negative is generally cleaner."
+      "Level of the noise heard where the music drops out (fades, gaps, quiet intros). More negative is cleaner. Dense tracks with no such passages show N/A, because the music masks the floor."
   },
   {
     element: "Markers Around Current Timeline Position",
@@ -1896,10 +1896,21 @@ export default function HomePage() {
   const theoHighHz = maybeNum(theoreticalRange.high_hz) ?? Math.min(20_000, nyquistHz || 20_000);
   const compressionType = text(compression.compression_type, "unknown");
   const bitrateKbps = num(metadata.bitrate, 0) / 1000;
-  const dynamicSpan = maybeNum(dynamicInfo.peak_to_noise_span_db);
+  // The analyzer returns no noise floor when the music never drops out far
+  // enough to expose one; showing the quietest music instead would mislead.
+  // Runs from before that fix lack the `noise_floor` block and are treated as stale.
+  const noiseFloorStatus = text(asRecord(metrics.noise_floor).status, "stale");
+  const noiseFloorDbfs = noiseFloorStatus === "stale" ? null : maybeNum(metrics.noise_floor_dbfs);
+  const dynamicSpan = noiseFloorStatus === "stale" ? null : maybeNum(dynamicInfo.peak_to_noise_span_db);
   const peakToLoudness = maybeNum(dynamicInfo.peak_to_loudness_ratio_db);
   const lossHz = maybeNum(compression.estimated_high_freq_loss_hz);
-  const lossPctNyquist = maybeNum(compression.estimated_high_freq_loss_percent_of_nyquist);
+  const lossPct = maybeNum(compression.estimated_high_freq_loss_percent);
+  const lossReferenceHz = maybeNum(compression.loss_reference_hz);
+  const bitDepth = maybeNum(metadata.bit_depth);
+  const bitDepthLabel =
+    bitDepth !== null && bitDepth > 0
+      ? `${bitDepth}-bit${text(metadata.codec, "").toLowerCase().startsWith("pcm_f") ? " float" : ""}`
+      : "Bit depth N/A";
   const selectedSegmentLength = Math.max(0, selectionEnd - selectionStart);
   const masteringRecommendations = Array.isArray(metrics.mastering_recommendations)
     ? metrics.mastering_recommendations
@@ -1944,7 +1955,7 @@ export default function HomePage() {
   const integratedLufs = metricNumber(metrics, ["loudness", "integrated_lufs"], 0);
   const truePeakDbfs = metricNumber(metrics, ["dynamics", "true_peak_dbfs"], 0);
   const crestFactorDb = metricNumber(metrics, ["dynamics", "crest_factor_db"], 0);
-  const noiseFloorDbfs = metricNumber(metrics, ["noise_floor_dbfs"], 0);
+  const loudnessRangeLu = metricNumber(metrics, ["loudness", "lra_approx"], 0);
   const selectedRunSummary = selectedRunId ? runs.find((run) => run.id === selectedRunId) ?? null : null;
   const selectedRunFilename = text(runDetail?.filename, selectedRunSummary?.filename ?? "No run selected");
   const availableChartNames = (runDetail?.chart_names ?? []).filter((name) => name.length > 0);
@@ -1973,11 +1984,19 @@ export default function HomePage() {
   const markerReadiness = highlightedMarkerCount === 0 ? "Clean" : highlightedMarkerCount <= 3 ? "Review" : "Attention";
   const dynamicsReadiness = crestFactorDb >= 8 ? "Open" : crestFactorDb >= 5 ? "Controlled" : "Dense";
   const unavailableHints: string[] = [];
-  if (lossPctNyquist === null) {
-    unavailableHints.push("Compression-loss estimate unavailable because codec metadata or spectral estimate is missing.");
+  if (lossPct === null) {
+    unavailableHints.push(
+      "Compression-loss estimate unavailable because codec metadata or spectral estimate is missing, or this run predates the current analyzer (re-analyze to refresh)."
+    );
   }
   if (dynamicSpan === null) {
-    unavailableHints.push("Peak-to-noise is unavailable because a stable noise floor could not be estimated.");
+    unavailableHints.push(
+      noiseFloorStatus === "stale"
+        ? "Peak-to-noise and noise floor are hidden because this run predates the current noise-floor estimator; re-analyze to measure them."
+        : noiseFloorStatus === "digital_silence"
+          ? "Peak-to-noise is unavailable because the gaps are digital silence, so there is no noise floor to measure."
+          : "Peak-to-noise is unavailable because the track has no quiet gaps (fades, intros, pauses) to read a noise floor from; the music masks it."
+    );
   }
   if (peakToLoudness === null) {
     unavailableHints.push("Peak-to-LUFS is unavailable when integrated loudness is undefined (very short/silent material).");
@@ -3240,7 +3259,10 @@ export default function HomePage() {
                     <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
                       <p className="text-xs text-muted-foreground">Dynamics</p>
                       <p className="mt-1 text-base font-semibold">{dynamicsReadiness}</p>
-                      <p className="text-xs text-muted-foreground">Crest {crestFactorDb.toFixed(2)} dB | Noise floor {noiseFloorDbfs.toFixed(2)} dBFS</p>
+                      <p className="text-xs text-muted-foreground">
+                        Crest {crestFactorDb.toFixed(2)} dB | LRA {loudnessRangeLu.toFixed(1)} LU
+                        {loudnessRangeLu < 3 ? " (flat sections)" : ""}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -3326,7 +3348,7 @@ export default function HomePage() {
                     Crest {metricNumber(metrics, ["dynamics", "crest_factor_db"], 0).toFixed(2)} dB
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    LRA {metricNumber(metrics, ["loudness", "lra_approx"], 0).toFixed(2)} LU
+                    LRA {loudnessRangeLu.toFixed(2)} LU (gated approx.)
                   </p>
                 </div>
                 <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title="Bitrate and bit depth influence potential quality and headroom.">
@@ -3337,16 +3359,19 @@ export default function HomePage() {
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {bitrateKbps > 0 ? `${bitrateKbps.toFixed(0)} kbps` : "Bitrate N/A"} |{" "}
-                    {text(metadata.bit_depth, "Bit depth N/A")}
+                    {bitDepthLabel}
                   </p>
                 </div>
                 <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title="Estimated high-frequency loss is inferred from measured top-band content vs Nyquist limit.">
                   <p className="text-xs font-semibold uppercase text-muted-foreground">Compression Loss Estimate</p>
                   <p className="mt-1 text-sm font-semibold">
-                    {maybeHz(lossHz)}
+                    {/* Runs analysed before the audible-band fix carry only the old Nyquist-based figure. */}
+                    {lossPct !== null ? maybeHz(lossHz) : "N/A"}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {lossPctNyquist !== null ? `${lossPctNyquist.toFixed(1)}% of Nyquist` : "N/A"}
+                    {lossPct !== null
+                      ? `${lossPct.toFixed(1)}% of the ${lossReferenceHz !== null ? hz(lossReferenceHz) : "audible"} band`
+                      : "N/A"}
                   </p>
                 </div>
                 <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title="Peak-to-loudness ratio and peak-to-noise span help evaluate punch and usable dynamic headroom.">
@@ -3477,10 +3502,19 @@ export default function HomePage() {
                 value={`${crestFactorDb.toFixed(2)}`}
               />
             </div>
-            <div title="Estimated noise floor from low-level windows in the signal.">
+            <div title="Noise floor read from fades, gaps, and quiet intros. Dense tracks with no such passages have no measurable floor.">
               <KpiTile
                 label="Noise Floor dBFS"
-                value={`${noiseFloorDbfs.toFixed(2)}`}
+                value={noiseFloorDbfs !== null ? noiseFloorDbfs.toFixed(2) : "N/A"}
+                hint={
+                  noiseFloorDbfs !== null
+                    ? undefined
+                    : noiseFloorStatus === "stale"
+                      ? "Re-analyze to measure"
+                      : noiseFloorStatus === "digital_silence"
+                        ? "Gaps are digital silence"
+                        : "No quiet gaps; the music masks it"
+                }
               />
             </div>
           </div>

@@ -21,6 +21,8 @@ from audioqi.core.markers import (
     sub_bass_markers,
 )
 from audioqi.core.metrics import (
+    AIR_LIMITED_DROP_DB,
+    air_octave_drop_db,
     clipping_segments,
     crest_factor_db,
     dbfs,
@@ -911,8 +913,9 @@ def _build_source_adaptive_config(
             "Added gentle compression because crest factor suggests the source is under-controlled.",
         )
 
-    air_share = float(spectral_balance_payload.get("air_10k_20k", 0.0))
-    if harsh_count == 0 and air_share < 0.035:
+    sample_rate = float(source_metrics.get("sample_rate", 48_000))
+    air_drop_db = air_octave_drop_db(spectral_balance_payload, sample_rate / 2.0)
+    if harsh_count == 0 and air_drop_db is not None and air_drop_db < AIR_LIMITED_DROP_DB:
         apply_change(
             "high_target_ratio",
             min(0.3, adjusted.high_target_ratio + 0.012),

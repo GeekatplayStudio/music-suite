@@ -10,6 +10,8 @@ import dash_bootstrap_components as dbc
 import requests
 from dash import Input, Output, State, dcc, html, no_update
 
+from audioqi.core.metrics import describe_noise_floor
+
 API_URL = os.getenv("AUDIOQI_API_URL", "http://127.0.0.1:8008").rstrip("/")
 
 
@@ -392,7 +394,7 @@ def _render_metrics(metrics: dict[str, Any]) -> html.Div:
                     html.Li(f"Integrated loudness: {loud.get('integrated_lufs', 0):.2f} LUFS"),
                     html.Li(f"True peak: {dyn.get('true_peak_dbfs', 0):.2f} dBFS"),
                     html.Li(f"Crest factor: {dyn.get('crest_factor_db', 0):.2f} dB"),
-                    html.Li(f"Noise floor: {metrics.get('noise_floor_dbfs', 0):.2f} dBFS"),
+                    html.Li(f"Noise floor: {describe_noise_floor(metrics)}"),
                 ]
             ),
             html.H6("Warnings"),

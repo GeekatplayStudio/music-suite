@@ -206,16 +206,92 @@ def _safe_correlation(left_chunk: np.ndarray, right_chunk: np.ndarray) -> float:
     return float(c)
 
 
-def noise_floor_dbfs(signal: np.ndarray, sr: int) -> float:
+NOISE_FLOOR_GAP_DB = 40.0
+NOISE_FLOOR_MIN_GAP_SECONDS = 0.2
+DIGITAL_SILENCE_DBFS = -140.0
+
+
+def noise_floor_estimate(signal: np.ndarray, sr: int) -> dict[str, Any]:
+    """Estimate the noise floor from passages where the music drops out.
+
+    Music masks its own noise, so a floor can only be read in fades, gaps,
+    and quiet intros: 50 ms windows at least NOISE_FLOOR_GAP_DB below the
+    programme's median level. Dense material has no such passages, and the
+    quietest music is then reported as `quiet_passage_dbfs` rather than
+    passed off as a noise floor, which would read as a ruined recording.
+    """
     window = max(1, int(0.05 * sr))
-    hop = window
-    rms_values: list[float] = []
-    for start in range(0, max(1, signal.shape[0] - window), hop):
-        chunk = signal[start : start + window]
-        rms_values.append(rms(chunk))
-    if not rms_values:
-        return float("-inf")
-    return dbfs(float(np.percentile(np.asarray(rms_values), 10)))
+    levels: list[float] = []
+    for start in range(0, max(1, signal.shape[0] - window), window):
+        levels.append(dbfs(rms(signal[start : start + window])))
+    result: dict[str, Any] = {
+        "dbfs": None,
+        "status": "not_measurable",
+        "quiet_passage_dbfs": None,
+        "gap_seconds": 0.0,
+    }
+    if not levels:
+        return result
+    level_arr = np.asarray(levels, dtype=np.float64)
+    audible = level_arr[level_arr > DIGITAL_SILENCE_DBFS]
+    silent_seconds = float((level_arr.size - audible.size) * window / sr)
+    if audible.size == 0:
+        result["status"] = "digital_silence"
+        result["gap_seconds"] = silent_seconds
+        return result
+    result["quiet_passage_dbfs"] = float(np.percentile(audible, 10))
+    gaps = audible[audible <= float(np.median(audible)) - NOISE_FLOOR_GAP_DB]
+    gap_seconds = float(gaps.size * window / sr)
+    if gap_seconds >= NOISE_FLOOR_MIN_GAP_SECONDS:
+        result["dbfs"] = float(np.percentile(gaps, 10))
+        result["status"] = "measured"
+        result["gap_seconds"] = gap_seconds
+    elif silent_seconds >= NOISE_FLOOR_MIN_GAP_SECONDS:
+        result["status"] = "digital_silence"
+        result["gap_seconds"] = silent_seconds
+    return result
+
+
+def noise_floor_dbfs(signal: np.ndarray, sr: int) -> float | None:
+    """Measured noise floor in dBFS, or None when the material has no gaps to read it from."""
+    value = noise_floor_estimate(signal, sr)["dbfs"]
+    return None if value is None else float(value)
+
+
+def describe_noise_floor(metrics: dict[str, Any]) -> str:
+    """Human-readable noise floor for prompts and reports, honest about gaps."""
+    value = metrics.get("noise_floor_dbfs")
+    if isinstance(value, (int, float)) and np.isfinite(value):
+        return f"{float(value):.2f} dBFS"
+    info = metrics.get("noise_floor")
+    status = info.get("status") if isinstance(info, dict) else None
+    if status == "digital_silence":
+        return "below measurement (gaps are digital silence)"
+    return "not measurable (no quiet gaps; the music masks it)"
+
+
+AIR_LIMITED_DROP_DB = -20.0
+
+
+def air_octave_drop_db(spectral: dict[str, float], nyquist_hz: float) -> float | None:
+    """Per-octave level of the 10-20 kHz air band relative to 1-4 kHz, in dB.
+
+    Music rolls off with frequency, so air holds a tiny share of total energy
+    even in a bright master, and a fixed share threshold flags nearly every
+    track. Comparing per-octave levels measures the tilt instead: pink noise
+    reads about 0 dB, and each extra dB/octave of roll-off lowers it by about
+    2.8 dB. Below AIR_LIMITED_DROP_DB the top end is genuinely dull.
+    """
+    air_top_hz = min(20_000.0, float(nyquist_hz))
+    if air_top_hz < 10_000.0 * np.sqrt(2.0):  # under half an octave of air is too thin to judge
+        return None
+    mid_share = float(spectral.get("mid_1k_4k", 0.0))
+    air_share = float(spectral.get("air_10k_20k", 0.0))
+    if mid_share <= 0.0:
+        return None
+    air_per_octave = air_share / float(np.log2(air_top_hz / 10_000.0))
+    mid_per_octave = mid_share / 2.0
+    return float(10.0 * np.log10(max(air_per_octave, EPS) / mid_per_octave))
 
 
 def spectral_balance(signal: np.ndarray, sr: int) -> dict[str, float]:

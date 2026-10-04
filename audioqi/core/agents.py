@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
+from audioqi.core.metrics import AIR_LIMITED_DROP_DB, air_octave_drop_db
+
 try:
     from langgraph.graph import END, StateGraph  # type: ignore
     HAS_LANGGRAPH = True
@@ -25,8 +27,10 @@ def tonal_analysis_agent(state: MasteringAgentState) -> dict[str, Any]:
     # High sub-bass protection
     if spectral.get("sub_20_60", 0.0) > 0.18:
         suggestions.append("Apply a low-shelf cut below 60 Hz to protect headroom.")
-    # Air boost
-    if spectral.get("air_10k_20k", 0.0) < 0.04:
+    # Air boost, judged against the midrange so a normal roll-off does not trigger it
+    sample_rate = float(metrics.get("technical", {}).get("sample_rate", 48_000))
+    air_drop_db = air_octave_drop_db(spectral, sample_rate / 2.0)
+    if air_drop_db is not None and air_drop_db < AIR_LIMITED_DROP_DB:
         suggestions.append("Add a gentle high-shelf boost around 12 kHz to open top-end.")
 
     return {"eq_suggestions": suggestions}

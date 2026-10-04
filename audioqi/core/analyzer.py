@@ -29,6 +29,8 @@ from audioqi.core.markers import (
     true_peak_risk_markers,
 )
 from audioqi.core.metrics import (
+    AIR_LIMITED_DROP_DB,
+    air_octave_drop_db,
     clipping_segments,
     crest_factor_db,
     dbfs,
@@ -36,7 +38,7 @@ from audioqi.core.metrics import (
     envelope_timeline,
     loudness_integrated_lufs,
     loudness_timeline_lufs,
-    noise_floor_dbfs,
+    noise_floor_estimate,
     oversampled_true_peak,
     peak,
     rms,
@@ -137,7 +139,8 @@ def analyze_audio_file(
     clipping = clipping_segments(signal=audio, sr=sr)
     true_peak_value = oversampled_true_peak(signal=audio, sr=sr, upsample_factor=4)
     stereo = stereo_timelines(audio, sr=sr, window_seconds=1.0, hop_seconds=0.5)
-    noise_floor = noise_floor_dbfs(mono, sr=sr)
+    noise_floor_info = noise_floor_estimate(mono, sr=sr)
+    noise_floor = noise_floor_info["dbfs"]
     spectral = spectral_balance(mono, sr=sr)
     spectrum = spectrum_curve(mono, sr=sr)
     distortion = distortion_proxies(mono, sr=sr)
@@ -201,6 +204,8 @@ def analyze_audio_file(
         dc_offset=dc_offset,
         spectral=spectral,
         marker_types=marker_types,
+        nyquist_hz=sr / 2.0,
+        content_high_hz=bandwidth["high_hz"],
     )
     ai_mastering_advice = _ai_mastering_advice(
         integrated_lufs=integrated_lufs,
@@ -283,6 +288,7 @@ def analyze_audio_file(
         },
         "stereo": stereo,
         "noise_floor_dbfs": noise_floor,
+        "noise_floor": noise_floor_info,
         "clipping": {
             "ratio": clipping_ratio,
             "segments": clipping,
@@ -498,9 +504,19 @@ def _build_charts(
 
 
 def _approx_lra(short_term_lufs: list[float]) -> float:
+    """Loudness range with the EBU Tech 3342 gates.
+
+    Values at or below -70 LUFS are dropped, then values more than 20 LU below
+    the energy mean of the rest, so silence and fades cannot stretch the
+    range. The short-term series is sampled more coarsely than the
+    standard's 10 Hz, which keeps this an approximation.
+    """
     values = np.asarray([v for v in short_term_lufs if np.isfinite(v)], dtype=np.float64)
+    values = values[values > -70.0]
     if values.size == 0:
         return 0.0
+    mean_lufs = float(10.0 * np.log10(np.mean(np.power(10.0, values / 10.0))))
+    values = values[values >= mean_lufs - 20.0]
     return float(np.percentile(values, 95) - np.percentile(values, 10))
 
 
@@ -658,12 +674,22 @@ def _compression_insights(
     elif codec in lossless_codecs or any(x in container for x in ("flac", "wav", "aiff", "alac")):
         compression_type = "lossless"
 
+    # Loss is measured against the audible band, not Nyquist: a 48 kHz file
+    # whose content reaches 20 kHz has lost nothing, although Nyquist sits at 24.
     nyquist = float(sample_rate / 2.0)
-    lost_high_hz = max(0.0, nyquist - float(estimated_high_hz))
-    lost_high_pct = 100.0 * lost_high_hz / max(nyquist, 1.0)
+    reference_hz = min(nyquist, 20_000.0)
+    lost_high_hz = max(0.0, reference_hz - float(estimated_high_hz))
+    lost_high_pct = 100.0 * lost_high_hz / max(reference_hz, 1.0)
 
     if compression_type == "lossless":
-        loss_note = "Lossless codec detected; no codec-induced loss expected from compression."
+        if estimated_high_hz < 16_000.0 and reference_hz >= 19_000.0:
+            loss_note = (
+                "Lossless container, but content stops near "
+                f"{estimated_high_hz / 1000.0:.1f} kHz; the audio was likely transcoded "
+                "from a lossy source before it was saved losslessly."
+            )
+        else:
+            loss_note = "Lossless codec detected; no codec-induced loss expected from compression."
     elif compression_type == "lossy":
         if estimated_high_hz < 16_000.0:
             loss_note = (
@@ -676,13 +702,19 @@ def _compression_insights(
             loss_note = "Lossy codec detected; frequency retention appears relatively high."
     else:
         loss_note = "Compression type could not be confidently classified."
+    if nyquist < 20_000.0:
+        loss_note += (
+            f" The {sample_rate:,} Hz sample rate itself limits the band to "
+            f"{nyquist / 1000.0:.1f} kHz."
+        )
 
     return {
         "codec": codec or None,
         "container_format": container or None,
         "compression_type": compression_type,
+        "loss_reference_hz": reference_hz,
         "estimated_high_freq_loss_hz": lost_high_hz,
-        "estimated_high_freq_loss_percent_of_nyquist": lost_high_pct,
+        "estimated_high_freq_loss_percent": lost_high_pct,
         "assessment": loss_note,
     }
 
@@ -691,7 +723,7 @@ def _dynamic_range_insights(
     sample_peak: float,
     true_peak: float,
     integrated_lufs: float,
-    noise_floor_dbfs: float,
+    noise_floor_dbfs: float | None,
     crest_factor_db: float,
     lra: float,
 ) -> dict[str, float | None]:
@@ -704,11 +736,13 @@ def _dynamic_range_insights(
     return {
         "sample_peak_dbfs": sample_peak_db,
         "true_peak_dbfs": true_peak_db,
-        "noise_floor_dbfs": float(noise_floor_dbfs),
+        "noise_floor_dbfs": noise_floor_dbfs,
         "crest_factor_db": float(crest_factor_db),
         "lra_approx_lu": float(lra),
         "peak_to_loudness_ratio_db": peak_to_loudness_ratio,
-        "peak_to_noise_span_db": float(sample_peak_db - noise_floor_dbfs),
+        "peak_to_noise_span_db": (
+            None if noise_floor_dbfs is None else float(sample_peak_db - noise_floor_dbfs)
+        ),
     }
 
 
@@ -721,6 +755,8 @@ def _mastering_recommendations(
     dc_offset: float,
     spectral: dict[str, float],
     marker_types: set[str],
+    nyquist_hz: float,
+    content_high_hz: float,
 ) -> list[dict[str, str]]:
     recs: list[dict[str, str]] = []
 
@@ -806,10 +842,19 @@ def _mastering_recommendations(
             "Tighten 20-80 Hz with high-pass filtering and dynamic low-shelf control.",
         )
 
-    if spectral.get("air_10k_20k", 0.0) < 0.04:
+    air_drop_db = air_octave_drop_db(spectral, nyquist_hz)
+    if 0.0 < content_high_hz < 16_000.0 and nyquist_hz >= 19_000.0:
         add(
             "low",
-            "Top-end air appears limited.",
+            f"Top end stops near {content_high_hz / 1000.0:.1f} kHz.",
+            "The source looks band-limited, often from a lossy encode upstream. "
+            "A high-shelf boost cannot restore missing content; master from a "
+            "full-band source if one exists.",
+        )
+    elif air_drop_db is not None and air_drop_db < AIR_LIMITED_DROP_DB:
+        add(
+            "low",
+            f"Top-end air appears limited ({air_drop_db:.1f} dB per octave vs 1-4 kHz).",
             "Consider gentle high-shelf boost around 10-16 kHz if material sounds dull.",
         )
 

@@ -6,6 +6,8 @@ from typing import Any
 
 import requests
 
+from audioqi.core.metrics import describe_noise_floor
+
 logger = logging.getLogger("audioqi.ollama")
 
 OLLAMA_ENDPOINT = "http://127.0.0.1:11434/api/generate"
@@ -40,7 +42,7 @@ def get_ai_mastering_advice(metrics: dict[str, Any], model: str = DEFAULT_MODEL)
     - Loudness Range (LRA): {loudness.get('lra_approx', 0):.2f} LU
     - True Peak Estimate: {dynamics.get('true_peak_dbfs', 0):.2f} dBFS
     - Crest Factor: {dynamics.get('crest_factor_db', 0):.2f} dB
-    - Noise Floor: {metrics.get('noise_floor_dbfs', 0):.2f} dBFS
+    - Noise Floor: {describe_noise_floor(metrics)}
     - Sub-bass (20-60Hz) Energy Ratio: {spectral.get('sub_20_60', 0):.4f}
     - Sibilance (6k-10kHz) Energy Ratio: {spectral.get('sibilance_6k_10k', 0):.4f}
     - Air (10k-20kHz) Energy Ratio: {spectral.get('air_10k_20k', 0):.4f}
