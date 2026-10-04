@@ -1,8 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.ts";
 
 :root {
   --font-manrope: "Manrope", "Segoe UI Variable", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
@@ -25,21 +24,31 @@
   --radius: 1rem;
 }
 
-* {
-  border-color: hsl(var(--border));
-}
+/* Base rules sit in the base layer so utilities such as border-white/10 can
+   still override them; unlayered CSS would win over every Tailwind layer. */
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
 
-html {
-  color-scheme: dark;
-}
+  html {
+    color-scheme: dark;
+  }
 
-body {
-  color: hsl(var(--foreground));
-  min-height: 100vh;
-  background:
-    radial-gradient(circle at 8% 0%, rgba(56, 189, 248, 0.28), transparent 30%),
-    radial-gradient(circle at 92% 6%, rgba(239, 68, 68, 0.2), transparent 35%),
-    linear-gradient(180deg, #06090f 0%, #0b1020 48%, #121725 100%);
+  body {
+    color: hsl(var(--foreground));
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 8% 0%, rgba(56, 189, 248, 0.28), transparent 30%),
+      radial-gradient(circle at 92% 6%, rgba(239, 68, 68, 0.2), transparent 35%),
+      linear-gradient(180deg, #06090f 0%, #0b1020 48%, #121725 100%);
+  }
+
+  /* Tailwind 4 resets buttons to the default cursor. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 .display-font {

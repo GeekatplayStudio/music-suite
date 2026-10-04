@@ -9,7 +9,7 @@ from urllib.parse import urljoin, urlparse
 from uuid import UUID
 
 import requests
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 DEFAULT_API_URL = "http://127.0.0.1:8008"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -29,14 +29,13 @@ SENSITIVE_KEYS = {
     "source_file",
 }
 
-mcp = FastMCP(
+mcp = MCPServer(
     "Music Suite",
     instructions=(
         "Local, guarded access to Music Suite analysis runs. Read operations are enabled by "
         "default. Queueing analysis requires MUSIC_SUITE_MCP_ALLOW_MUTATIONS=1. No delete, "
         "filesystem, shell, or arbitrary network tools are exposed."
     ),
-    json_response=True,
 )
 
 

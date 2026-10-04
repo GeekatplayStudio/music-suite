@@ -35,7 +35,7 @@ dependencies = [
   "python-multipart>=0.0.26",
   "pydantic>=2.13.3",
   "langgraph>=0.1.0",
-  "mcp>=1.28.1,<2",
+  "mcp>=2.3.0,<3",
 ]
 
 [project.scripts]

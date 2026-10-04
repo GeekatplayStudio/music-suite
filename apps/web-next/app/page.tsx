@@ -2462,7 +2462,7 @@ export default function HomePage() {
                   type="checkbox"
                   checked={useGpu}
                   onChange={(e) => setUseGpu(e.target.checked)}
-                  className="h-4 w-4 rounded border-input"
+                  className="h-4 w-4 rounded-[0.25rem] border-input"
                 />
                 <Cpu className="h-4 w-4" />
                 Use optional GPU spectrogram path
@@ -2538,7 +2538,7 @@ export default function HomePage() {
                           [fmt]: e.target.checked
                         }))
                       }
-                      className="h-4 w-4 rounded border-input"
+                      className="h-4 w-4 rounded-[0.25rem] border-input"
                     />
                     {fmt.toUpperCase()}
                   </label>
@@ -3218,7 +3218,7 @@ export default function HomePage() {
                       <select
                         value={playbackRate}
                         onChange={(event) => setPlaybackRate(Number(event.target.value))}
-                        className="bg-transparent text-sm text-foreground outline-none"
+                        className="bg-transparent text-sm text-foreground outline-hidden"
                       >
                         {[0.75, 1, 1.25, 1.5].map((rate) => (
                           <option key={rate} value={rate} className="bg-slate-950 text-foreground">

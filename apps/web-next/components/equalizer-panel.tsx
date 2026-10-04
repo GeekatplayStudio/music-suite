@@ -71,7 +71,7 @@ export function EqualizerPanel({
             type="checkbox"
             checked={enabled}
             onChange={(event) => onToggle(event.target.checked)}
-            className="h-4 w-4 rounded border-input"
+            className="h-4 w-4 rounded-[0.25rem] border-input"
           />
           Enable EQ
         </label>

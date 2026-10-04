@@ -396,7 +396,7 @@ export function SonicVisualizer({ audioSrc, filename, className }: SonicVisualiz
           <button
             type="button"
             onClick={() => void togglePlayback()}
-            className="absolute left-1/2 top-1/2 grid h-20 w-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-cyan-200/40 bg-slate-950/70 text-cyan-200 shadow-[0_0_45px_rgba(34,211,238,.25)] backdrop-blur transition hover:scale-105 hover:bg-cyan-400/15"
+            className="absolute left-1/2 top-1/2 grid h-20 w-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-cyan-200/40 bg-slate-950/70 text-cyan-200 shadow-[0_0_45px_rgba(34,211,238,.25)] backdrop-blur-sm transition hover:scale-105 hover:bg-cyan-400/15"
             aria-label="Play visualizer"
           >
             <Play className="ml-1 h-8 w-8" />

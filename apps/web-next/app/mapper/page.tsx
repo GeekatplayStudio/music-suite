@@ -22,7 +22,7 @@ export default async function MapperPage({ searchParams }: MapperPageProps) {
 
   return (
     <main className="flex h-screen min-h-[720px] flex-col overflow-hidden bg-slate-950">
-      <header className="z-10 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-slate-950/95 px-4 shadow-xl backdrop-blur md:px-6">
+      <header className="z-10 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-slate-950/95 px-4 shadow-xl backdrop-blur-sm md:px-6">
         <div className="min-w-0">
           <p className="display-font truncate text-sm font-semibold text-slate-100">
             Music Suite <span className="text-cyan-300">/ Song Geometry Mapper</span>
@@ -33,7 +33,7 @@ export default async function MapperPage({ searchParams }: MapperPageProps) {
         </div>
         <Link
           href="/"
-          className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+          className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
         >
           Back to Music Suite
         </Link>
