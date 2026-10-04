@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -7,6 +8,8 @@ import librosa
 import numpy as np
 import pandas as pd
 from scipy.spatial import cKDTree
+
+from audioqi.io.decode import decode_to_canonical, ffmpeg_available
 
 KNN_DEFAULT_COLUMNS: tuple[str, ...] = (
     "spectral_centroid_hz",
@@ -17,6 +20,25 @@ KNN_DEFAULT_COLUMNS: tuple[str, ...] = (
 )
 
 
+def _load_mono(path: Path, sr: int) -> tuple[np.ndarray, int]:
+    """Load audio as mono, decoding through ffmpeg when libsndfile cannot read it.
+
+    librosa 1.0 dropped its audioread fallback, so AAC/M4A uploads no longer
+    load directly; they are decoded to a temporary WAV first.
+    """
+    try:
+        signal, sample_rate = librosa.load(path.as_posix(), sr=sr, mono=True)
+        return signal, int(sample_rate)
+    except Exception:
+        if not ffmpeg_available():
+            raise
+    with tempfile.TemporaryDirectory(prefix="mapper-decode-") as temp_dir:
+        wav_path = Path(temp_dir) / "decoded.wav"
+        decode_to_canonical(path, wav_path, target_sr=sr)
+        signal, sample_rate = librosa.load(wav_path.as_posix(), sr=sr, mono=True)
+    return signal, int(sample_rate)
+
+
 def extract_frame_features(
     audio_path: str | Path,
     sr: int = 48_000,
@@ -24,8 +46,7 @@ def extract_frame_features(
     hop_length: int = 512,
 ) -> tuple[pd.DataFrame, dict[str, float | int]]:
     """Extract frame-wise spectral descriptors from an audio file."""
-    path = Path(audio_path)
-    signal, sample_rate = librosa.load(path.as_posix(), sr=sr, mono=True)
+    signal, sample_rate = _load_mono(Path(audio_path), sr=sr)
 
     stft = librosa.stft(signal, n_fft=n_fft, hop_length=hop_length)
     magnitude = np.abs(stft)

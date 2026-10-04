@@ -44,7 +44,7 @@ def build_waveform_figure(
         title="Waveform + Peak/RMS Envelope",
         xaxis_title="Time (s)",
         yaxis={"title": "Amplitude", "range": [-1.05, 1.05]},
-        yaxis2={"title": "dBFS", "overlaying": "y", "side": "right"},
+        yaxis2={"title": "dBFS", "overlaying": "y", "side": "right", "tickmode": "auto"},
         template="plotly_white",
         margin={"l": 40, "r": 40, "t": 50, "b": 40},
     )
@@ -102,7 +102,12 @@ def build_stereo_figure(
         title="Stereo Correlation + M/S Ratio",
         xaxis_title="Time (s)",
         yaxis={"title": "Correlation", "range": [-1.0, 1.0]},
-        yaxis2={"title": "M/S Ratio dB", "overlaying": "y", "side": "right"},
+        yaxis2={
+            "title": "M/S Ratio dB",
+            "overlaying": "y",
+            "side": "right",
+            "tickmode": "auto",
+        },
         template="plotly_white",
     )
     return fig

@@ -62,3 +62,24 @@ def test_geometry_mapper_analysis_and_cache(tmp_path: Path, monkeypatch) -> None
     assert second["ok"] is True
     assert second["cached"] is True
     assert second["payload"]["track"]["name"] == fixture.name
+
+
+def test_frame_features_load_aac_through_ffmpeg(tmp_path: Path) -> None:
+    import subprocess
+
+    import pytest
+
+    from audioqi.geometry_mapper.features import extract_frame_features
+    from audioqi.io.decode import ffmpeg_available
+
+    if not ffmpeg_available():
+        pytest.skip("ffmpeg is required to encode the AAC fixture")
+    m4a_path = tmp_path / "tone.m4a"
+    subprocess.run(
+        ["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+         "-c:a", "aac", str(m4a_path)],
+        check=True,
+    )
+    frames, _summary = extract_frame_features(m4a_path, sr=22_050)
+    assert len(frames) > 0
+    assert abs(float(frames["peak_hz"].median()) - 440.0) < 30.0
