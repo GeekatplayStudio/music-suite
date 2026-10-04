@@ -87,8 +87,11 @@
 - Stereo/phase: per-window correlation, M/S ratio dB, L/R balance dB.
 - Clipping: run-length segments where `abs(x) >= 0.999`.
 - DC offset: mean waveform offset.
-- Noise floor: 10th percentile short-window RMS in dBFS.
+- Noise floor: 10th percentile of the 50 ms windows that sit at least 40 dB below the median programme level (fades, gaps, intros), needing at least 0.2 s of such material. Otherwise `null`, with `noise_floor.status` set to `not_measurable` or `digital_silence`; the quietest music is kept separately as `noise_floor.quiet_passage_dbfs`.
+- LRA: 10th-95th percentile spread of short-term loudness after the EBU Tech 3342 gates (-70 LUFS absolute, -20 LU relative); approximate because the short-term series is sampled more coarsely than 10 Hz.
+- Compression loss: `min(Nyquist, 20 kHz)` minus the highest bin within 70 dB of the spectral peak, reported as Hz and as a percent of that audible reference (`loss_reference_hz`).
 - Spectral balance: fixed band energy ratios from STFT.
+- Air check: per-octave 10-20 kHz level relative to per-octave 1-4 kHz level (`air_octave_drop_db`); "limited" below -20 dB. Shared by the analyzer recommendations, the LangGraph tonal agent, and source-aware mastering.
 - Distortion proxies: high-frequency and harsh-band energy ratios.
 - Sibilance marker: 6k-10k energy ratio threshold.
 

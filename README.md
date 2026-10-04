@@ -80,6 +80,19 @@ Findings are ranked by severity and tied to concrete time windows rather than ge
 
 > **Reading band-ratio markers.** `harshness_band` and `sub_bass_heavy` are both measured as a share of total energy, so they compete: correcting a bass-heavy master raises the 3–9 kHz *share* even when its absolute energy is unchanged. A master that cuts `sub_bass_heavy` sharply can therefore show more `harshness_band` windows without having gained any actual glare. Compare the self-check's before/after counts as a set rather than judging one marker type alone.
 
+### Measurements that refuse to guess
+
+Some numbers can't be measured on every track. When that happens the suite shows N/A with the reason, instead of a misleading figure.
+
+- **Noise floor** is read only where the music drops out: fades, gaps and quiet intros at least 40 dB below the track's median level. A dense track with no such passages shows **N/A — the music masks it**. The old estimator reported the quietest *music* here, so a clean chillwave master could show a "noise floor" of −21 dBFS. Peak-to-noise follows the same rule.
+- **Compression loss** is measured against the audible band (20 kHz, or Nyquist for low sample rates), not against Nyquist. A 48 kHz lossless file with content up to 20 kHz now reads 0 Hz lost instead of 3 820 Hz. A *lossless* file whose content stops below 16 kHz is flagged as likely transcoded from a lossy source.
+- **"Top-end air appears limited"** compares the per-octave level of 10–20 kHz with the 1–4 kHz level. It no longer uses a fixed 4 % energy share, a test that nearly every normal master failed. If the source simply stops early, the note says so, because a high-shelf boost can't restore content that isn't there.
+- **LRA** applies the EBU Tech 3342 gates (−70 LUFS absolute, −20 LU relative), so silence and fades no longer stretch it.
+
+Runs analysed before these fixes show N/A for the affected fields until you re-analyze them.
+
+> **What mastering can and cannot do.** Mastering changes how a track *sounds*: loudness, tone, peaks, stereo. It doesn't change how the track was *made*. AI-music detectors look for the fingerprints a generator leaves in the audio, such as periodic spectral peaks from neural vocoders and stem-level vocal signatures. EQ, compression and limiting pass those through unchanged, so mastering an AI-generated track won't change a detector's verdict, and the suite doesn't try to. To make a track genuinely human-made or hybrid, replace generated parts with performed ones; re-recording the vocal matters most.
+
 ### Song geometry you can read
 
 Every point is one analysis frame. Hover any node for its eight spectral descriptors and a sentence explaining why the active mapping mode placed it at that coordinate — the axes are never left unexplained.
@@ -106,7 +119,7 @@ Eleven interactive Plotly panels grouped into Mix Review, Stereo Focus, and Spec
 ## Requirements
 
 - Windows 10/11 or a current macOS release
-- Python 3.11 or newer
+- Python 3.11 or newer; 3.12+ recommended, since librosa 1.0 and numpy 2.5 need it and on 3.11 pip falls back to librosa 0.11 / numpy 2.4
 - Node.js 20.9 or newer
 - pnpm (recommended) or npm
 - FFmpeg and ffprobe on `PATH`

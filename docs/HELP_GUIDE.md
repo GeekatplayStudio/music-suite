@@ -228,6 +228,17 @@ The Session tab describes the track's style from its measured features.
   - correcting a bass-heavy master reduces total energy, which raises the 3–9 kHz share even when the absolute 3–9 kHz content has not moved at all. A master that takes `sub_bass_heavy` from 71 windows to 2 will often show more `harshness_band` windows purely for this reason
   - read the `Post-Master Self-Check` counts as a set: `resolved`, `improved` and `worsened` together describe the trade, where one marker type alone does not
   - genuine added glare shows up as an increase in absolute 3–9 kHz energy, not only in the ratio
+- `Noise floor shows N/A`:
+  - the floor can only be read where the music drops out (fades, gaps, quiet intros at least 40 dB below the track's median level); a dense track has none, and the music masks its own noise
+  - `Gaps are digital silence` means the quiet passages are exact zeros, so there is no floor to measure
+  - `Re-analyze to measure` means the run predates the current estimator, which reported the quietest music as the floor
+- `Compression Loss Estimate reads 0 Hz on a 48 kHz file`:
+  - correct: loss is measured against 20 kHz (the audible top), not Nyquist. The band between 20 kHz and 24 kHz was never audible content
+  - a lossless file showing several kHz of loss was probably transcoded from MP3/AAC before it was saved losslessly
+- `Mastered AI-generated track is still flagged by AI-music detectors`:
+  - expected. Detectors look for generator fingerprints (periodic spectral peaks from neural vocoders, stem-level vocal signatures), and EQ, compression and limiting leave those intact
+  - mastering improves how a track sounds, not how it was made; the suite does not try to hide AI origin
+  - to get a genuinely human-made or hybrid result, replace generated parts with performed ones (MIDI re-rendered through your own instruments, a re-recorded vocal) and label AI involvement where platforms ask for it
 - `matchering not used`:
   - install optional `pro` extras
   - provide valid `Reference Run ID`
