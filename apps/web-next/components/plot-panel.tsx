@@ -7,7 +7,18 @@ import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
+// The factory entry binds react-plotly.js to the minified bundle; its default
+// entry would pull in the full, unminified plotly.js build instead.
+const Plot = dynamic(
+  async () => {
+    const [{ default: createPlotlyComponent }, plotly] = await Promise.all([
+      import("react-plotly.js/factory"),
+      import("plotly.js-dist-min")
+    ]);
+    return createPlotlyComponent(plotly.default ?? plotly);
+  },
+  { ssr: false }
+);
 const PLOT_SURFACE_BG = "rgba(23, 33, 58, 0.46)";
 const PLOT_PAPER_BG = "rgba(17, 25, 45, 0.26)";
 const PLOT_FONT_COLOR = "#e7eefc";
@@ -258,10 +269,7 @@ export function PlotPanel({ title, figure, height = 520, className, helpText, xR
               data={highFidelityData as never[]}
               layout={layoutWithHeight as never}
               config={plotConfig as never}
-              onError={(err: unknown) => {
-                const message = err instanceof Error ? err.message : String(err);
-                setPlotError(message);
-              }}
+              onError={(err: Error) => setPlotError(err.message)}
               onInitialized={() => setPlotError(null)}
               onUpdate={() => setPlotError(null)}
               useResizeHandler

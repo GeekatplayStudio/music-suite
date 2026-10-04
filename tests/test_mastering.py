@@ -288,3 +288,23 @@ def test_clipping_and_true_peak_regressions_are_refused_outright() -> None:
         assert not mastering_module._is_profile_better(
             before=before, after=after, cfg=PRESETS["streaming"]
         ), marker
+
+
+def test_ebur128_metrics_agree_with_the_builtin_meter() -> None:
+    import pytest
+
+    from audioqi.mastering import _try_ebur128_metrics
+
+    pytest.importorskip("pyebur128")
+    sr = 48_000
+    t = np.arange(sr * 5, dtype=np.float32) / sr
+    left = 0.25 * np.sin(2 * np.pi * 997.0 * t)
+    right = 0.25 * np.sin(2 * np.pi * 1503.0 * t)
+    audio = np.stack([left, right], axis=1).astype(np.float32)
+
+    result = _try_ebur128_metrics(audio, sr=sr)
+
+    assert result is not None
+    assert abs(result["integrated_lufs"] - loudness_integrated_lufs(audio, sr)) < 0.5
+    assert abs(result["true_peak_dbfs"] - (-12.04)) < 0.3
+    assert 0.0 <= result["lra_lu"] < 1.0

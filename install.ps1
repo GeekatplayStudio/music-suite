@@ -17,25 +17,64 @@ function Install-WithWinget([string]$Id, [string]$FriendlyName) {
     & winget install --id $Id -e --source winget --accept-package-agreements --accept-source-agreements
 }
 
-function Find-SystemPython {
+# librosa 1.0 and numpy 2.5 need Python 3.12; on older interpreters pip silently
+# resolves to outdated releases, so an old Python is treated the same as a missing one.
+$minPythonMinor = 12
+
+function Test-PythonVersion([string]$Executable, [string[]]$PrefixArgs = @()) {
+    try {
+        $checkArgs = @($PrefixArgs) + @("-c", "import sys; raise SystemExit(0 if sys.version_info >= (3, $minPythonMinor) else 1)")
+        & $Executable @checkArgs 2>$null | Out-Null
+        return $LASTEXITCODE -eq 0
+    } catch {
+        return $false
+    }
+}
+
+function Find-SupportedPython {
     $python = Get-Command python -ErrorAction SilentlyContinue
-    if ($python) {
+    if ($python -and (Test-PythonVersion $python.Source)) {
         return [PSCustomObject]@{ Executable = $python.Source; PrefixArgs = @() }
     }
 
     $launcher = Get-Command py -ErrorAction SilentlyContinue
     if ($launcher) {
-        return [PSCustomObject]@{ Executable = $launcher.Source; PrefixArgs = @("-3") }
+        foreach ($selector in @("-3", "-3.$minPythonMinor")) {
+            if (Test-PythonVersion $launcher.Source @($selector)) {
+                return [PSCustomObject]@{ Executable = $launcher.Source; PrefixArgs = @($selector) }
+            }
+        }
     }
 
-    Install-WithWinget "Python.Python.3.11" "Python 3.11"
+    $perUser = Join-Path $env:LOCALAPPDATA "Programs\Python\Python3$minPythonMinor\python.exe"
+    if ((Test-Path -LiteralPath $perUser) -and (Test-PythonVersion $perUser)) {
+        return [PSCustomObject]@{ Executable = $perUser; PrefixArgs = @() }
+    }
+    return $null
+}
+
+function Find-SystemPython {
+    $found = Find-SupportedPython
+    if ($found) { return $found }
+
+    Install-WithWinget "Python.Python.3.$minPythonMinor" "Python 3.$minPythonMinor"
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 
-    $python = Get-Command python -ErrorAction SilentlyContinue
-    if ($python) {
-        return [PSCustomObject]@{ Executable = $python.Source; PrefixArgs = @() }
+    $found = Find-SupportedPython
+    if ($found) { return $found }
+    throw "Python 3.$minPythonMinor was installed but is not yet on PATH. Close this window, reopen a terminal, and re-run install.bat."
+}
+
+# Node 20 is end-of-life and the current toolchain needs 22.13 or newer.
+function Test-NodeVersion {
+    $node = Get-Command node -ErrorAction SilentlyContinue
+    if (-not $node) { return $false }
+    try {
+        $version = [version]((& $node.Source --version) -replace '^v', '')
+        return $version -ge [version]"22.13.0"
+    } catch {
+        return $false
     }
-    throw "Python was installed but is not yet on PATH. Close this window, reopen a terminal, and re-run install.bat."
 }
 
 function Find-ComfyPython([string]$Path) {
@@ -59,8 +98,8 @@ try {
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
     }
 
-    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-        Install-WithWinget "OpenJS.NodeJS.LTS" "Node.js"
+    if (-not (Test-NodeVersion)) {
+        Install-WithWinget "OpenJS.NodeJS.LTS" "Node.js LTS"
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
     }
 
@@ -70,6 +109,10 @@ try {
     }
 
     $venvPython = Join-Path $root ".venv\Scripts\python.exe"
+    if ((Test-Path -LiteralPath $venvPython) -and -not (Test-PythonVersion $venvPython)) {
+        Write-Host "The existing virtual environment uses a Python older than 3.$minPythonMinor; recreating it..."
+        Remove-Item -LiteralPath (Join-Path $root ".venv") -Recurse -Force
+    }
     if (-not (Test-Path -LiteralPath $venvPython)) {
         $systemPython = Find-SystemPython
         Write-Host "Creating project virtual environment..."

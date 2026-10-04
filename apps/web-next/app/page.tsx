@@ -1,6 +1,5 @@
 "use client";
 
-import { ColumnDef } from "@tanstack/react-table";
 import {
   AlertTriangle,
   CircleHelp,
@@ -22,10 +21,11 @@ import {
   Upload,
   Waves
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
-import { DataTable } from "@/components/data-table";
+import { type ColumnDef, DataTable } from "@/components/data-table";
 import { AudioReviewStrip } from "@/components/audio-review-strip";
 import { EqualizerPanel } from "@/components/equalizer-panel";
 import { KpiTile } from "@/components/kpi-tile";
@@ -733,6 +733,7 @@ function encodeAudioBufferToWav(audioBuffer: AudioBuffer): Blob {
 }
 
 export default function HomePage() {
+  const router = useRouter();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaElementSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -2271,7 +2272,7 @@ export default function HomePage() {
               onClick={() => {
                 if (!selectedRunId) return;
                 const params = new URLSearchParams({ run: selectedRunId, name: selectedRunFilename });
-                window.location.assign(`/mapper?${params.toString()}`);
+                router.push(`/mapper?${params.toString()}`);
               }}
             >
               <Network className="mr-2 h-4 w-4" />

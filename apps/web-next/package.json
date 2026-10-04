@@ -6,22 +6,21 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --ext .js,.jsx,.ts,.tsx --ignore-pattern .next"
+    "lint": "eslint ."
   },
   "dependencies": {
-    "@tanstack/react-table": "^8.21.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.52.0",
     "next": "^16.3.8",
-    "plotly.js-dist-min": "^3.7.0",
+    "plotly.js-dist-min": "^4.1.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-plotly.js": "^2.6.0",
+    "react-plotly.js": "^4.1.0",
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
-    "@types/node": "^22.20.1",
+    "@types/node": "^24.19.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.6.1",
@@ -29,7 +28,7 @@
     "eslint-config-next": "^16.3.8",
     "postcss": "^8.5.28",
     "tailwindcss": "^3.4.19",
-    "typescript": "^5.9.3"
+    "typescript": "~6.0.3"
   },
   "pnpm": {
     "overrides": {

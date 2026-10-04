@@ -5,8 +5,8 @@
 **Local-first music analysis, AI-assisted mastering, real-time visualization, and 3D song geometry — in one application.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-06b6d4.svg?style=flat-square)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
-[![Node](https://img.shields.io/badge/Node-20.9%2B-339933.svg?style=flat-square&logo=nodedotjs&logoColor=white)](apps/web-next/package.json)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-3776ab.svg?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
+[![Node](https://img.shields.io/badge/Node-22.13%2B-339933.svg?style=flat-square&logo=nodedotjs&logoColor=white)](apps/web-next/package.json)
 [![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688.svg?style=flat-square&logo=fastapi&logoColor=white)](apps/api/main.py)
 [![Next.js](https://img.shields.io/badge/Next.js-16-000000.svg?style=flat-square&logo=nextdotjs&logoColor=white)](apps/web-next)
 [![Runs locally](https://img.shields.io/badge/Runs-100%25%20local-8b5cf6.svg?style=flat-square)](GUARDRAILS.md)
@@ -119,8 +119,8 @@ Eleven interactive Plotly panels grouped into Mix Review, Stereo Focus, and Spec
 ## Requirements
 
 - Windows 10/11 or a current macOS release
-- Python 3.11 or newer; 3.12+ recommended, since librosa 1.0 and numpy 2.5 need it and on 3.11 pip falls back to librosa 0.11 / numpy 2.4
-- Node.js 20.9 or newer
+- Python 3.12 or newer (librosa 1.0 and numpy 2.5 need it). The installer sets up 3.12 when it finds nothing newer, and recreates a virtual environment built on an older Python
+- Node.js 22.13 or newer; the current LTS is recommended, and the installer replaces older versions
 - pnpm (recommended) or npm
 - FFmpeg and ffprobe on `PATH`
 - Git for in-app updates

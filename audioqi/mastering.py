@@ -2192,23 +2192,24 @@ def _try_ebur128_metrics(audio: np.ndarray, sr: int) -> dict[str, Any] | None:
         signal = signal[:, np.newaxis]
 
     try:
-        meter = ebur.Meter(int(sr), int(signal.shape[1]))
-        meter.add_frames(signal)
-        integrated = meter.loudness_global()
-        result: dict[str, Any] = {"integrated_lufs": float(integrated)}
-        lra_fn = getattr(meter, "loudness_range", None)
-        if callable(lra_fn):
-            result["lra_lu"] = float(lra_fn())
-        true_peak_fn = getattr(meter, "true_peak", None)
-        if callable(true_peak_fn):
-            tp = true_peak_fn()
-            if isinstance(tp, (list, tuple)):
-                tp_val = max(float(x) for x in tp) if tp else None
-            else:
-                tp_val = float(tp)
-            if tp_val is not None:
-                result["true_peak_dbfs"] = float(dbfs(tp_val))
-        return result
+        channels = int(signal.shape[1])
+        mode = (
+            ebur.MeasurementMode.MODE_I
+            | ebur.MeasurementMode.MODE_LRA
+            | ebur.MeasurementMode.MODE_TRUE_PEAK
+        )
+        state = ebur.R128State(channels, int(sr), mode)
+        # libebur128 takes interleaved frames, which is the C order of (frames, channels).
+        state.add_frames(np.ascontiguousarray(signal).reshape(-1), int(signal.shape[0]))
+        integrated = float(ebur.get_loudness_global(state))
+        if not np.isfinite(integrated):
+            return None
+        true_peak = max(float(ebur.get_true_peak(state, ch)) for ch in range(channels))
+        return {
+            "integrated_lufs": integrated,
+            "lra_lu": float(ebur.get_loudness_range(state)),
+            "true_peak_dbfs": float(dbfs(true_peak)),
+        }
     except Exception:
         return None
 

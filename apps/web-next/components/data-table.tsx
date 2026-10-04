@@ -1,7 +1,20 @@
-import { ColumnDef } from "@tanstack/react-table";
 import { ReactNode, useMemo } from "react";
 
 import { cn } from "@/lib/utils";
+
+export interface CellContext<TData, TValue = unknown> {
+  row: { original: TData; index: number };
+  getValue: () => TValue;
+}
+
+// The only column features this table renders: a header, and either an
+// accessor key or a cell renderer.
+export interface ColumnDef<TData, TValue = unknown> {
+  id?: string;
+  header?: ReactNode | (() => ReactNode);
+  accessorKey?: string;
+  cell?: ReactNode | ((ctx: CellContext<TData, TValue>) => ReactNode);
+}
 
 interface DataTableProps<TData> {
   data: TData[];
@@ -15,14 +28,9 @@ export function DataTable<TData>({ data, columns, onRowClick, rowClassName }: Da
   const headers = useMemo(
     () =>
       columns.map((column, colIndex) => {
-        const maybeColumn = column as {
-          header?: unknown;
-          accessorKey?: string;
-          id?: string;
-        };
         return {
-          id: maybeColumn.id ?? maybeColumn.accessorKey ?? `col_${colIndex}`,
-          content: renderHeader(maybeColumn.header, maybeColumn.accessorKey)
+          id: column.id ?? column.accessorKey ?? `col_${colIndex}`,
+          content: renderHeader(column.header, column.accessorKey)
         };
       }),
     [columns]
@@ -73,34 +81,30 @@ export function DataTable<TData>({ data, columns, onRowClick, rowClassName }: Da
   );
 }
 
-function renderHeader(header: unknown, accessorKey?: string): ReactNode {
+function renderHeader(header: ColumnDef<unknown>["header"], accessorKey?: string): ReactNode {
   if (typeof header === "function") {
-    return (header as (ctx: unknown) => ReactNode)({});
+    return header();
   }
   if (header !== undefined && header !== null) {
-    return header as ReactNode;
+    return header;
   }
   return accessorKey ?? "";
 }
 
 function renderCell<TData>(column: ColumnDef<TData, unknown>, row: TData, rowIndex: number): ReactNode {
-  const maybeColumn = column as {
-    cell?: unknown;
-    accessorKey?: string;
-  };
-  const accessorKey = maybeColumn.accessorKey;
+  const accessorKey = column.accessorKey;
   const value =
     typeof accessorKey === "string"
       ? (row as Record<string, unknown>)[accessorKey]
       : undefined;
-  if (typeof maybeColumn.cell === "function") {
-    return (maybeColumn.cell as (ctx: unknown) => ReactNode)({
+  if (typeof column.cell === "function") {
+    return column.cell({
       row: { original: row, index: rowIndex },
       getValue: () => value
     });
   }
-  if (maybeColumn.cell !== undefined && maybeColumn.cell !== null) {
-    return maybeColumn.cell as ReactNode;
+  if (column.cell !== undefined && column.cell !== null) {
+    return column.cell;
   }
   if (value === undefined || value === null) {
     return "";

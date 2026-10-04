@@ -136,3 +136,26 @@ def test_only_one_readme_exists() -> None:
         if not generated.intersection(path.parts)
     ]
     assert readmes == [Path("README.md")]
+
+
+def test_installers_require_a_python_that_can_run_the_current_dependencies() -> None:
+    """librosa 1.0 and numpy 2.5 need Python 3.12; an older one must not be accepted."""
+    windows = Path("install.ps1").read_text(encoding="utf-8")
+    assert "$minPythonMinor = 12" in windows
+    assert "Python.Python.3.11" not in windows
+    assert "Test-PythonVersion $venvPython" in windows  # stale venvs are recreated
+
+    mac = Path("install.command").read_text(encoding="utf-8")
+    assert "python@3.12" in mac
+    assert "python@3.11" not in mac
+    assert 'python_is_supported ".venv/bin/python"' in mac
+
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+    assert 'requires-python = ">=3.12"' in pyproject
+
+
+def test_installers_reject_end_of_life_node() -> None:
+    assert '[version]"22.13.0"' in Path("install.ps1").read_text(encoding="utf-8")
+    assert "node_is_supported" in Path("install.command").read_text(encoding="utf-8")
+    manifest = json.loads(Path("package.json").read_text(encoding="utf-8"))
+    assert manifest["engines"]["node"] == ">=22.13"
