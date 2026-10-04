@@ -40,7 +40,6 @@
 - Next.js: https://nextjs.org/docs
 - Tailwind CSS: https://tailwindcss.com/docs
 - shadcn/ui: https://ui.shadcn.com/
-- TanStack Table: https://tanstack.com/table/latest
 - Plotly Python: https://plotly.com/python/
 - Plotly.js: https://plotly.com/javascript/
 

@@ -129,6 +129,32 @@ Licensing and maintenance caution:
 - `Peaks.js` is LGPL-3.0.
 - Some separation projects require extra diligence around maintenance status and model distribution.
 
+## October 2026 Dependency Pass
+
+This pass supersedes the "Deferred on purpose" list in the April audit below.
+
+### Applied
+
+- Runtimes: Python 3.12+ (librosa 1.0 and numpy 2.5 require it) and Node.js 22.13+, with Node 24 LTS recommended. The installers check versions, install supported ones when missing, and rebuild a virtual environment created on an older Python.
+- Python: librosa 1.0, numpy 2.5, plotly 7.1, Kaleido 1.4, SQLAlchemy 2.1, FastAPI 0.142 / Starlette 1.7, WeasyPrint 70, and MCP 2.3. MCP 2 removed the `FastMCP` entry point, so the server uses `MCPServer`.
+- librosa 1.0 dropped its audioread fallback. The Song Mapper now decodes AAC/M4A through ffmpeg when libsndfile cannot read a file.
+- plotly.js 4 syncs ticks on overlaid axes by default. The waveform and stereo charts set `tickmode` explicitly to keep independent scales.
+- Frontend: Next.js 16.3, React 19.3, Tailwind CSS 4.3, plotly.js 4.1 with react-plotly.js 4.1, TypeScript 6.0, lucide-react 1.x, and pnpm 12.
+- Tailwind 4 migration: `@tailwindcss/postcss` replaces the old PostCSS plugin and Autoprefixer, base rules sit in `@layer base`, and renamed utilities are updated.
+- react-plotly.js is bound to `plotly.js-dist-min` through its factory entry, and the `plotly.js` peer is aliased to the same bundle. That keeps the full package and its map dependencies out of the install, which cleared all `pnpm audit --prod` findings.
+- `@tanstack/react-table` was removed. Only its column type was imported, so a local type replaces it.
+
+### Still deferred
+
+- ESLint 10: `eslint-plugin-react`, `jsx-a11y`, and `import` declare peer support only up to ESLint 9.
+- TypeScript 7: typescript-eslint requires TypeScript below 6.1.
+- Dash 4 and Torch/torchaudio: unchanged from the April notes.
+
+### Not verified in this pass
+
+- Kaleido 1.x needs a Chrome install for static image export. The test suite mocks `write_image`, so PNG chart export in reports was not exercised on Kaleido 1.4.
+- PDF export needs WeasyPrint's system libraries (Pango and related). Where they are missing, the app skips the PDF report.
+
 ## April 2026 Dependency Audit
 
 The current dependency pass checked the project manifests, the active frontend lockfile, the local Python virtual environment, and current upstream release pages.
