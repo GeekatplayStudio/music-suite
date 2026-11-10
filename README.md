@@ -2,14 +2,14 @@
 
 # 🎛️ Geekatplay Studio Music Suite
 
-**Local-first music analysis, AI-assisted mastering, real-time visualization, and 3D song geometry — in one application.**
+**Local-first music analysis, AI-assisted mastering, a multitrack audio and MIDI editor, real-time visualization, and 3D song geometry — in one application.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-06b6d4.svg?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776ab.svg?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
 [![Node](https://img.shields.io/badge/Node-22.13%2B-339933.svg?style=flat-square&logo=nodedotjs&logoColor=white)](apps/web-next/package.json)
 [![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688.svg?style=flat-square&logo=fastapi&logoColor=white)](apps/api/main.py)
 [![Next.js](https://img.shields.io/badge/Next.js-16-000000.svg?style=flat-square&logo=nextdotjs&logoColor=white)](apps/web-next)
-[![Runs locally](https://img.shields.io/badge/Runs-100%25%20local-8b5cf6.svg?style=flat-square)](GUARDRAILS.md)
+[![Local first](https://img.shields.io/badge/Runs-local--first-8b5cf6.svg?style=flat-square)](GUARDRAILS.md)
 
 Created by **Vladimir Chopine** · [GeekatplayStudio/music-suite](https://github.com/GeekatplayStudio/music-suite)
 
@@ -23,7 +23,7 @@ Created by **Vladimir Chopine** · [GeekatplayStudio/music-suite](https://github
 
 ## What it is
 
-Music Suite is a desktop-style application that runs entirely on your own machine. Upload a track and it gives you broadcast-grade measurements, an explainable mastering chain, real-time visuals, and a 3D map of the song's spectral geometry — without uploading your audio anywhere.
+Music Suite is a desktop-style application that runs on your own machine. Upload a track and it gives you broadcast-grade measurements, an explainable mastering chain, a multitrack editor for cutting, repairing, mixing and composing, real-time visuals, and a 3D map of the song's spectral geometry — without uploading your audio anywhere.
 
 The former **AudioQI Analyzer** and **Sonic Visual AI** projects now share one codebase, interface, installer, startup workflow, dependency set, and release lifecycle. Sonic Holodeck ships as an optional ComfyUI integration rather than a second application.
 
@@ -31,11 +31,12 @@ The former **AudioQI Analyzer** and **Sonic Visual AI** projects now share one c
 |---|---|
 | 🎚️ **Measure** | Loudness (LUFS), true peak, crest, LRA, stereo correlation, phase, spectrum, and four spectrogram types |
 | 🤖 **Master** | Internal, FFmpeg, Pedalboard, and Matchering paths with per-stage progress, marker-aware refinement, and a regression guard that refuses passes which add glare |
+| ✂️ **Edit** | Multitrack Studio Editor: waveform clips, stem separation, repair tools, a spectral view, mixing with buses and automation, recording, MIDI with a piano roll, and AI tempo/key matching |
 | 🌈 **Visualize** | 60 FPS Spectrum, Orbit, and Waveform modes driven by the Web Audio analyser |
 | 🪐 **Map** | Full-song 3D geometry with tempo and key estimation, structural repeat detection, per-node inspection, presets, overlays, and exports |
 | 🧠 **Describe** | Local Ollama model writes the track's style, always shown beside the description derived from the measurements |
 | 🔌 **Integrate** | Guarded local MCP server, plus optional ComfyUI nodes for music generation |
-| 🔒 **Stay local** | Loopback-only binding, no cloud calls for audio, explicit opt-in for every mutation |
+| 🔒 **Stay local** | Loopback-only binding, no cloud calls for audio, explicit opt-in for every mutation. The one network feature — in-browser editor plugins — is off until you switch it on |
 
 ---
 
@@ -116,6 +117,39 @@ Eleven interactive Plotly panels grouped into Mix Review, Stereo Focus, and Spec
 
 ---
 
+## Studio Editor
+
+Open it from the **Studio Editor** button in the workspace (it opens the selected song) or at `/editor`. A session holds any number of tracks; nothing you do changes the original files, and every edit can be undone.
+
+| Area | What you can do |
+|---|---|
+| **Arrange** | Move, trim, split, duplicate and reverse clips; fades with linear, equal-power or S-curve shapes; automatic crossfades where clips overlap; ripple delete; snapping; markers; named sections you can repeat or cut out as a block |
+| **Separate and transform** | Split a song into 2, 4 or 6 stems on aligned tracks; time-stretch, pitch-shift, warp markers and beat quantise (Rubber Band); match a clip's tempo and key to the project or to another clip |
+| **Repair** | Noise reduction with an optional noise print, DeClick, DeHum, DeClip, DeReverb, loudness normalise, and a spectral view where you box a sound and attenuate or heal it |
+| **Mix** | Per-track EQ, gate, distortion, compressor, delay and reverb; buses and sends; automation lanes for volume, pan, EQ and effect settings; a true-peak limiter; EBU R 128 loudness and a phase scope |
+| **Record** | Uncompressed recording with punch-in, and loop recording into take lanes you can comp |
+| **Compose** | Instrument tracks with a built-in synth or drum kit, a piano roll, computer- or MIDI-keyboard note input, MIDI file import/export, audio-to-MIDI, and automatic song-section detection |
+| **Plugins** | VST3 and Audio Units rendered in an isolated process; Web Audio Module effects that run live in the browser (opt-in, see below) |
+| **Generate** | Describe a part and a local ComfyUI (MusicGen, via the bundled Sonic Holodeck nodes) generates it at the project tempo |
+| **Export** | Mixdown, highlighted range or every track as WAV (24-bit or 32-bit float), FLAC or MP3; or send the mix straight to AI Mastering |
+
+Press `?` in the editor for the full list of keyboard shortcuts.
+
+**Optional engines.** The editor works with the base install and uses built-in fallbacks where a better engine is missing. For the best quality, install the extras into the suite's virtual environment:
+
+```bash
+pip install -e ".[editor]"      # Pedalboard (Rubber Band stretch, VST3/AU) and noisereduce
+pip install -e ".[editor-ai]"   # audio-separator, Demucs, beat_this, PyTorch — stems and beat tracking
+```
+
+The macOS installer adds the `editor` extra automatically. `editor-ai` is a large download and is left to you. Some separation models carry non-commercial licences, and Pedalboard and Rubber Band are GPLv3; check them before distributing a bundled build or releasing separated stems commercially.
+
+**In-browser plugins.** Web Audio Modules are third-party JavaScript downloaded from the internet and run inside the editor page. They stay off until you choose *Allow internet plugins in this browser* on a track. Your audio is still processed on this machine, but a plugin can see the open session, so load only plugins you trust. See [GUARDRAILS.md](GUARDRAILS.md).
+
+What is planned next, and exactly what has and has not been verified, is in **[docs/EDITOR_ROADMAP.md](docs/EDITOR_ROADMAP.md)**.
+
+---
+
 ## Requirements
 
 - Windows 10/11 or a current macOS release
@@ -124,7 +158,8 @@ Eleven interactive Plotly panels grouped into Mix Review, Stereo Focus, and Spec
 - pnpm (recommended) or npm
 - FFmpeg and ffprobe on `PATH`
 - Git for in-app updates
-- Optional: ComfyUI with a compatible Torch/CUDA environment
+- Optional: ComfyUI with a compatible Torch/CUDA environment (for music generation)
+- Optional: the `editor` and `editor-ai` extras for the Studio Editor's best engines (see above)
 
 ---
 
@@ -205,8 +240,9 @@ The `MUSIC_SUITE_STARTUP_TIMEOUT_SECONDS` environment variable sets the same val
 2. Select **Analyze** for technical and mastering analysis.
 3. Select **Visual AI** for the live Spectrum, Orbit, and Waveform experience.
 4. Select a run and open **Geometry Mapper** to reuse that song in the full 3D workspace.
-5. Use **AI Mastering** to render and compare mastered outputs.
-6. Open **Configuration** to check for updates from the official repository.
+5. Open **Studio Editor** to cut, repair, separate, mix or add to the song on a multitrack timeline.
+6. Use **AI Mastering** to render and compare mastered outputs.
+7. Open **Configuration** to check for updates from the official repository.
 
 The frontend reaches the selected API through a same-origin streaming proxy, so uploads, audio seeking, downloads, MCP discovery, and configuration work without fixed port assumptions. The installer creates an optimized production frontend, and normal startup uses `next start` without development hot-reload WebSockets.
 
@@ -251,11 +287,16 @@ After an update, restart Music Suite. The start launcher fingerprints the Git re
 
 ```text
 music-suite/
-  apps/api/                          FastAPI analysis and mastering backend
+  apps/api/                          FastAPI analysis, mastering and editor backend
   apps/mcp/                          guarded MCP server
   apps/web-next/                     Next.js interface and Visual AI
+    app/editor/, components/editor/  Studio Editor interface
+    lib/editor/                      editor audio engine, MIDI, waveforms, plugin host
+    public/editor-worklets.js        gate, true-peak limiter, loudness meter, recorder
+    public/wam-host/                 pinned Web Audio Modules host (MIT)
     public/song-mapper/              integrated Song Geometry Mapper workspace
   audioqi/                           analysis, mastering, update, and integrations
+    editor/                          editor projects, assets and processing jobs
     geometry_mapper/                 mapper deep-analysis and managed cache service
     integrations/comfyui/
       sonic_holodeck/                bundled ComfyUI nodes and workflows
@@ -312,7 +353,7 @@ The mapper's own unit tests cover the pure analysis helpers — tempo and key
 estimation, chroma folding, and the visual density maths — including the cases
 where an estimate must be refused rather than guessed.
 
-Further reading: [Help guide](docs/HELP_GUIDE.md) · [Competitive analysis](docs/MAPPER_COMPETITIVE_ANALYSIS.md) · [Product requirements](docs/PRD.md) · [Technical requirements](docs/TRD.md) · [References](docs/REFERENCES.md)
+Further reading: [Help guide](docs/HELP_GUIDE.md) · [Studio Editor roadmap](docs/EDITOR_ROADMAP.md) · [Competitive analysis](docs/MAPPER_COMPETITIVE_ANALYSIS.md) · [Product requirements](docs/PRD.md) · [Technical requirements](docs/TRD.md) · [References](docs/REFERENCES.md)
 
 ---
 

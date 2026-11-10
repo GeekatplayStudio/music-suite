@@ -18,6 +18,18 @@
 - playback + marker panel,
 - AI mastering controls and self-check visualization.
 
+- `apps/web-next` Studio Editor (`/editor`):
+- multitrack timeline and piano roll on Canvas 2D,
+- Web Audio engine shared by live playback and offline export (`lib/editor/engine.ts`),
+- AudioWorklet processors for the gate, true-peak limiter, EBU R 128 meter and recorder (`public/editor-worklets.js`),
+- optional Web Audio Modules 2 host for in-browser plugins (`lib/editor/wam.ts`, `public/wam-host/`).
+
+- `apps/api/editor.py` + `audioqi/editor` (editor backend):
+- projects, canonical-WAV assets and cached waveform overviews,
+- processing jobs on the shared worker pool,
+- VST3/AU hosting in an isolated worker process,
+- loopback-only ComfyUI generation.
+
 - `apps/web` Dash frontend (legacy compatibility UI):
 - basic upload/analyze/report flow.
 
@@ -52,6 +64,7 @@
 - `SQLAlchemy + SQLite`: simple local persistence for run history and artifact pointers.
 - `weasyprint`: offline HTML->PDF export path.
 - `torch/torchaudio/nnAudio` (optional): CUDA acceleration path for spectrogram-heavy workflows.
+- Editor engines, each with a built-in fallback: `audio-separator` (BS-RoFormer) then Demucs for stems; Pedalboard (Rubber Band) for stretch, pitch and plugin hosting; `noisereduce` for denoising; `beat_this` for beats; SciPy for the restoration tools. The reasoning is recorded in `docs/EDITOR_ROADMAP.md` section 3.
 
 ## 2. Data Flow
 
@@ -123,6 +136,11 @@
 - Export: `GET /runs/{run_id}/export/json|html|pdf`
 - Conversion: `POST /runs/{run_id}/convert`, `GET /runs/{run_id}/conversions`, `GET /runs/{run_id}/conversions/{fmt}/download`
 - Mastering: `POST /runs/{run_id}/master`, `GET /runs/{run_id}/mastering`, `GET /runs/{run_id}/mastering/{output_id}/download`
+- Editor information: `GET /editor/capabilities`, `GET /editor/plugins`, `GET /editor/plugins/{plugin_id}`, `GET /editor/generation`
+- Editor projects: `GET|POST /editor/projects`, `GET|DELETE /editor/projects/{id}`, `POST /editor/projects/{id}/state`, `POST /editor/projects/{id}/rename`
+- Editor assets: `POST /editor/projects/{id}/assets`, `POST /editor/projects/{id}/assets/from-run/{run_id}`, `GET /editor/projects/{id}/assets/{asset_id}/audio|peaks`, `DELETE /editor/projects/{id}/assets/{asset_id}`
+- Editor jobs: `POST /editor/projects/{id}/jobs`, `GET /editor/projects/{id}/jobs/{job_id}`. Operations: `separate`, `stretch`, `pitch`, `warp`, `quantize`, `denoise`, `declick`, `dehum`, `declip`, `dereverb`, `spectral_repair`, `normalize`, `analyze`, `match`, `to_midi`, `structure`, `plugin`, `generate`
+- Editor export: `POST /editor/export/mp3|flac`
 
 ## 7. GPU Strategy
 
@@ -143,14 +161,17 @@
 
 ## 9. Security and Offline Constraints
 
-- No external API calls required.
+- No external API calls required for any core feature.
 - Local filesystem only.
+- One opt-in exception: in-browser editor plugins (Web Audio Modules) are downloaded from the internet once the user allows them in that browser. The boundary and residual risk are set out in `GUARDRAILS.md`.
+- ComfyUI generation and Ollama are reached on loopback only.
 - CORS open for localhost development; harden for packaging/distribution.
 
 ## 10. Roadmap Technical Extensions
 
 - libebur128 optional backend for verified true peak + LRA.
-- Demucs stem pipeline with artifact caching.
+- Demucs stem pipeline with artifact caching (shipped in the Studio Editor).
+- Studio Editor follow-ups: live warp playback, sample-based instruments, spectral lasso/brush selection, mid/side EQ, bus automation (`docs/EDITOR_ROADMAP.md`).
 - Batch analysis worker pool and diff views.
 - Artifact detection modules for codec defects.
 

@@ -71,6 +71,16 @@ Provide studio-grade technical and perceptual analysis in a reproducible local t
 - `docs/UPGRADES_REFERENCE.md`
 - Provide in-app glossary/help text for metrics, charts, markers, and mastering controls.
 
+### Studio Editor (implemented November 2026)
+
+- Multitrack editing of audio and MIDI with non-destructive clips, undo and autosave.
+- Stem separation, restoration, pitch/time, warp and AI tempo/key matching as background jobs that keep the original.
+- Mixing with per-track effects, buses, automation, a true-peak limiter and EBU R 128 metering.
+- Recording with punch-in and take comping; piano roll, drum kit, MIDI import/export, audio-to-MIDI and section detection.
+- VST3/AU plugins in an isolated process; opt-in in-browser Web Audio Module plugins.
+- Export to WAV, FLAC and MP3, or hand the mix to AI Mastering.
+- Acceptance and verification status: `docs/EDITOR_ROADMAP.md` section 7.
+
 ## Non-Functional Requirements
 
 - Fully offline execution.

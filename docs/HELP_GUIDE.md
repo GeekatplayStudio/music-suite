@@ -196,7 +196,75 @@ The Session tab describes the track's style from its measured features.
 - No local model is a normal state, not an error — the measured description still appears.
 - Requests go through the Music Suite API, never from the browser to Ollama directly, and carry explicit time and output-token budgets.
 
+## 8c) Studio Editor
+
+Open it with **Studio Editor** in the workspace (it loads the selected song) or at `/editor`. Sessions save automatically; the original audio is never changed, and every edit can be undone (`Ctrl/Cmd+Z`).
+
+### Layout
+
+- **Toolbar** — transport (play, loop, record), clock, loudness readout, tools (Select `V`, Razor `C`, Range `R`), snapping, automation lane, spectral view, markers, undo/redo, zoom, Import and Export.
+- **Track headers** — name, mute, solo, volume, pan and a level meter.
+- **Timeline** — clips with waveforms (audio) or notes (MIDI), the ruler with sections and markers, and automation lines when a lane is shown.
+- **Inspector** (right) — changes with the selection: the clip and its processing tools, the track's EQ, effects, routing and plugin, or project settings when nothing is selected.
+- **Bottom panel** — the piano roll for a MIDI clip (`P`) or the spectral view for an audio clip (`W`).
+
+### Everyday editing
+
+| Do this | How |
+|---|---|
+| Move or trim a clip | Drag its body, or drag an edge |
+| Fade | Drag the small square handles at the top corners of a selected clip; choose the shape in the inspector |
+| Split | `S` at the playhead, or the Razor tool |
+| Remove time | Highlight with the Range tool, then `Delete`; `Shift+Delete` closes the gap |
+| Loop | Shift-drag on the ruler, or highlight a range and press `L` |
+| Name a section | Highlight a range, `Shift+R`; then Repeat or Cut out from the inspector |
+| Automation | `A` (or the lane menu), click the yellow line to add a point, drag it, double-click to remove |
+
+### Processing tools
+
+Each tool renders a new take beside the original. With several clips selected, the tools run on all of them; **Favourites** saves the last one to three steps as a one-click chain.
+
+- **Separate stems** — 2, 4 or 6 stems on new aligned tracks; the source clip is muted.
+- **Repair** — Reduce noise (highlight pure noise first to use it as a noise print), Normalise loudness.
+- **Restore** — DeClick, DeHum (finds 50 or 60 Hz itself), DeClip, DeReverb.
+- **Spectral view** — drag a box around a sound; *Attenuate* turns it down, *Heal* replaces it with what surrounds it.
+- **Pitch and time**, **Warp** (Alt-click a selected clip to pin a moment, drag its dashed line, then *Apply warp*), **Quantise beats**.
+- **AI match** — detect tempo and key, then fit the clip to the project or to another clip. Relative keys (A minor / C major) count as a match.
+- **Compose** — *Convert to MIDI notes* (best on single lines: vocals, bass, leads) and *Detect song sections*.
+- **Generate a part** — needs ComfyUI running on this machine with the Sonic Holodeck nodes.
+
+### Mixing
+
+Every track has a 3-band EQ (frequencies adjustable), gate, distortion, compressor, delay and reverb, stereo width and pan. Add **Reverb**, **Delay** or **Group** buses in the project panel, then send tracks to them or route a track's output into a bus. The master has a true-peak limiter (ceiling adjustable); the readout shows integrated, short-term and momentary loudness and the highest true peak for the current playback.
+
+### Recording
+
+Select a track and press the microphone button. With a range highlighted it becomes a punch-in (2 s pre-roll, stops by itself). With the loop on, each pass becomes a take on its own lane; select a take and choose *Use this take* to comp. The browser asks for microphone access the first time.
+
+### Composing with MIDI
+
+*Add an instrument (MIDI) track* in the project panel creates a four-bar clip and opens the piano roll. Click to add notes, drag to move, drag the right edge to resize, right-click to delete, shift-drag to select several. *Note input* lets the keys `A W S E D F T G Y H U J K` or a MIDI keyboard add notes at the playhead. Switch the instrument type to **Drum kit** for a labelled drum grid. Import `.mid` files with Import; export a clip with *Export as a .mid file*.
+
+### Plugins
+
+- **VST3 / Audio Units** — choose one in the clip's Plugins section, set its controls, *Audition 8 s* to hear it, then *Render through plugin*.
+- **In-browser plugins (Web Audio Modules)** — in a track's inspector. They are downloaded from the internet and stay off until you allow them in that browser. A plugin runs inside the editor page and can see the open session; load only plugins you trust.
+
+### Export
+
+*Export* offers the mixdown as WAV 24-bit, WAV 32-bit float, FLAC or MP3, the highlighted range, every track separately, or *Send mix to Mastering*, which adds the mix to the workspace as a new run.
+
 ## 9) Troubleshooting
+
+### Studio Editor
+
+- **No stems, poor stems or slow stems** — install the `editor-ai` extra; without it the editor uses a basic built-in split (2 or 4 stems only).
+- **Recording does not start** — allow microphone access for the page in the browser, and check no other app holds the input exclusively.
+- **"ComfyUI is not running"** — start ComfyUI on this machine with the Sonic Holodeck nodes installed, then press *Check again*. Set `MUSIC_SUITE_COMFYUI_URL` if it is not on port 8188; it must be a loopback address.
+- **An in-browser plugin did not load or was left out of an export** — some community plugins do not support every browser or offline rendering; the editor names any plugin it had to leave out.
+- **Chords come out wrong in Convert to MIDI** — the built-in transcriber follows one note at a time. `basic-pitch` handles chords but cannot yet be installed on Python 3.13 or newer.
+
+### General
 
 - `Failed to fetch`:
   - confirm the API is running; startup prefers port `8008` but auto-selects the next free loopback port

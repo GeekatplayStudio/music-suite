@@ -34,6 +34,24 @@
 - matchering: https://github.com/sergree/matchering
 - Matchering docs: https://sergree.github.io/matchering/
 
+## Studio Editor
+
+- audio-separator (BS-RoFormer, MDX, Demucs runner): https://github.com/nomadkaraoke/python-audio-separator
+- Demucs: https://github.com/adefossez/demucs
+- MVSEP separation quality leaderboard: https://mvsep.com/quality_checker/multisong_leaderboard
+- Rubber Band Library: https://breakfastquay.com/rubberband/
+- noisereduce: https://github.com/timsainb/noisereduce
+- beat_this: https://github.com/CPJKU/beat_this
+- basic-pitch (optional polyphonic transcription): https://github.com/spotify/basic-pitch
+- Signalsmith Stretch (planned live warp): https://github.com/Signalsmith-Audio/signalsmith-stretch
+- Web Audio API: https://webaudio.github.io/web-audio-api/
+- Web Audio Modules 2: https://www.webaudiomodules.com/ · SDK: https://github.com/webaudiomodules/sdk
+- Web MIDI API: https://webaudio.github.io/web-midi-api/
+- Standard MIDI File specification: https://midi.org/standard-midi-files
+- EBU R 128: https://tech.ebu.ch/publications/r128
+- ComfyUI: https://github.com/comfyanonymous/ComfyUI
+- MusicGen: https://github.com/facebookresearch/audiocraft
+
 ## Web / App Framework
 
 - FastAPI: https://fastapi.tiangolo.com/
@@ -59,6 +77,6 @@
 
 ## Notes
 
-- AudioQI is local-first and offline by design.
+- AudioQI is local-first and offline by design. The single exception is the opt-in in-browser plugin feature of the Studio Editor (see `GUARDRAILS.md`).
 - Optional backends are capability-gated at runtime and gracefully fall back to internal mastering.
 - For reproducibility, use the `internal` backend and fixed settings.

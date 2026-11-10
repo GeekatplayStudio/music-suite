@@ -32,6 +32,13 @@ This document records what the application already does well, which upgrades are
 - Analyzer-suggested mastering settings that now include safer mode, preset, backend, and refine-pass guidance.
 - Optional pro-module detection with graceful fallback when extra libraries are unavailable.
 
+### Studio Editor (November 2026)
+
+- Multitrack editor at `/editor` with its own API under `/editor/*` and storage under `data/editor/`.
+- Arrange, separate, repair, mix, record, compose (MIDI) and export, as listed in the README and `docs/HELP_GUIDE.md`.
+- Heavy engines are optional extras (`editor`, `editor-ai`) with built-in fallbacks, chosen at runtime and reported in each job result.
+- The full feature list, library decisions, phase history and verification log are in `docs/EDITOR_ROADMAP.md`.
+
 ### Stability work already in place
 
 - Production-safe Next.js not-found route.
@@ -128,6 +135,23 @@ Licensing and maintenance caution:
 - `audiowaveform` is GPLv3.
 - `Peaks.js` is LGPL-3.0.
 - Some separation projects require extra diligence around maintenance status and model distribution.
+
+## November 2026 Dependency Pass
+
+Applied on 2026-11-09 alongside the Studio Editor work.
+
+### Applied
+
+- Every Python dependency moved to its latest release (among them FastAPI 0.162, Starlette 1.10, librosa 1.0, NumPy 2.5, pandas 3.1, Plotly 7.1, SQLAlchemy 2.1, MCP SDK 2.3).
+- Frontend: Next.js 16.4, React 19.3.1, ESLint 10, Tailwind 4.3.5, lucide-react 1.70 and current type packages.
+- New optional extras for the editor: `editor` (Pedalboard, noisereduce) and `editor-ai` (PyTorch, audio-separator, Demucs, beat_this).
+- `sanitize_filename` now treats backslashes as separators on every platform.
+
+### Still deferred
+
+- TypeScript stays on 6.0: TypeScript 7.0 compiles the project, but `typescript-eslint` does not support it yet.
+- `basic-pitch` (polyphonic transcription) pins an old NumPy and cannot be installed on Python 3.13+.
+- `install.ps1` does not yet install the `editor` extra the way `install.command` does.
 
 ## October 2026 Dependency Pass
 

@@ -37,3 +37,7 @@ All modifications to the codebase must pass a mandatory multi-phase gatekeeper v
 
 ---
 *Copyright &copy; 2026 Geekatplay Studio and Vladimir Chopine. All rights reserved.*
+
+## 5. Studio Editor
+
+The multitrack audio and MIDI editor added in November 2026 is specified, with its phased roadmap and verification log, in [docs/EDITOR_ROADMAP.md](docs/EDITOR_ROADMAP.md). Product requirements for it are summarised in [docs/PRD.md](docs/PRD.md).
