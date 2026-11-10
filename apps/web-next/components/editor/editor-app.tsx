@@ -38,6 +38,7 @@ import { RULER_HEIGHT, Timeline } from "@/components/editor/timeline";
 import { TrackHeader } from "@/components/editor/track-header";
 import { uploadAudio } from "@/lib/api";
 import { editorApi } from "@/lib/editor/api";
+import { generationApi, type ProviderInfo } from "@/lib/generation/api";
 import { EditorEngine, playsCarrier } from "@/lib/editor/engine";
 import { type ProcessStep, favouriteStore } from "@/lib/editor/favourites";
 import { MediaStore } from "@/lib/editor/media";
@@ -223,6 +224,55 @@ function metaFromAnalysis(analysis: Analysis): AssetMeta {
   };
 }
 
+/**
+ * Place the result of an AI edit on a clip.
+ * Repaint, restyle and extend replace the clip's audio (undoable); extract, add a part and
+ * build a song add new tracks under it. Extra versions go on muted tracks to compare.
+ */
+function applySongEdit(state: ProjectState, job: Job, source: Clip): ProjectState {
+  const outputs = (job.result.outputs as Record<string, unknown>[] | undefined) ?? [];
+  const meta = outputs[0] ?? {};
+  const task = typeof meta.task === "string" ? meta.task : "";
+  const sourceIndex = state.tracks.findIndex((t) => t.id === source.trackId);
+  const tracks = state.tracks.slice();
+  let clips = state.clips.slice();
+
+  const geometry = (clip: Clip, asset: Asset): Clip => {
+    if (task !== "extend") return { ...clip, assetId: asset.id };
+    const added = typeof meta.extended_seconds === "number" ? meta.extended_seconds : 0;
+    if (meta.extend_at === "start") {
+      // The new audio sits before the old: shift the clip left as far as the timeline allows.
+      const shift = Math.min(added, clip.start);
+      return { ...clip, assetId: asset.id, start: clip.start - shift, offset: clip.offset + added - shift, duration: clip.duration + shift };
+    }
+    const sourceSeconds = typeof meta.source_seconds === "number" ? meta.source_seconds : clip.offset + clip.duration;
+    const reachedEnd = clip.offset + clip.duration >= sourceSeconds - 0.05;
+    return reachedEnd ? { ...clip, assetId: asset.id, duration: clip.duration + added } : { ...clip, assetId: asset.id };
+  };
+
+  const addTrackBelow = (name: string, at: number, clip: Clip, muted: boolean) => {
+    const track: Track = { ...makeTrack({ ...state, tracks }, name), mute: muted };
+    tracks.splice(at, 0, track);
+    clips.push({ ...clip, id: newId(), trackId: track.id });
+  };
+
+  const inPlace = task === "repaint" || task === "cover" || task === "extend";
+  job.result_assets.forEach((asset, index) => {
+    const name = stripExtension(asset.name);
+    if (inPlace && index === 0) {
+      clips = clips.map((c) => (c.id === source.id ? { ...geometry(c, asset), name } : c));
+      return;
+    }
+    const placed = { ...geometry(source, asset), name };
+    addTrackBelow(name.slice(0, 60), sourceIndex + 1 + index, placed, index > 0);
+  });
+  if (task === "complete") {
+    // The new arrangement already contains the part, so the original would double it.
+    clips = clips.map((c) => (c.id === source.id ? { ...c, muted: true } : c));
+  }
+  return { ...state, tracks, clips };
+}
+
 function capitalize(value: string): string {
   return value ? value[0].toUpperCase() + value.slice(1) : value;
 }
@@ -267,6 +317,8 @@ function applyJob(state: ProjectState, job: Job, clipId: string): ProjectState {
     return { ...state, regions: [...kept, ...regions].sort((a, b) => a.start - b.start) };
   }
   if (!source || !job.result_assets.length) return state;
+
+  if (job.op === "generate_song") return applySongEdit(state, job, source);
 
   if (job.op === "separate") {
     const sourceIndex = state.tracks.findIndex((t) => t.id === source.trackId);
@@ -348,11 +400,17 @@ export function EditorApp({ projectId }: { projectId: string }) {
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
   const [generation, setGeneration] = useState<GenerationStatus | null>(null);
+  const [songProvider, setSongProvider] = useState<ProviderInfo | null>(null);
   const checkGeneration = useCallback(() => {
     editorApi
       .generation()
       .then(setGeneration)
       .catch(() => setGeneration({ available: false, node_installed: false, models: [] }));
+    // The local song engine powers the clip's AI edit panel.
+    generationApi
+      .overview()
+      .then((overview) => setSongProvider(overview.providers.find((p) => p.id === "acestep_local") ?? null))
+      .catch(() => setSongProvider(null));
   }, []);
   const [savedState, setSavedState] = useState<ProjectState | null>(null);
   const [saveError, setSaveError] = useState(false);
@@ -783,13 +841,14 @@ export function EditorApp({ projectId }: { projectId: string }) {
 
   /** Run a processing job on every selected clip (one-clip tools: the first only). */
   const runJobs = (op: JobOp, params: Record<string, unknown>, title: string) => {
-    const single = op === "spectral_repair" || op === "warp" || op === "match" || op === "generate";
+    const single =
+      op === "spectral_repair" || op === "warp" || op === "match" || op === "generate" || op === "generate_song";
     const groups = targetGroups(single);
     const many = selectedClips.length > 1 && !single;
     // A noise print is measured in one clip's audio, so it cannot be shared across a batch.
     const shared = many && op === "denoise" ? { ...params, noise_start: null, noise_end: null } : params;
     const verb = title.split(" ").slice(0, 2).join(" ");
-    if (!["spectral_repair", "warp", "match", "analyze", "separate", "to_midi", "structure", "generate"].includes(op)) {
+    if (!["spectral_repair", "warp", "match", "analyze", "separate", "to_midi", "structure", "generate", "generate_song"].includes(op)) {
       setRecentSteps((prev) => [...prev, { op, params: shared, label: verb }].slice(-6));
     }
     for (const ids of groups) void runJob(op, shared, many ? `${verb} (${ids.length} clip${ids.length > 1 ? "s" : ""})` : title, ids);
@@ -1796,6 +1855,7 @@ export function EditorApp({ projectId }: { projectId: string }) {
           generation={generation}
           onCheckGeneration={checkGeneration}
           onOpenSongStudio={openSongStudio}
+          songProvider={songProvider}
           onAddMidiTrack={addInstrumentTrack}
           onOpenPianoRoll={() => setShowPiano(true)}
           onExportMidi={() => {

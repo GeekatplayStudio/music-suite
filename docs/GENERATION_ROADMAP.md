@@ -258,7 +258,37 @@ Field types are `text`, `lyrics`, `int`, `float`, `bool`, `enum`, `seed`, `durat
 - **Installer:** an optional step in `install.command` (and `install.ps1`) that clones acestep.cpp at a pinned commit (`07abf07`, 2026-11-06), builds it, and downloads the Q8 turbo models (about 5.6 GB) after asking.
 - **Migration:** the existing ComfyUI MusicGen generation moves behind the provider protocol.
 
-### Phase G2 — Editing with AI
+### Phase G2 — Editing with AI *(shipped 2026-11-10)*
+
+**Shipped:** an **AI edit** section in the Studio Editor's clip panel, backed by the acestep.cpp provider.
+
+| Edit | Engine task | Model | Result in the editor |
+|---|---|---|---|
+| Regenerate a section | `repaint` over the highlighted range | turbo | Replaces the clip's audio; everything outside the range is unchanged |
+| Extend (before or after, 10–60 s) | `repaint` past the edge | turbo | Replaces the clip's audio and lengthens the clip |
+| Restyle (keep 5–100%, optional "stay close" remix) | `cover` / `cover-nofsq` | turbo | Replaces the clip's audio |
+| Extract an instrument | `extract` | base | New track under the clip |
+| Add a part | `lego` | base | New track under the clip |
+| Build a full song around it | `complete` | base | New track; the original part is muted |
+
+- **Versions:** up to 4. The first replaces or adds; the others go on muted tracks to compare. Every change is one undo step.
+- **Clip audio** is sent to the local engine as 24-bit WAV (it is stored as 32-bit float). The limit is 600 s including any extension, which is the engine's latent buffer.
+- **Levels:**
+  - The engine scales every result to full scale. Regenerate and extend are therefore gain-matched on the untouched audio: measured, the original part comes back unchanged to within 1e-5.
+  - Restyle and build-a-song are brought to the source's loudness.
+  - Extracted and added parts start 6 LU below it. They are generated rather than separated (correlation with the mix about 0.05), so their real level in the mix cannot be measured.
+- **Editing model:**
+  - The base DiT (`acestep-v15-base-Q8_0.gguf`, 2.4 GB) is pinned by SHA-256 like the others.
+  - It is offered in the installer's question, by **Download editing model** in Settings, and by the task list, which marks those tasks as needing it.
+  - The engine is always told which DiT to use, because with the base model present it would otherwise load the base model for new songs too (it picks alphabetically).
+
+**Deferred:**
+
+- Reference audio for style.
+- LoRA training. Applying LoRA adapters is already in the schema when an `adapters/` folder has any.
+- Running the planner model for add-a-part and build-a-song: the engine allows it, but it is untested here.
+
+**Original G2 plan**
 
 - Repaint selection, outpaint/extend, cover and cover-nofsq (restyle), with the editor's selection and clips filling the `region` and `audio` fields.
 - Lego (add a layer), extract (one instrument) and complete. These need the **base** DiT, an extra Q8 download *(size to confirm)* offered when first used.
@@ -340,6 +370,34 @@ Phase G1 went ahead with the recommended defaults (2026-11-10):
 6. **Still open:** the benchmark copies at `~/Projects/ACE-Step-1.5` (about 10 GB) and `~/Projects/acestep.cpp` (about 5.6 GB) are no longer used and can be deleted by the user.
 
 ## 7.1 Verification log
+
+### Phase G2 (2026-11-10, Apple M5, 24 GB)
+
+- **Automated:** 16 new tests covering:
+  - mapping of each task to the engine request;
+  - region and length limits;
+  - base-model gating, both before queueing and in the request;
+  - required fields per task;
+  - level matching for repaint, extend before the start, loudness for new audio, and parts 6 LU below;
+  - a full edit job against a stand-in engine (24-bit upload, two versions, untouched audio at the source level);
+  - the turbo model always named for new songs;
+  - the installer's editing-model prompt.
+
+  Full suite: 366 passed, 1 skipped.
+- **Real engine, through the API, on a 30 s song** (minimum free memory 55%):
+
+  | Edit | Time | Result |
+  |---|---|---|
+  | Regenerate 10–18 s | 18 s | audio before the region unchanged (max difference < 1e-5) |
+  | Extend by 15 s | 27 s | original 30 s unchanged |
+  | Restyle | 18 s | — |
+  | Extract vocals | 27 s | — |
+  | Add a bass part | 25 s | — |
+  | Build a song around it | 25 s | — |
+
+- **Browser:** highlighted 0:10–0:20 with the Range tool, selected the clip, and ran Regenerate a section: the clip was replaced in place and Undo restored it. Extend after the end lengthened the session from 0:44.4 to 1:04.4. Extract vocals on the 64 s clip added a new track in about 85 s. No console errors.
+- **Real download:** the editing model through `install_editing`: 2.4 GB in 64 s, checksum verified.
+- **Not tested:** listening quality of any edit; the planner with add-a-part and build-a-song; Windows and Linux.
 
 ### Merge of pull requests #3 and #4 (2026-11-10)
 

@@ -4,6 +4,8 @@ import { Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { ActionButton, PanelSection, Slider, fieldClass, formatDb } from "@/components/editor/controls";
+import { AiEditSection } from "@/components/generation/ai-edit-section";
+import type { ProviderInfo } from "@/lib/generation/api";
 import { editorApi } from "@/lib/editor/api";
 import type { Favourite, ProcessStep } from "@/lib/editor/favourites";
 import { type WamCatalogueEntry, isAllowedWamUrl, loadWamCatalogue, wamConsent } from "@/lib/editor/wam";
@@ -55,6 +57,8 @@ interface InspectorProps {
   onAddMidiTrack: () => void;
   onOpenWam: (trackId: string) => void;
   generation: GenerationStatus | null;
+  /** The local song engine, for AI edits of the selected clip. */
+  songProvider: ProviderInfo | null;
   onCheckGeneration: () => void;
   /** Opens AI Song Studio set to generate into this project. */
   onOpenSongStudio: () => void;
@@ -890,6 +894,16 @@ export function Inspector(props: InspectorProps) {
               Detect song sections
             </ActionButton>
           </PanelSection>
+
+          <AiEditSection
+            key={clip.id}
+            clip={clip}
+            selection={noisePrint}
+            provider={props.songProvider}
+            busy={busy}
+            onRun={(params, title) => props.onRunJob("generate_song", params, title)}
+            onOpenSongStudio={props.onOpenSongStudio}
+          />
 
           <PanelSection
             title="Generate a part"

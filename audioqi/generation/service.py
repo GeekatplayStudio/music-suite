@@ -91,15 +91,24 @@ def validate_request(params: dict[str, Any]) -> dict[str, Any]:
         raise EditorError("This provider is switched off in AI Song Studio > Settings.", 403)
     described = chosen.describe()
     task = params.get("task", described["tasks"][0]["id"])
-    if task not in {item["id"] for item in described["tasks"]}:
+    entry = next((item for item in described["tasks"] if item["id"] == task), None)
+    if entry is None:
         raise ParamError("This provider does not support that task.")
+    if entry.get("available") is False:
+        raise EditorError(str(entry.get("reason") or "That task is not available yet."), 409)
     title = projects.clean_name(params.get("title") or "Generated song", limit=80)
     return {
         "provider": chosen.id,
         "task": task,
         "title": title,
         "fields": schema.validate(described["fields"], task, params.get("fields") or {}),
+        "source": bool(entry.get("source")),
     }
+
+
+def needs_source(cleaned: dict[str, Any]) -> bool:
+    """Whether a validated request edits existing audio (and so needs a clip)."""
+    return bool(cleaned.get("source"))
 
 
 def _import(project_id: str, output: Output, name: str, parent_id: str | None) -> dict[str, Any]:
@@ -110,7 +119,7 @@ def _import(project_id: str, output: Output, name: str, parent_id: str | None) -
     with tempfile.TemporaryDirectory(dir=projects.scratch_dir()) as tmp:
         staged = Path(tmp) / f"generated{output.suffix}"
         staged.write_bytes(output.data)
-        if config["normalize"]:
+        if config["normalize"] and output.normalize:
             try:
                 audio, rate = sf.read(io.BytesIO(output.data), dtype="float32", always_2d=True)
                 audio, loudness = processing.normalize(
@@ -150,7 +159,8 @@ def run(
             progress(5, "Checking memory.")
             resources.ensure_memory(lambda detail: progress(6, detail), cancelled=cancelled)
         progress(10, "Starting the generator.")
-        ctx = RunContext(project_id, parent_id, progress, cancelled)
+        source = assets.asset_paths(project_id, parent_id)[0] if parent_id else None
+        ctx = RunContext(project_id, parent_id, progress, cancelled, source=source)
         outputs = chosen.generate(params["task"], params["fields"], ctx)
     finally:
         resources.GENERATION_LOCK.release()

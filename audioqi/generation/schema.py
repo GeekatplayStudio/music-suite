@@ -76,7 +76,10 @@ def validate(fields: list[dict[str, Any]], task: str, values: Any) -> dict[str, 
     if unknown:
         raise ParamError(f"Unknown field(s): {', '.join(str(key)[:40] for key in unknown)}.")
     cleaned: dict[str, Any] = {}
-    for key, spec in known.items():
+    for key, original in known.items():
+        spec = original
+        if "required_tasks" in spec:
+            spec = {**spec, "required": task in spec["required_tasks"]}
         if "tasks" in spec and task not in spec["tasks"]:
             if values.get(key) not in (None, ""):
                 raise ParamError(f"'{key}' does not apply to this task.")

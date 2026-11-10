@@ -182,7 +182,7 @@ function Field(props: FieldProps) {
     <div className="space-y-1.5">
       <label htmlFor={id} className="block text-xs font-semibold text-slate-300">
         {field.label}
-        {field.required ? <span className="text-cyan-300"> *</span> : null}
+        {field.required || field.required_tasks?.includes("text2music") ? <span className="text-cyan-300"> *</span> : null}
       </label>
       {control}
       {field.help ? <p className="text-xs leading-snug text-slate-400">{field.help}</p> : null}

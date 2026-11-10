@@ -248,6 +248,7 @@ def test_overview_reports_missing_engine_without_starting_anything(client: TestC
         "missing_models": ["lm", "embedding", "dit", "vae"],
         "installed": False,
         "running": False,
+        "editing_ready": False,
     }
     assert {item["id"] for item in body["planned"]} == {"suno"}
     online = {p["id"]: p for p in body["providers"] if p["kind"] == "external"}
@@ -594,12 +595,15 @@ def test_setup_route_rejects_unknown_fields(
 ) -> None:
     started: list[bool] = []
     monkeypatch.setattr(
-        setup, "start_background", lambda writer=False: started.append(writer) or setup.state()
+        setup,
+        "start_background",
+        lambda writer=False, editing=False: started.append((writer, editing)) or setup.state(),
     )
     assert client.post("/generation/setup", json={"writer": "yes"}).status_code == 422
     assert client.post("/generation/setup", json={"url": "http://x"}).status_code == 422
     assert client.post("/generation/setup", json={"writer": True}).status_code == 200
-    assert started == [True]
+    assert client.post("/generation/setup", json={"editing": True}).status_code == 200
+    assert started == [(True, False), (False, True)]
 
 
 def test_history_is_capped(client: TestClient) -> None:
@@ -1170,3 +1174,299 @@ def test_yue2_worker_request_folds_the_settings_into_the_style() -> None:
     )
     assert body["style"] == "emo rock, 140 BPM, in E minor, instrumental, no vocals"
     assert body["lyrics"] == "[Instrumental]" and body["seed"] is None
+
+
+# --------------------------------------------------------------------------- AI edits (phase G2)
+
+from audioqi.generation.providers import acestep as acestep_provider  # noqa: E402
+
+TURBO = "acestep-v15-turbo-Q8_0.gguf"
+BASE = "acestep-v15-base-Q8_0.gguf"
+
+
+@pytest.fixture
+def models(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    dits = [TURBO]
+    monkeypatch.setattr(
+        engine,
+        "list_models",
+        lambda *_a: {"lm": ["lm.gguf"], "embedding": ["e.gguf"], "dit": dits, "vae": ["v.gguf"]},
+    )
+    return dits
+
+
+def _edit(task: str, values: dict[str, Any], seconds: float = 60.0) -> dict[str, Any]:
+    return acestep_provider.AceStepProvider().edit_request(task, values, seconds)
+
+
+def test_text2music_always_names_the_turbo_model(models: list[str]) -> None:
+    models.insert(0, BASE)  # Alphabetically first: the engine would otherwise pick it.
+    body = acestep_provider.AceStepProvider()._request({"caption": "folk"})
+    assert body["synth_model"] == TURBO
+
+
+def test_edit_requests_map_to_engine_tasks(models: list[str]) -> None:
+    repaint = _edit(
+        "repaint", {"caption": "folk", "region_start": 10.0, "region_end": 20.0, "seed": 4}
+    )
+    assert repaint == {
+        "task_type": "repaint",
+        "caption": "folk",
+        "lyrics": "[Instrumental]",
+        "synth_batch_size": 1,
+        "output_format": "wav24",
+        "synth_model": TURBO,
+        "seed": 4,
+        "repainting_start": 10.0,
+        "repainting_end": 20.0,
+    }
+    end = _edit("extend", {"caption": "folk", "extend_seconds": 30, "extend_at": "end"})
+    assert (end["task_type"], end["repainting_start"], end["repainting_end"]) == (
+        "repaint",
+        60.0,
+        90.0,
+    )
+    start = _edit("extend", {"caption": "folk", "extend_seconds": 15, "extend_at": "start"})
+    assert (start["repainting_start"], start["repainting_end"]) == (-15.0, 0.0)
+    cover = _edit(
+        "cover", {"caption": "lofi", "strength": 0.3, "faithful": True, "lyrics": "[Verse]\nhi"}
+    )
+    assert cover["task_type"] == "cover-nofsq" and cover["audio_cover_strength"] == 0.3
+    assert cover["lyrics"] == "[Verse]\nhi"
+    assert _edit("cover", {"caption": "lofi"})["task_type"] == "cover"
+
+
+def test_region_and_length_limits(models: list[str]) -> None:
+    with pytest.raises(ParamError, match="at least one second"):
+        _edit("repaint", {"caption": "folk", "region_start": 10.0, "region_end": 10.5})
+    # A region past the end is clipped to the audio.
+    assert (
+        _edit("repaint", {"caption": "x", "region_start": 50, "region_end": 80})["repainting_end"]
+        == 60.0
+    )
+    with pytest.raises(ParamError, match="600"):
+        _edit("extend", {"caption": "folk", "extend_seconds": 60}, seconds=580.0)
+
+
+def test_instrument_tasks_need_the_base_model(models: list[str]) -> None:
+    with pytest.raises(EditorError) as caught:
+        _edit("extract", {"track": "vocals"})
+    assert caught.value.status_code == 409
+    models.append(BASE)
+    extract = _edit("extract", {"track": "vocals"})
+    assert (
+        extract["task_type"] == "extract"
+        and extract["synth_model"] == BASE
+        and extract["track"] == "vocals"
+    )
+    lego = _edit(
+        "add_layer", {"caption": "funk", "track": "bass", "region_start": 4.0, "region_end": 12.0}
+    )
+    assert lego["task_type"] == "lego" and (lego["repainting_start"], lego["repainting_end"]) == (
+        4.0,
+        12.0,
+    )
+    assert "repainting_start" not in _edit("add_layer", {"caption": "funk", "track": "bass"})
+    assert _edit("complete", {"caption": "band", "track": "vocals"})["task_type"] == "complete"
+
+
+def test_edit_tasks_are_described_with_availability(models: list[str]) -> None:
+    tasks = {t["id"]: t for t in acestep_provider.AceStepProvider().describe()["tasks"]}
+    assert set(tasks) == {
+        "text2music",
+        "repaint",
+        "extend",
+        "cover",
+        "extract",
+        "add_layer",
+        "complete",
+    }
+    assert tasks["repaint"]["source"] and "available" not in tasks["repaint"]
+    assert tasks["extract"]["available"] is False and "editing model" in tasks["extract"]["reason"]
+    models.append(BASE)
+    tasks = {t["id"]: t for t in acestep_provider.AceStepProvider().describe()["tasks"]}
+    assert "available" not in tasks["extract"]
+
+
+def test_schema_requires_fields_per_task(models: list[str]) -> None:
+    fields = acestep_provider.AceStepProvider().describe()["fields"]
+    with pytest.raises(ParamError, match="Section start"):
+        schema.validate(fields, "repaint", {"caption": "folk"})
+    with pytest.raises(ParamError, match="Instrument"):
+        schema.validate(fields, "extract", {})
+    assert schema.validate(fields, "extract", {"track": "drums"}) == {"track": "drums"}
+    with pytest.raises(ParamError, match="does not apply"):
+        schema.validate(fields, "text2music", {"caption": "folk", "track": "drums"})
+    with pytest.raises(ParamError, match="Style description"):
+        schema.validate(fields, "cover", {"strength": 0.5})
+
+
+def _source(seconds: float = 6.0) -> np.ndarray:
+    t = np.arange(int(SR * seconds)) / SR
+    tone = 0.3 * np.sin(2 * np.pi * 220.0 * t) * (1.0 + 0.3 * np.sin(2 * np.pi * 0.5 * t))
+    return np.stack([tone, tone * 0.9], axis=1).astype(np.float32)
+
+
+def test_repaint_result_is_put_back_at_the_source_level() -> None:
+    source = _source()
+    result = source.copy()
+    result[2 * SR : 4 * SR] = 0.05  # The regenerated part.
+    result *= 1.4  # The engine's own rescaling.
+    body = {"repainting_start": 2.0, "repainting_end": 4.0}
+    matched, info = acestep_provider._match_level("repaint", body, source, SR, result, SR)
+    assert np.allclose(matched[: 2 * SR], source[: 2 * SR], atol=1e-5)
+    assert np.allclose(matched[4 * SR :], source[4 * SR :], atol=1e-5)
+    assert info["level_match_db"] == pytest.approx(-2.92, abs=0.02)
+
+
+def test_extend_before_the_start_is_matched_on_the_original_part() -> None:
+    source = _source()
+    result = np.concatenate([np.full((SR, 2), 0.02, np.float32), source]) * 0.5
+    body = {"repainting_start": -1.0, "repainting_end": 0.0}
+    matched, _ = acestep_provider._match_level("extend", body, source, SR, result, SR)
+    assert np.allclose(matched[SR:], source, atol=1e-5)
+
+
+def test_new_audio_is_brought_to_the_source_loudness() -> None:
+    source = _source()
+    result = _source() * 0.2
+    matched, info = acestep_provider._match_level("cover", {}, source, SR, result, SR)
+    assert info["output_lufs"] == pytest.approx(info["matched_lufs"], abs=0.3)
+
+
+def _multipart(*clips: np.ndarray) -> _Resp:
+    boundary = "ace-batch-boundary"
+    body = b""
+    for clip in clips:
+        buffer = io.BytesIO()
+        sf.write(buffer, clip, SR, format="WAV", subtype="PCM_24")
+        body += (
+            f"--{boundary}\r\nContent-Type: audio/wav\r\n\r\n".encode()
+            + buffer.getvalue()
+            + b"\r\n"
+        )
+        body += (
+            f"--{boundary}\r\nContent-Type: application/octet-stream\r\n\r\nlatents\r\n".encode()
+        )
+    body += f"--{boundary}--\r\n".encode()
+    return _Resp(content=body, headers={"Content-Type": f"multipart/mixed; boundary={boundary}"})
+
+
+def test_an_edit_job_sends_the_clip_and_keeps_its_level(
+    client: TestClient, monkeypatch, models
+) -> None:
+    import contextlib
+
+    project = client.post("/editor/projects", json={"name": "song"}).json()["id"]
+    buffer = io.BytesIO()
+    source = _source()
+    sf.write(buffer, source, SR, format="WAV", subtype="FLOAT")
+    asset = client.post(
+        f"/editor/projects/{project}/assets",
+        files={"file": ("song.wav", buffer.getvalue(), "audio/wav")},
+    ).json()
+    sent: dict[str, Any] = {}
+
+    def fake_job(self, base, path, body, ctx, low, high, expected, detail, files=None):  # noqa: ANN001
+        sent.update(path=path, body=body, files=sorted(files or {}))
+        staged, rate = sf.read(str(files["audio"]), dtype="float32")
+        sent["subtype"] = sf.info(str(files["audio"])).subtype
+        out = staged.copy()
+        out[2 * SR : 4 * SR] *= 0.1
+        return _multipart(out * 1.25, out * 1.25)
+
+    monkeypatch.setattr(acestep_provider.AceStepProvider, "_job", fake_job)
+    monkeypatch.setattr(
+        engine.SUPERVISOR, "session", lambda: contextlib.nullcontext("http://127.0.0.1:1")
+    )
+    params = {
+        "provider": "acestep_local",
+        "task": "repaint",
+        "title": "song (regenerated)",
+        "fields": {"caption": "folk", "region_start": 2.0, "region_end": 4.0, "variations": 2},
+    }
+    no_clip = client.post(
+        f"/editor/projects/{project}/jobs",
+        json={"op": "generate_song", "asset_id": None, "params": params},
+    )
+    assert no_clip.status_code == 422 and "Select a clip" in no_clip.json()["detail"]
+    job_id = client.post(
+        f"/editor/projects/{project}/jobs",
+        json={"op": "generate_song", "asset_id": asset["id"], "params": params},
+    ).json()["id"]
+    job = client.get(f"/editor/projects/{project}/jobs/{job_id}").json()
+    assert job["status"] == "completed", job["error"]
+    assert sent["path"] == "/synth" and sent["files"] == ["audio"] and sent["subtype"] == "PCM_24"
+    assert sent["body"]["task_type"] == "repaint" and sent["body"]["synth_batch_size"] == 2
+    assert [a["name"] for a in job["result_assets"]] == [
+        "song (regenerated) (version 1)",
+        "song (regenerated) (version 2)",
+    ]
+    assert job["result"]["outputs"][0]["task"] == "repaint"
+    out = client.get(f"/editor/projects/{project}/assets/{job['result_assets'][0]['id']}/audio")
+    edited, _ = sf.read(io.BytesIO(out.content), dtype="float32")
+    # Untouched audio is back at the source level (within 24-bit rounding), not 1.25 times louder.
+    assert np.allclose(edited[: 2 * SR], source[: 2 * SR], atol=1e-4)
+
+
+def test_unavailable_tasks_are_refused_before_queueing(client: TestClient, models) -> None:
+    project = client.post("/editor/projects", json={"name": "song"}).json()["id"]
+    buffer = io.BytesIO()
+    sf.write(buffer, _source(), SR, format="WAV")
+    asset = client.post(
+        f"/editor/projects/{project}/assets",
+        files={"file": ("song.wav", buffer.getvalue(), "audio/wav")},
+    ).json()
+    params = {"provider": "acestep_local", "task": "extract", "fields": {"track": "vocals"}}
+    response = client.post(
+        f"/editor/projects/{project}/jobs",
+        json={"op": "generate_song", "asset_id": asset["id"], "params": params},
+    )
+    assert response.status_code == 409 and "editing model" in response.json()["detail"]
+
+
+def test_editing_model_is_pinned_and_checked() -> None:
+    ((name, (size, digest)),) = setup.EDIT_MODELS.items()
+    assert "-base" in name and size > 1_000_000_000 and len(digest) == 64
+
+
+def test_a_single_part_starts_below_the_mix() -> None:
+    source = _source()
+    _, info = acestep_provider._match_level("extract", {}, source, SR, _source() * 0.2, SR)
+    mix = acestep_provider.processing.integrated_lufs(source, SR)
+    assert info["matched_lufs"] == pytest.approx(mix - acestep_provider.PART_BELOW_MIX_LU, abs=0.01)
+
+
+class _Tty:
+    def isatty(self) -> bool:
+        return True
+
+
+@pytest.fixture
+def installed_engine(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """An engine that counts as installed, so only the editing model is in question."""
+    calls: list[str] = []
+    monkeypatch.setattr(engine, "install_status", lambda: {"installed": True})
+    monkeypatch.setattr(setup, "_git", lambda *_a: setup.ENGINE_COMMIT)
+    monkeypatch.setattr(setup, "editing_ready", lambda: False)
+    monkeypatch.setattr(setup, "install_editing", lambda _report: calls.append("editing"))
+    return calls
+
+
+def test_installer_offers_the_editing_model_once(installed_engine, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(setup.sys, "stdin", _Tty())
+    monkeypatch.setattr("builtins.input", lambda _prompt: "n")
+    assert setup.main(["--ask"]) == 0
+    assert installed_engine == [] and settings.load()["editing_declined"] is True
+    # Asked once: a later install does not ask again.
+    monkeypatch.setattr("builtins.input", lambda _prompt: pytest.fail("asked twice"))
+    assert setup.main(["--ask"]) == 0
+
+
+def test_installer_fetches_the_editing_model_on_yes(installed_engine, monkeypatch) -> None:
+    monkeypatch.setattr(setup.sys, "stdin", _Tty())
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+    assert setup.main(["--ask"]) == 0
+    assert installed_engine == ["editing"]
+    assert setup.main(["--yes"]) == 0  # --yes includes it without asking.
+    assert installed_engine == ["editing", "editing"]

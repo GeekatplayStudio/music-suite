@@ -32,6 +32,7 @@ DEFAULTS: dict[str, Any] = {
         "fal": False,
     },
     "setup_declined": False,
+    "editing_declined": False,
 }
 _RANGES: dict[str, tuple[float, float]] = {
     "idle_minutes": (1, 240),
@@ -75,7 +76,7 @@ def _clean(key: str, value: Any) -> Any:
         if not low <= value <= high:
             raise ParamError(f"'{key}' must be between {low:g} and {high:g}.")
         return int(value) if key != "target_lufs" else float(value)
-    if key in ("normalize", "setup_declined"):
+    if key in ("normalize", "setup_declined", "editing_declined"):
         if not isinstance(value, bool):
             raise ParamError(f"'{key}' must be true or false.")
         return value

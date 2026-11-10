@@ -165,6 +165,8 @@ Open it from the **AI Song Studio** button in the workspace or at `/generate`.
 
 Every engine control is available under *Advanced* (planner sampling, diffusion steps, solver, models). *History* keeps the settings of each song so you can reuse them. *Settings* covers the lyrics model, the loudness of new songs, and the memory limits that keep the computer responsive: one song at a time, and the engine unloads when idle.
 
+**AI edits in the Studio Editor:** select a clip and use *AI edit* to regenerate a highlighted section, extend it, restyle it, extract an instrument, add a part, or build a full song around it. The last three need the editing model (2.4 GB), offered by the installer and in *Settings*.
+
 **More engines (optional, off by default):** ACE-Step's own Python server (for NVIDIA machines that already run it) and YuE2 (NVIDIA, 24 GB, non-commercial licence). Switch them on under *Settings ▸ Generators*.
 
 **Online services (optional):** add your own ElevenLabs Music or fal.ai (MiniMax Music, Lyria) key under *Settings ▸ Online services* to use them as generators. Only the style text and lyrics are sent; audio never is. Keys stay in your computer's keychain.
@@ -214,8 +216,8 @@ Double-click `install.command`, then `start.command`. Use `stop.command` or pres
 The installer asks once whether to add the local AI music engine. To decide ahead of time, or to add it later:
 
 ```bash
-MUSIC_SUITE_INSTALL_AI=1 ./install.command   # install without asking (0 skips)
-make install-ai                              # add it later; or use the button in AI Song Studio
+MUSIC_SUITE_INSTALL_AI=1 ./install.command   # install the engine and editing model without asking (0 skips)
+make install-ai                              # add them later; or use the buttons in AI Song Studio
 ```
 
 Install FFmpeg with Homebrew when needed:

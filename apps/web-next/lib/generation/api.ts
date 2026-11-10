@@ -30,10 +30,22 @@ export interface FieldSpec {
   options?: (FieldOption | string)[];
   sections?: string[];
   tasks?: string[];
+  required_tasks?: string[];
+  /** Filled in by the editor (for example, a highlighted range); never shown as a control. */
+  editor?: boolean;
+}
+
+export interface ProviderTask {
+  id: string;
+  label: string;
+  /** True for tasks that change an existing clip. */
+  source?: boolean;
+  available?: boolean;
+  reason?: string;
 }
 
 export interface ProviderSchema {
-  tasks: { id: string; label: string }[];
+  tasks: ProviderTask[];
   groups: string[];
   fields: FieldSpec[];
 }
@@ -60,6 +72,7 @@ export interface SetupState {
   detail: string;
   error: string | null;
   download_gb?: number;
+  editing_download_gb?: number;
   installed?: boolean;
 }
 
@@ -85,7 +98,13 @@ export interface Overview {
   providers: ProviderInfo[];
   planned: { id: string; name: string; kind: string; message: string }[];
   writer: WriterStatus;
-  engine: { built: boolean; installed: boolean; running: boolean; missing_models: string[] };
+  engine: {
+    built: boolean;
+    installed: boolean;
+    running: boolean;
+    missing_models: string[];
+    editing_ready?: boolean;
+  };
   setup: SetupState;
   memory_free_percent: number | null;
   settings: GenerationSettings;
@@ -143,7 +162,8 @@ export const generationApi = {
   overview: () => request<Overview>("/generation/providers"),
   saveSettings: (patch: Partial<GenerationSettings>) =>
     request<GenerationSettings>("/generation/settings", json(patch)),
-  startSetup: (writer: boolean) => request<SetupState>("/generation/setup", json({ writer })),
+  startSetup: (writer: boolean, editing = false) =>
+    request<SetupState>("/generation/setup", json({ writer, editing })),
   setupState: () => request<SetupState>("/generation/setup"),
   /** Saves the key in this computer's keychain and switches the service on. The key is never sent back. */
   saveKey: (providerId: string, key: string) =>
@@ -188,9 +208,10 @@ export function defaultValues(schema: ProviderSchema): FieldValues {
 }
 
 /** Only what the server should see: unset and empty optional fields are left out. */
-export function submitValues(schema: ProviderSchema, values: FieldValues): FieldValues {
+export function submitValues(schema: ProviderSchema, values: FieldValues, task = "text2music"): FieldValues {
   const out: FieldValues = {};
   for (const field of schema.fields) {
+    if (field.editor || (field.tasks && !field.tasks.includes(task))) continue;
     const value = values[field.key];
     if (value === null || value === undefined || value === "") continue;
     out[field.key] = value;

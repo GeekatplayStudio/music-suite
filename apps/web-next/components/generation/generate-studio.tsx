@@ -204,7 +204,10 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
   const busy = job !== null;
   const hasLyricsField = provider?.schema.fields.some((f) => f.key === "lyrics") ?? false;
   const instrumental = values.instrumental === true;
-  const hidden = (field: FieldSpec) => instrumental && (field.key === "lyrics" || field.key === "vocal_language");
+  const hidden = (field: FieldSpec) =>
+    Boolean(field.editor) ||
+    (field.tasks !== undefined && !field.tasks.includes("text2music")) ||
+    (instrumental && (field.key === "lyrics" || field.key === "vocal_language"));
 
   const write = async (mode: "brief" | "lyrics") => {
     setWriting(true);

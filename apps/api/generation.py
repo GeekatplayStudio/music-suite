@@ -48,8 +48,16 @@ def providers() -> dict[str, Any]:
         "providers": service.describe_all(),
         "planned": service.PLANNED,
         "writer": writer.status(),
-        "engine": {**engine.install_status(), "running": engine.SUPERVISOR.running()},
-        "setup": {**setup.state(), "download_gb": round(setup.DOWNLOAD_BYTES / 1024**3, 1)},
+        "engine": {
+            **engine.install_status(),
+            "running": engine.SUPERVISOR.running(),
+            "editing_ready": setup.editing_ready(),
+        },
+        "setup": {
+            **setup.state(),
+            "download_gb": round(setup.DOWNLOAD_BYTES / 1024**3, 1),
+            "editing_download_gb": round(setup.EDIT_DOWNLOAD_BYTES / 1024**3, 1),
+        },
         "memory_free_percent": resources.free_memory_percent(),
         "settings": _public_settings(),
     }
@@ -74,9 +82,13 @@ def setup_state() -> dict[str, Any]:
 @router.post("/setup")
 def start_setup(payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
     """Build the local engine and fetch its models in the background."""
-    if set(payload) - {"writer"} or not isinstance(payload.get("writer", False), bool):
+    if set(payload) - {"writer", "editing"} or any(
+        not isinstance(payload.get(key, False), bool) for key in ("writer", "editing")
+    ):
         raise HTTPException(status_code=422, detail="Unknown field(s) in the setup request.")
-    return setup.start_background(writer=bool(payload.get("writer", False)))
+    return setup.start_background(
+        writer=bool(payload.get("writer", False)), editing=bool(payload.get("editing", False))
+    )
 
 
 @router.post("/engine/stop")

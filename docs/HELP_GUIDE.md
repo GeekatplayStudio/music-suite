@@ -299,6 +299,17 @@ Open **AI Song Studio** from the workspace. It has three tabs.
 - *Generators*: switch engines on or off. *ACE-Step 1.5 (your own Python server)* is for computers that already run ACE-Step's server (start it with `uv run acestep-api`). *YuE2* needs an NVIDIA GPU with about 24 GB and the `MUSIC_SUITE_YUE2_PYTHON` setting, and every song asks you to confirm its non-commercial licence.
 - *Online services*: paste your own ElevenLabs or fal.ai API key and press **Save key** to switch that service on. It then appears in the *Generator* list. Your style text and lyrics are sent to it and it bills your account; audio is never uploaded. **Remove key** switches it off again. Keys are stored in your computer's keychain and are never shown again.
 
+### AI edits in the Studio Editor
+
+Select a clip; the side panel has an **AI edit** section.
+
+- **Regenerate a section:** highlight part of the clip with the Range tool (R), switch back to Select (V), click the clip, describe the style and press the button. Only the highlighted part changes.
+- **Extend:** adds 10–60 seconds of new music before or after the clip, continuing it.
+- **Restyle:** plays the clip in a new style. *Keep* sets how much of the original survives; *Stay close to the original* keeps melody and timing and changes the production.
+- **Extract an instrument / Add a part / Build a full song around it:** each result goes on a new track under the clip. These need the editing model (2.4 GB) from AI Song Studio ▸ Settings. Extracted parts are recreated by the AI rather than cut out of the mix, so for exact stems use **Separate into stems**. Build a full song works best on a single part, such as a vocal.
+- **Versions:** ask for up to 4. The first lands in place; the others go on muted tracks so you can compare them.
+- Every AI edit is one step in Undo.
+
 ## 9) Troubleshooting
 
 ### AI Song Studio

@@ -50,6 +50,15 @@ MODELS: dict[str, tuple[int, str]] = {
     ),
 }
 DOWNLOAD_BYTES = sum(size for size, _ in MODELS.values())
+#: The base music model, needed only to extract instruments, add parts or build a song
+#: around a part. Offered when first wanted, not installed by default.
+EDIT_MODELS: dict[str, tuple[int, str]] = {
+    "acestep-v15-base-Q8_0.gguf": (
+        2549527936,
+        "10329f321010cedc3571c24b6371d002ce49238f48be47def4a1c76bf27ee150",
+    ),
+}
+EDIT_DOWNLOAD_BYTES = sum(size for size, _ in EDIT_MODELS.values())
 BUILD_TIMEOUT_SECONDS = 3600
 
 
@@ -206,12 +215,20 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _download_models(target: Path, report: Report) -> None:
+def _download_models(
+    target: Path,
+    report: Report,
+    models: dict[str, tuple[int, str]] | None = None,
+    span: tuple[float, float] = (30.0, 95.0),
+) -> None:
+    models = MODELS if models is None else models
+    total = sum(size for size, _ in models.values())
+    low, high = span
     folder = target / "models"
     folder.mkdir(parents=True, exist_ok=True)
     pending = {
         name: spec
-        for name, spec in MODELS.items()
+        for name, spec in models.items()
         if not ((folder / name).is_file() and (folder / name).stat().st_size == spec[0])
     }
     if not pending:
@@ -221,7 +238,7 @@ def _download_models(target: Path, report: Report) -> None:
         raise SetupError(
             f"Not enough free disk space: the models need {need / 1024**3:.1f} GB plus 1 GB spare."
         )
-    done = DOWNLOAD_BYTES - need
+    done = total - need
     for name, (size, digest) in pending.items():
         part = folder / f"{name}.part"
         for attempt in range(3):
@@ -245,9 +262,9 @@ def _download_models(target: Path, report: Report) -> None:
                                 have += len(chunk)
                                 report(
                                     "models",
-                                    30 + 65 * (done + have) / DOWNLOAD_BYTES,
+                                    low + (high - low) * (done + have) / total,
                                     f"Downloading models: {(done + have) / 1024**3:.1f} of "
-                                    f"{DOWNLOAD_BYTES / 1024**3:.1f} GB.",
+                                    f"{total / 1024**3:.1f} GB.",
                                 )
                 if part.stat().st_size == size and _sha256(part) == digest:
                     break
@@ -276,6 +293,22 @@ def pull_writer_model(report: Report) -> bool:
     return True
 
 
+def editing_ready() -> bool:
+    folder = settings.engine_dir() / "models"
+    return all(
+        (folder / name).is_file() and (folder / name).stat().st_size == size
+        for name, (size, _) in EDIT_MODELS.items()
+    )
+
+
+def install_editing(report: Report) -> None:
+    """Download the base model used by the instrument tasks (the engine must be installed)."""
+    if not engine.install_status()["installed"]:
+        raise SetupError("Install the local engine first.")
+    _download_models(settings.engine_dir(), report, EDIT_MODELS, (2.0, 99.0))
+    report("done", 100, "The editing model is ready.")
+
+
 def install(report: Report, *, writer: bool = False) -> None:
     target = settings.engine_dir()
     _ensure_tools(report)
@@ -293,20 +326,21 @@ def install(report: Report, *, writer: bool = False) -> None:
 # --------------------------------------------------------------------------- background use
 
 
-def start_background(*, writer: bool = False) -> dict[str, Any]:
+def start_background(*, writer: bool = False, editing: bool = False) -> dict[str, Any]:
     with _LOCK:
         if _STATE["running"]:
             return dict(_STATE)
         _STATE.update(running=True, step="tools", percent=0.0, detail="Starting.", error=None)
 
     def work() -> None:
+        def report(step: str, percent: float, detail: str) -> None:
+            _set(step=step, percent=round(percent, 1), detail=detail)
+
         try:
-            install(
-                lambda step, percent, detail: _set(
-                    step=step, percent=round(percent, 1), detail=detail
-                ),
-                writer=writer,
-            )
+            if editing:
+                install_editing(report)
+            else:
+                install(report, writer=writer)
             settings.update({"setup_declined": False})
             _set(running=False, finished_at=time.time())
         except SetupError as exc:
@@ -334,6 +368,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ask", action="store_true", help="Ask once; remember a 'no'.")
     parser.add_argument("--writer", action="store_true", help="Also fetch the Ollama lyrics model.")
     parser.add_argument(
+        "--editing",
+        action="store_true",
+        help="Also fetch the editing model (extract, add a part); --yes includes it.",
+    )
+    parser.add_argument(
         "--status", action="store_true", help="Print whether the engine is installed."
     )
     args = parser.parse_args(argv)
@@ -341,11 +380,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.status:
         print("installed" if engine.install_status()["installed"] else "missing")
         return 0
+    want_editing = args.yes or args.editing
     if engine.install_status()["installed"] and _git(
         ["rev-parse", "HEAD"], settings.engine_dir()
     ) in (ENGINE_COMMIT, ""):
         print("The local AI music engine is already installed.")
-        return 0
+        if editing_ready():
+            return 0
+        if not want_editing and not (args.ask and _ask_editing()):
+            return 0
+        return _install_editing_cli()
     if args.ask and not args.yes:
         if settings.load()["setup_declined"] or not sys.stdin.isatty():
             print(
@@ -375,7 +419,50 @@ def main(argv: list[str] | None = None) -> int:
                     f"Also download the lyrics model {model} with Ollama (about 8 GB)? [Y/n] "
                 )
                 args.writer = reply.strip().lower() in ("", "y", "yes")
+        want_editing = _ask_editing()
 
+    report = _console_report()
+    try:
+        install(report, writer=args.writer)
+    except SetupError as exc:
+        print(f"\nThe AI music engine was not installed: {exc}", file=sys.stderr)
+        print(
+            "Music Suite itself still works. Try again later from AI Song Studio > Settings.",
+            file=sys.stderr,
+        )
+        return 1
+    return _install_editing_cli() if want_editing else 0
+
+
+def _ask_editing() -> bool:
+    """Offer the editing model once in a terminal; remember a no."""
+    if settings.load()["editing_declined"] or not sys.stdin.isatty():
+        return False
+    reply = input(
+        f"Also download the editing model ({EDIT_DOWNLOAD_BYTES / 1024**3:.1f} GB) to extract "
+        "instruments and add parts in the Studio Editor? [Y/n] "
+    )
+    if reply.strip().lower() in ("", "y", "yes"):
+        return True
+    settings.update({"editing_declined": True})
+    print("Skipped. You can download it any time from AI Song Studio > Settings.")
+    return False
+
+
+def _install_editing_cli() -> int:
+    try:
+        install_editing(_console_report())
+    except SetupError as exc:
+        print(f"\nThe editing model was not downloaded: {exc}", file=sys.stderr)
+        print(
+            "Everything else works. Try again later from AI Song Studio > Settings.",
+            file=sys.stderr,
+        )
+        return 0  # Optional extra: never fail an install over it.
+    return 0
+
+
+def _console_report() -> Report:
     last = {"line": ""}
 
     def report(step: str, percent: float, detail: str) -> None:
@@ -388,16 +475,7 @@ def main(argv: list[str] | None = None) -> int:
             print(("\n" if last["line"].startswith("\r") else "") + line, flush=True)
         last["line"] = "\r" if step == "models" and sys.stdout.isatty() else line
 
-    try:
-        install(report, writer=args.writer)
-    except SetupError as exc:
-        print(f"\nThe AI music engine was not installed: {exc}", file=sys.stderr)
-        print(
-            "Music Suite itself still works. Try again later from AI Song Studio > Settings.",
-            file=sys.stderr,
-        )
-        return 1
-    return 0
+    return report
 
 
 if __name__ == "__main__":

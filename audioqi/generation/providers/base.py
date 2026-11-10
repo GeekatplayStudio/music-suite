@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 
@@ -15,6 +16,8 @@ class Output:
     suffix: str = ".wav"
     asset: dict[str, Any] | None = None
     meta: dict[str, Any] = field(default_factory=dict)
+    #: False when the provider has already set the level (edits keep the source's level).
+    normalize: bool = True
 
 
 @dataclass
@@ -23,6 +26,8 @@ class RunContext:
     parent_id: str | None
     progress: Callable[[float, str], None]
     cancelled: Callable[[], bool]
+    #: The selected clip's audio file, for tasks that edit existing audio.
+    source: Path | None = None
 
 
 class Provider(Protocol):

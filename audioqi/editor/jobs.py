@@ -351,7 +351,8 @@ def _public(record: dict[str, Any]) -> dict[str, Any]:
 def create_job(project_id: str, op: Any, asset_id: Any, params: Any) -> dict[str, Any]:
     cleaned = validate_params(op, params)
     if asset_id is None and op in ASSETLESS_OPS:
-        pass
+        if op == "generate_song" and song_service.needs_source(cleaned):
+            raise ParamError("Select a clip first: this edits existing audio.")
     elif not projects.is_canonical_uuid(asset_id):
         raise ParamError("'asset_id' must be a UUID.")
     else:

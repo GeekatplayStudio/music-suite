@@ -115,13 +115,14 @@ Web Audio Modules (WAM) are effects that run in the browser. They are third-part
   - **ACE-Step's own Python server**, reached only at a plain-http loopback address (`MUSIC_SUITE_ACESTEP_URL`), with downloads accepted only through its `/v1/audio` route;
   - **YuE2**, run with the interpreter named in `MUSIC_SUITE_YUE2_PYTHON` as a separate process with `-I`, a time limit, and an output size cap. Each YuE2 request must confirm its non-commercial licence.
 - A switched-off provider is never probed.
+- AI edits send the selected clip's audio to the local engine only, on loopback, as a temporary 24-bit WAV that is deleted afterwards. A clip longer than 600 s is refused rather than truncated.
 
 ### Installing the engine: a deliberate, one-time download
 
 Installing the local engine contacts two fixed hosts, only when the user answers yes in the installer or presses **Install local engine**:
 
 - **GitHub**, for the engine's source code at one pinned commit, which is then compiled on this machine.
-- **Hugging Face**, for four model files at one pinned revision. Each file is checked against a SHA-256 fingerprint stored in this repository; a file that does not match is discarded.
+- **Hugging Face**, for four model files at one pinned revision (plus a fifth, the editing model, only when the user asks for it). Each file is checked against a SHA-256 fingerprint stored in this repository; a file that does not match is discarded.
 
 Nothing is uploaded. After the install, generation works offline. The install request takes no address or command from the browser.
 

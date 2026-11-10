@@ -200,6 +200,13 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
           ACE-Step 1.5 generates full songs with vocals on this computer. Nothing you write or generate leaves it.
         </p>
         {engine.installed ? (
+          <Status ok={Boolean(engine.editing_ready)}>
+            {engine.editing_ready
+              ? "Editing model installed: AI edits in the Studio Editor can extract instruments, add parts and build songs around a part."
+              : "Regenerate, extend and restyle work now. Extracting an instrument, adding a part or building a song around a part needs the editing model below."}
+          </Status>
+        ) : null}
+        {engine.installed ? (
           <Status ok>
             Installed{engine.running ? " and loaded" : ""}. It starts by itself when you generate and unloads after{" "}
             {settings.idle_minutes} idle minutes.
@@ -238,6 +245,17 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
             <button type="button" className={primary} disabled={working} onClick={() => void run(() => generationApi.startSetup(false))}>
               <Download className="h-4 w-4" aria-hidden />
               {setup.error ? "Try the install again" : "Install local engine"}
+            </button>
+          ) : null}
+          {engine.installed && !engine.editing_ready && !setup.running ? (
+            <button
+              type="button"
+              className={quiet}
+              disabled={working}
+              onClick={() => void run(() => generationApi.startSetup(false, true))}
+              title="Needed in the Studio Editor to extract an instrument, add a part, or build a song around a part"
+            >
+              <Download className="h-4 w-4" aria-hidden /> Download editing model ({setup.editing_download_gb ?? 2.4} GB)
             </button>
           ) : null}
           {engine.running ? (
