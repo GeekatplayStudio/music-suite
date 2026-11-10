@@ -78,7 +78,7 @@ fi
 
 .venv/bin/python -m ensurepip --upgrade
 .venv/bin/python -m pip install --upgrade pip setuptools wheel
-.venv/bin/python -m pip install -e ".[dev]"
+.venv/bin/python -m pip install -e ".[dev,editor]" || .venv/bin/python -m pip install -e ".[dev]"
 
 cd "$ROOT/apps/web-next"
 if command -v pnpm >/dev/null 2>&1; then

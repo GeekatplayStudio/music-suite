@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from apps.api.editor import router as editor_router
 from audioqi.config import ensure_data_dirs, get_settings
 from audioqi.conversion import (
     convert_audio_formats,
@@ -149,6 +150,7 @@ app.add_middleware(
     allow_headers=["Accept", "Content-Type", "X-Music-Suite-Action"],
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
+app.include_router(editor_router)
 
 
 def get_db() -> Generator[Session, None, None]:

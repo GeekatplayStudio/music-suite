@@ -55,6 +55,17 @@ pro = [
 geometry = [
   "demucs>=4.0.1",
 ]
+editor = [
+  "pedalboard>=0.9.26",
+  "noisereduce>=3.0.3",
+]
+editor-ai = [
+  "torch>=2.6.0",
+  "torchaudio>=2.6.0",
+  "demucs>=4.0.1",
+  "audio-separator[cpu]>=0.48.0",
+  "beat-this>=1.1.0",
+]
 dev = [
   "pytest>=9.0.3",
   "pytest-cov>=7.1.0",

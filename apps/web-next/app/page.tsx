@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  AudioWaveform,
   CircleHelp,
   Cpu,
   Download,
@@ -2277,6 +2278,25 @@ export default function HomePage() {
             >
               <Network className="mr-2 h-4 w-4" />
               Geometry Mapper
+            </Button>
+            <Button
+              variant="secondary"
+              title={
+                selectedRunId
+                  ? "Open the selected song in the multitrack Studio Editor"
+                  : "Open the multitrack Studio Editor"
+              }
+              onClick={() => {
+                if (!selectedRunId) {
+                  router.push("/editor");
+                  return;
+                }
+                const params = new URLSearchParams({ run: selectedRunId, name: selectedRunFilename });
+                router.push(`/editor?${params.toString()}`);
+              }}
+            >
+              <AudioWaveform className="mr-2 h-4 w-4" />
+              Studio Editor
             </Button>
             <Button variant="danger" onClick={() => void onClearHistory()} disabled={isBusy || runs.length === 0}>
               <Trash2 className="mr-2 h-4 w-4" />
