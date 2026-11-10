@@ -43,7 +43,52 @@ export type JobOp =
   | "quantize"
   | "to_midi"
   | "structure"
-  | "generate";
+  | "generate"
+  | "song";
+
+export type SongEngineId = "acestep" | "yue2" | "elevenlabs" | "fal";
+
+export interface SongEngine {
+  id: SongEngineId;
+  label: string;
+  local: boolean;
+  available: boolean;
+  models: string[];
+  default_model: string | null;
+  model_labels?: Record<string, string>;
+  license: string;
+  commercial: boolean;
+  supports: { lyrics: boolean; duration: boolean; bpm: boolean; key: boolean; seed: boolean };
+  max_seconds: number;
+  hint: string;
+}
+
+export interface SongKeyStatus {
+  configured: boolean;
+  source: "environment" | "saved" | null;
+  env: string;
+}
+
+export type SongCloudProvider = "elevenlabs" | "fal";
+
+export interface SongEnginesStatus {
+  engines: SongEngine[];
+  keys: Record<SongCloudProvider, SongKeyStatus>;
+}
+
+export interface SongParams {
+  engine: SongEngineId;
+  style: string;
+  lyrics: string;
+  seconds: number;
+  instrumental: boolean;
+  bpm: number | null;
+  key: string | null;
+  language: string;
+  seed: number | null;
+  model: string | null;
+  accept_noncommercial?: boolean;
+}
 
 export interface GenerationStatus {
   available: boolean;
@@ -54,7 +99,8 @@ export interface GenerationStatus {
 export interface Job {
   id: string;
   op: JobOp;
-  asset_id: string;
+  /** Null for ops that create audio from nothing (a generated song). */
+  asset_id: string | null;
   status: "queued" | "running" | "completed" | "failed";
   progress: number;
   stage: string;

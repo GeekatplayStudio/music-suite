@@ -7,7 +7,11 @@ import type {
   PluginInfo,
   ProjectDetail,
   ProjectState,
-  ProjectSummary
+  ProjectSummary,
+  SongCloudProvider,
+  SongEnginesStatus,
+  SongKeyStatus,
+  SongParams
 } from "@/lib/editor/types";
 
 const BASE = "/suite-api/editor";
@@ -40,6 +44,22 @@ export const editorApi = {
   capabilities: () => request<Capabilities>("/capabilities"),
   /** Whether a local ComfyUI with the generator nodes is reachable. */
   generation: () => request<GenerationStatus>("/generation"),
+  /** Song engines (local ACE-Step / YuE2, cloud ElevenLabs / fal.ai) and whether each can run. */
+  songEngines: () => request<SongEnginesStatus>("/songs"),
+  /** Keys are write-only: the API reports whether one is set, never the key itself. */
+  saveSongKey: (provider: SongCloudProvider, key: string) =>
+    request<Record<SongCloudProvider, SongKeyStatus>>(`/songs/keys/${provider}`, {
+      ...json({ key }),
+      headers: { "Content-Type": "application/json", "X-Music-Suite-Action": "save-key" }
+    }),
+  removeSongKey: (provider: SongCloudProvider) =>
+    request<Record<SongCloudProvider, SongKeyStatus>>(`/songs/keys/${provider}`, {
+      method: "DELETE",
+      headers: { "X-Music-Suite-Action": "save-key" }
+    }),
+  /** Generate a whole song; it has no source asset. */
+  startSong: (id: string, params: SongParams) =>
+    request<Job>(`/projects/${id}/jobs`, json({ op: "song", asset_id: null, params })),
   plugins: () => request<{ available: boolean; plugins: PluginInfo[] }>("/plugins"),
   /** Loads the plugin on the server (in an isolated process) to read its parameters. */
   describePlugin: (pluginId: string) => request<PluginInfo>(`/plugins/${pluginId}`),

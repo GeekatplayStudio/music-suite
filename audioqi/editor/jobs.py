@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +28,7 @@ from audioqi.editor import (
     projects,
     restoration,
     separation,
+    songs,
 )
 from audioqi.editor.projects import EditorError, NotFoundError, ParamError
 
@@ -216,6 +218,99 @@ def _v_generate(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_KEY_RE = re.compile(r"^[A-G][#b]?(?: ?(?:major|minor|maj|min|m))?$", re.IGNORECASE)
+_LANGUAGE_RE = re.compile(r"^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$")
+_MODEL_RE = re.compile(r"^[A-Za-z0-9._/:-]{1,80}$")
+
+
+def _clean_text(value: Any, key: str, limit: int, *, keep_lines: bool) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ParamError(f"'{key}' must be text.")
+    lines = []
+    for line in value.replace("\r\n", "\n").split("\n"):
+        printable = "".join(ch for ch in line if ch.isprintable() or ch == "\t")
+        lines.append(" ".join(printable.split()))
+    text = "\n".join(lines).strip() if keep_lines else " ".join(" ".join(lines).split())
+    if len(text) > limit:
+        raise ParamError(f"'{key}' must be at most {limit} characters.")
+    return text
+
+
+def _v_song(params: dict[str, Any]) -> dict[str, Any]:
+    from audioqi.editor.songs import common
+
+    _reject_unknown(
+        params,
+        {
+            "engine",
+            "style",
+            "lyrics",
+            "seconds",
+            "instrumental",
+            "bpm",
+            "key",
+            "language",
+            "seed",
+            "model",
+            "think",
+            "accept_noncommercial",
+        },
+    )
+    engine = params.get("engine", "acestep")
+    if engine not in songs.ENGINE_IDS:
+        raise ParamError(f"'engine' must be one of: {', '.join(songs.ENGINE_IDS)}.")
+    style = _clean_text(params.get("style"), "style", common.MAX_STYLE_CHARS, keep_lines=False)
+    if len(style) < 3:
+        raise ParamError("'style' must describe the song (genre, mood, instruments, voice).")
+    lyrics = _clean_text(params.get("lyrics"), "lyrics", common.MAX_LYRICS_CHARS, keep_lines=True)
+    instrumental = _boolean(params, "instrumental", not lyrics)
+    seconds = int(
+        _number(params, "seconds", common.MIN_SECONDS, common.MAX_SECONDS, 120) or 120
+    )
+    bpm = _number(params, "bpm", 30, 300, None)
+    key = params.get("key")
+    if key in (None, ""):
+        key = None
+    elif not isinstance(key, str) or not _KEY_RE.match(key.strip()):
+        raise ParamError("'key' must look like 'C major', 'F# minor' or 'Am'.")
+    else:
+        key = key.strip()
+    language = params.get("language", "en")
+    if not isinstance(language, str) or not _LANGUAGE_RE.match(language):
+        raise ParamError("'language' must be a language code such as 'en', 'ru' or 'ja'.")
+    seed = _number(params, "seed", 0, 2**31 - 1, None)
+    model = params.get("model")
+    if model in (None, ""):
+        model = None
+    elif (
+        not isinstance(model, str)
+        or not _MODEL_RE.match(model)
+        or ".." in model
+        or model.startswith("/")
+    ):
+        raise ParamError("'model' must be a model name from the engine's list.")
+    if engine == "yue2" and params.get("accept_noncommercial") is not True:
+        raise ParamError(
+            "YuE2's weights are licensed for non-commercial use only. "
+            "Set 'accept_noncommercial' to confirm before generating with it."
+        )
+    return {
+        "engine": engine,
+        "style": style,
+        "lyrics": "" if instrumental else lyrics,
+        "seconds": seconds,
+        "instrumental": instrumental,
+        "bpm": None if bpm is None else int(bpm),
+        "key": key,
+        "language": language,
+        "seed": None if seed is None else int(seed),
+        "model": model,
+        "think": _boolean(params, "think", True),
+    }
+
+
 def _v_plugin(params: dict[str, Any]) -> dict[str, Any]:
     preview_keys = {"preview_start", "preview_seconds"}
     preview = {key: params[key] for key in preview_keys if key in params}
@@ -305,6 +400,7 @@ _VALIDATORS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "dereverb": _v_dereverb,
     "spectral_repair": _v_spectral_repair,
     "generate": _v_generate,
+    "song": _v_song,
     "to_midi": _v_analyze,
     "structure": _v_analyze,
     "warp": _v_warp,
@@ -319,6 +415,8 @@ _VALIDATORS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "plugin": _v_plugin,
 }
 OPS = tuple(_VALIDATORS)
+# Ops that create audio from nothing, so they have no source asset.
+ASSETLESS_OPS = frozenset({"song"})
 
 
 def validate_params(op: Any, params: Any) -> dict[str, Any]:
@@ -346,9 +444,13 @@ def _public(record: dict[str, Any]) -> dict[str, Any]:
 
 def create_job(project_id: str, op: Any, asset_id: Any, params: Any) -> dict[str, Any]:
     cleaned = validate_params(op, params)
-    if not projects.is_canonical_uuid(asset_id):
+    if op in ASSETLESS_OPS:
+        if asset_id is not None:
+            raise ParamError(f"'{op}' creates new audio, so 'asset_id' must be null.")
+    elif not projects.is_canonical_uuid(asset_id):
         raise ParamError("'asset_id' must be a UUID.")
-    assets.get_asset(project_id, asset_id)
+    else:
+        assets.get_asset(project_id, asset_id)
     target = cleaned.get("target_asset_id")
     if target:
         assets.get_asset(project_id, target)
@@ -648,6 +750,25 @@ def _op_generate(ctx: _Context) -> _Outcome:
     return [outcome["asset"]], {"model": outcome["model"], "prompt": params["prompt"]}
 
 
+def _op_song(ctx: _Context) -> _Outcome:
+    params = ctx.params
+    request = songs.SongRequest(**params)
+    ctx.progress("process", 3, "Preparing the song request.")
+    outcome = songs.generate(
+        ctx.project_id,
+        request,
+        progress=lambda percent, detail: ctx.progress("process", percent, detail),
+    )
+    result = {
+        "engine": outcome["engine"],
+        "model": outcome["model"],
+        "style": params["style"],
+        "instrumental": params["instrumental"],
+        **{k: v for k, v in outcome["info"].items() if v is not None},
+    }
+    return [outcome["asset"]], result
+
+
 def _op_to_midi(ctx: _Context) -> _Outcome:
     audio, sr = ctx.load()
     engine = composition.transcription_engine()
@@ -778,6 +899,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "dereverb": _op_dereverb,
     "spectral_repair": _op_spectral_repair,
     "generate": _op_generate,
+    "song": _op_song,
     "to_midi": _op_to_midi,
     "structure": _op_structure,
     "warp": _op_warp,
@@ -802,7 +924,11 @@ def run_job(project_id: str, job_id: str) -> None:
     op = str(record.get("op"))
     try:
         _save(project_id, record, status="running", stage="load", detail="Starting.", progress=1)
-        asset = assets.get_asset(project_id, str(record.get("asset_id")))
+        asset = (
+            {}
+            if op in ASSETLESS_OPS
+            else assets.get_asset(project_id, str(record.get("asset_id")))
+        )
         ctx = _Context(project_id, record, asset, dict(record.get("params") or {}))
         created, result = _HANDLERS[op](ctx)
         _save(

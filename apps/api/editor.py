@@ -15,15 +15,16 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 import soundfile as sf
-from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
 from audioqi.db import SessionLocal
-from audioqi.editor import assets, engines, generation, plugins, projects
+from audioqi.editor import assets, engines, generation, plugins, projects, songs
 from audioqi.editor import jobs as editor_jobs
 from audioqi.editor.projects import EditorError
+from audioqi.editor.songs import keys as song_keys
 from audioqi.io.decode import ffmpeg_available
 from audioqi.jobs import submit
 from audioqi.models import AnalysisRun
@@ -83,6 +84,42 @@ def describe_plugin(plugin_id: str) -> dict[str, Any]:
 @router.get("/generation")
 def generation_status() -> dict[str, Any]:
     return generation.status()
+
+
+@router.get("/songs")
+def song_engines() -> dict[str, Any]:
+    """Song engines and whether each can run now. Keys are reported, never returned."""
+    return songs.engines_status()
+
+
+KEY_ACTION = "save-key"
+
+
+def _require_key_action(action: str | None) -> None:
+    # A custom header cannot be sent cross-origin under the suite's CORS policy.
+    if action != KEY_ACTION:
+        raise HTTPException(status_code=400, detail="Explicit key confirmation header is required.")
+
+
+@router.post("/songs/keys/{provider}")
+def save_song_key(
+    provider: str,
+    payload: dict[str, Any] = Body(...),
+    action: str | None = Header(default=None, alias="X-Music-Suite-Action"),
+) -> dict[str, Any]:
+    _require_key_action(action)
+    if set(payload) - {"key"}:
+        raise HTTPException(status_code=422, detail="Only 'key' may be sent.")
+    return _guard(lambda: song_keys.save(provider, payload.get("key")))
+
+
+@router.delete("/songs/keys/{provider}")
+def delete_song_key(
+    provider: str,
+    action: str | None = Header(default=None, alias="X-Music-Suite-Action"),
+) -> dict[str, Any]:
+    _require_key_action(action)
+    return _guard(lambda: song_keys.remove(provider))
 
 
 @router.get("/projects")

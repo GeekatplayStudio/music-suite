@@ -33,7 +33,7 @@ A local-first, Audition-class multitrack editor inside Music Suite:
 | Effects | Seven built-ins (compressor, EQ, reverb, convolution, delay, distortion, gate). No VST/AU. | Real-time EQ, gate, compressor, delay and reverb per track and bus; VST3/AU rendering through Pedalboard. **Shipped.** Distortion: **Phase 3** |
 | Take lanes / comping | Two takes per generation, comp to main track. | Loop-recorded takes on lanes with whole or per-range comping. **Shipped** |
 | MIDI | Piano roll, audio-to-MIDI, import/export. | Instrument tracks, piano roll, audio-to-MIDI, .mid import/export. **Shipped.** Keyboard input, samplers: **Phase 4** |
-| Generation | New stems against existing tracks from a prompt. | Via the optional ComfyUI integration. **Phase 4** |
+| Generation | New stems against existing tracks from a prompt. | Whole songs with vocals from style + lyrics: local ACE-Step 1.5 / YuE2, or ElevenLabs / fal.ai. **Shipped.** Parts against existing tracks via ComfyUI (MusicGen). **Phase 4** |
 | Export | Full song, range or multitrack; 32-bit/48 kHz WAV or MP3. | Mixdown, range and per-track WAV (24-bit or 32-bit float), FLAC, MP3. **Shipped** |
 | Layout | Transport on top, track lanes in the centre, context panel that changes with the selection, right-click actions. | Same model: select, then act in the inspector. |
 
@@ -202,13 +202,20 @@ Second pass (2026-11-09):
 Third pass (2026-11-09) — in-browser plugins:
 
 - **Web Audio Modules 2.** Each track has one insert slot, after its own effects, for a WAM effect. Plugins come from the community catalogue (53 effects at the time of writing) or any `https://` address, show their own control panel, run live, are re-created on the export context so they are included in exports, and have their settings saved with the session.
-- This is opt-in per browser and is the suite's one deliberate exception to "local only"; see the Studio Editor section of `GUARDRAILS.md` for exactly what is fetched and the risk a plugin carries.
+- This is opt-in per browser and is one of the suite's two deliberate exceptions to "local only" (the other is opt-in cloud song engines); see the Studio Editor section of `GUARDRAILS.md` for exactly what is fetched and the risk a plugin carries.
 
 Fourth pass (2026-11-09) — MIDI keyboard and voice effects:
 
 - **MIDI keyboard connector.** One Web MIDI connection for the whole editor, with a header button that connects, lists keyboards as they are plugged in or out, and lets you choose one. Keys play the selected track live (velocity, sustain pedal, ±2-semitone pitch bend; system messages such as Roland's active sensing are ignored). On a track with a MIDI clip, the record button records the performance as a new MIDI clip, compensated for output latency and rounded to whole bars when snapping is on.
 - **Voice effects** (an AudioWorklet in each track's effect chain, after the gate): a 20-band vocoder whose carrier follows the sung pitch (YIN, snapped to semitones), holds one note, or is played from the MIDI keyboard; a two-tap pitch shifter (chipmunk / monster / harmony); a ring-modulator robot; a synth voice that follows pitch and loudness; and a megaphone distortion. Thirteen presets. Included in exports.
 - **Header layout**: the tempo and loudness readout has a fixed width, so a tempo change no longer moves the buttons beside it.
+
+Fifth pass (2026-11-10) — song generation without ComfyUI:
+
+- **Create a song** (inspector, no clip selected): engine, model, style, lyrics with section-tag buttons, instrumental, length, vocal language, optional project tempo/key, seed. The result lands on a new track at the playhead.
+- Engines: ACE-Step 1.5 through its documented REST API (`/release_task`, `/query_result`, `/v1/audio`), YuE2 in its own Python environment as a child process, ElevenLabs Music (`/v1/music`), and fal.ai's queue (MiniMax Music 2.6, Lyria 3 Pro).
+- Verified: 26 backend tests in `tests/test_songs.py` (payloads, validation, host allowlists, key handling, the YuE2 subprocess with a stand-in package) and a browser run against a stand-in ACE-Step server that follows its documented contract: the request carried the style and lyrics, and the song appeared on a new track.
+- Not verified: real ACE-Step, YuE2, ElevenLabs or fal.ai generations (no GPU or keys in the test environment).
 
 Not done, and why:
 

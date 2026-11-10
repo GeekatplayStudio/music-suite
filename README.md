@@ -131,7 +131,8 @@ Open it from the **Studio Editor** button in the workspace (it opens the selecte
 | **Record** | Uncompressed recording with punch-in, loop recording into take lanes you can comp, and MIDI-keyboard performances recorded as notes |
 | **Compose** | Instrument tracks with a built-in synth or drum kit, a piano roll, live playing from a USB MIDI keyboard (velocity, sustain pedal, pitch bend), computer- or MIDI-keyboard note input, MIDI file import/export, audio-to-MIDI, and automatic song-section detection |
 | **Plugins** | VST3 and Audio Units rendered in an isolated process; Web Audio Module effects that run live in the browser (opt-in, see below) |
-| **Generate** | Describe a part and a local ComfyUI (MusicGen, via the bundled Sonic Holodeck nodes) generates it at the project tempo |
+| **Create a song** | Full songs with vocals from a style and your lyrics, without ComfyUI: local ACE-Step 1.5 or YuE2, or (optional) ElevenLabs Music and fal.ai (MiniMax Music, Lyria 3 Pro). The song lands on a new track at the playhead |
+| **Generate a part** | Describe a part for a selected clip and a local ComfyUI (MusicGen, via the bundled Sonic Holodeck nodes) generates it at the project tempo |
 | **Export** | Mixdown, highlighted range or every track as WAV (24-bit or 32-bit float), FLAC or MP3; or send the mix straight to AI Mastering |
 
 Press `?` in the editor for the full list of keyboard shortcuts.
@@ -144,6 +145,17 @@ pip install -e ".[editor-ai]"   # audio-separator, Demucs, beat_this, PyTorch â€
 ```
 
 The macOS installer adds the `editor` extra automatically. `editor-ai` is a large download and is left to you. Some separation models carry non-commercial licences, and Pedalboard and Rubber Band are GPLv3; check them before distributing a bundled build or releasing separated stems commercially.
+
+**Song generation.** With no clip selected, the inspector shows *Create a song*. Pick an engine, describe the style, write lyrics with `[verse]` / `[chorus]` tags (or tick *Instrumental*), and generate. The editor never needs ComfyUI for this.
+
+| Engine | Where it runs | Licence of the output | Set-up |
+|---|---|---|---|
+| **ACE-Step 1.5** (recommended) | This machine, through ACE-Step's own API server | MIT: songs can go in monetised videos | `git clone https://github.com/ACE-Step/ACE-Step-1.5`, `uv sync`, then `uv run acestep-api` (port 8001). Under 4 GB VRAM for the turbo model; the XL models want 12 GB+ |
+| **YuE2** | This machine, in its own Python 3.12 environment | CC BY-NC 4.0: personal and research use only | Install YuE2 (NVIDIA GPU, 24 GB), then set `MUSIC_SUITE_YUE2_PYTHON` to that environment's `python`. Each request must acknowledge the licence |
+| **ElevenLabs Music** | Cloud | Per your ElevenLabs plan | Paste an API key under *Cloud services*, or set `MUSIC_SUITE_ELEVENLABS_API_KEY` |
+| **fal.ai** (MiniMax Music 2.6, Lyria 3 Pro) | Cloud | Per each model's terms on fal.ai | Paste a fal key, or set `MUSIC_SUITE_FAL_KEY` |
+
+ACE-Step's address can be changed with `MUSIC_SUITE_ACESTEP_URL` (loopback only); if you started it with an API key, set `MUSIC_SUITE_ACESTEP_API_KEY`. Cloud engines receive only the style text and lyrics, never audio, and only once you have saved a key for them. Suno is not offered: it has no official public API, and third-party "Suno APIs" are unofficial.
 
 **MIDI keyboards.** Plug in a USB keyboard (Roland and other class-compliant keyboards need no driver), press the keyboard button beside record, and allow MIDI devices when the browser asks. It plays the selected track; on a track with a MIDI clip, the record button records what you play as notes. Web MIDI works in Chrome and Edge; Safari does not support it. Details are in the [Help Guide](docs/HELP_GUIDE.md).
 
@@ -161,7 +173,8 @@ What is planned next, and exactly what has and has not been verified, is in **[d
 - pnpm (recommended) or npm
 - FFmpeg and ffprobe on `PATH`
 - Git for in-app updates
-- Optional: ComfyUI with a compatible Torch/CUDA environment (for music generation)
+- Optional: ACE-Step 1.5 or YuE2 for local song generation, or an ElevenLabs / fal.ai key for cloud generation (see *Song generation* above)
+- Optional: ComfyUI with a compatible Torch/CUDA environment (for "Generate a part")
 - Optional: the `editor` and `editor-ai` extras for the Studio Editor's best engines (see above)
 
 ---
@@ -300,6 +313,7 @@ music-suite/
     public/song-mapper/              integrated Song Geometry Mapper workspace
   audioqi/                           analysis, mastering, update, and integrations
     editor/                          editor projects, assets and processing jobs
+      songs/                         song engines: ACE-Step, YuE2, ElevenLabs, fal.ai
     geometry_mapper/                 mapper deep-analysis and managed cache service
     integrations/comfyui/
       sonic_holodeck/                bundled ComfyUI nodes and workflows

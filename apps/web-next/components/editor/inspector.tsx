@@ -4,6 +4,7 @@ import { Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { ActionButton, PanelSection, Slider, fieldClass, formatDb } from "@/components/editor/controls";
+import { SongGenerator } from "@/components/editor/song-generator";
 import { editorApi } from "@/lib/editor/api";
 import type { Favourite, ProcessStep } from "@/lib/editor/favourites";
 import { type WamCatalogueEntry, isAllowedWamUrl, loadWamCatalogue, wamConsent } from "@/lib/editor/wam";
@@ -15,6 +16,9 @@ import {
   type Clip,
   type FadeCurve,
   type GenerationStatus,
+  type SongCloudProvider,
+  type SongEnginesStatus,
+  type SongParams,
   type Job,
   type JobOp,
   type PluginInfo,
@@ -56,6 +60,12 @@ interface InspectorProps {
   onOpenWam: (trackId: string) => void;
   generation: GenerationStatus | null;
   onCheckGeneration: () => void;
+  songs: SongEnginesStatus | null;
+  songBusy: boolean;
+  onCheckSongs: () => void;
+  onGenerateSong: (params: SongParams, title: string) => void;
+  onSaveSongKey: (provider: SongCloudProvider, key: string) => Promise<boolean>;
+  onRemoveSongKey: (provider: SongCloudProvider) => Promise<boolean>;
   onOpenPianoRoll: () => void;
   onExportMidi: () => void;
   getPosition: () => number;
@@ -1020,6 +1030,7 @@ export function Inspector(props: InspectorProps) {
           )}
         </>
       ) : (
+        <>
         <PanelSection title="Project" hint="Select a clip to edit it. These settings apply to the whole session.">
           <NumberField
             label="Tempo"
@@ -1092,6 +1103,17 @@ export function Inspector(props: InspectorProps) {
             Add an instrument (MIDI) track
           </ActionButton>
         </PanelSection>
+        <SongGenerator
+          status={props.songs}
+          projectBpm={state.bpm}
+          projectKey={state.keyLabel ?? null}
+          busy={props.songBusy}
+          onRefresh={props.onCheckSongs}
+          onGenerate={props.onGenerateSong}
+          onSaveKey={props.onSaveSongKey}
+          onRemoveKey={props.onRemoveSongKey}
+        />
+        </>
       )}
 
       {track ? (

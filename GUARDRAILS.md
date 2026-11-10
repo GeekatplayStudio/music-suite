@@ -90,9 +90,10 @@ These boundaries are enforced in code and covered by automated tests. Defaults a
 - Editor uploads use the same extension, size, duration and streaming limits as analysis uploads.
 - VST3 and Audio Unit plugins are listed by filename only and are loaded in a separate worker process, so a crashing plugin cannot take the API down. Clients refer to them by an opaque id, never a path.
 - ComfyUI generation contacts a loopback ComfyUI only; a non-loopback `MUSIC_SUITE_COMFYUI_URL` is refused.
+- Song generation rules are below, under *Song generation*.
 - MP3 and FLAC export encodes a rendered mix and deletes both the upload and the result once the response has been sent.
 
-### In-browser plugins: the one deliberate exception to "local only"
+### In-browser plugins: a deliberate exception to "local only"
 
 Web Audio Modules (WAM) are effects that run in the browser. They are third-party JavaScript downloaded from the internet, and this is the only feature of the suite that contacts a remote host.
 
@@ -102,6 +103,21 @@ Web Audio Modules (WAM) are effects that run in the browser. They are third-part
 - **Residual risk, stated plainly:** a loaded plugin runs with the same privileges as the editor page. It can read the open session and call the local Music Suite API, and nothing technically stops a malicious plugin from sending data elsewhere. Only load plugins from sources you trust.
 - A session that contains such a plugin still opens with internet plugins switched off; the track simply plays without it and the editor says so.
 - The WAM host files under `apps/web-next/public/wam-host/` are a pinned local copy (MIT); only plugins come from the network.
+
+### Song generation
+
+- Song jobs create audio from text, so they take no source asset; `asset_id` must be null and every parameter is validated (lengths, ranges, key and language formats, model names without paths).
+- **ACE-Step** is reached only on loopback (`MUSIC_SUITE_ACESTEP_URL` is refused otherwise). The suite downloads results only through ACE-Step's own `/v1/audio` route and never follows an absolute URL from its answer.
+- **YuE2** runs in a separate child process using the interpreter named in `MUSIC_SUITE_YUE2_PYTHON`, in isolated mode, with a time limit; a crash or out-of-memory error cannot take the API down. Its weights are CC BY-NC 4.0, so every YuE2 request must carry `accept_noncommercial: true`.
+- Downloaded or produced audio is capped at the upload size limit, decoded like an upload and checked against the duration limit.
+
+### Cloud song engines: the second deliberate exception to "local only"
+
+- **Off until a key exists.** ElevenLabs and fal.ai are used only when the user picks them and a key has been saved (or set in `MUSIC_SUITE_ELEVENLABS_API_KEY` / `MUSIC_SUITE_FAL_KEY`).
+- **What is sent:** the style text, lyrics, length and model choice, to the one provider chosen. **Not sent:** audio, file paths or project data.
+- **Fixed hosts.** Requests go to `https://api.elevenlabs.io/v1/music` or `https://queue.fal.run/...` only. fal.ai status and result URLs must be on `queue.fal.run`, and audio must come from `fal.media` over HTTPS. Redirects are followed only within that allowlist.
+- **Keys are write-only.** They are saved to `data/secrets/song_keys.json` with owner-only permissions, never returned by the API (only "configured" and its source), and saving or removing one requires the `X-Music-Suite-Action: save-key` header, which the CORS policy blocks cross-origin.
+- Provider errors are reported in plain words (bad key, no credit, rate limit) without echoing request bodies.
 
 ## Verification
 

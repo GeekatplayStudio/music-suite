@@ -89,6 +89,9 @@ import {
   type Note,
   type PluginInfo,
   type ProjectState,
+  type SongCloudProvider,
+  type SongEnginesStatus,
+  type SongParams,
   type TimeRange,
   type Tool,
   type Track,
@@ -229,7 +232,7 @@ function capitalize(value: string): string {
 /** Fold a finished backend job into the project as a single undoable edit. */
 function applyJob(state: ProjectState, job: Job, clipId: string): ProjectState {
   const source = state.clips.find((c) => c.id === clipId);
-  if (job.op === "analyze") {
+  if (job.op === "analyze" && job.asset_id) {
     return { ...state, assetMeta: { ...state.assetMeta, [job.asset_id]: metaFromAnalysis(job.result as unknown as Analysis) } };
   }
   if (job.op === "generate" && source && job.result_assets.length) {
@@ -353,6 +356,13 @@ export function EditorApp({ projectId }: { projectId: string }) {
       .then(setGeneration)
       .catch(() => setGeneration({ available: false, node_installed: false, models: [] }));
   }, []);
+  const [songEngines, setSongEngines] = useState<SongEnginesStatus | null>(null);
+  const checkSongEngines = useCallback(() => {
+    editorApi
+      .songEngines()
+      .then(setSongEngines)
+      .catch(() => setSongEngines({ engines: [], keys: {} as SongEnginesStatus["keys"] }));
+  }, []);
   const [savedState, setSavedState] = useState<ProjectState | null>(null);
   const [saveError, setSaveError] = useState(false);
 
@@ -435,6 +445,7 @@ export function EditorApp({ projectId }: { projectId: string }) {
         if (duration > 0) setPxPerSec(clamp((viewWidthRef.current - 48) / duration, MIN_ZOOM, MAX_ZOOM));
         setReady(true);
         checkGeneration();
+        checkSongEngines();
         if (caps?.plugins.available) {
           editorApi
             .plugins()
@@ -449,7 +460,7 @@ export function EditorApp({ projectId }: { projectId: string }) {
       cancelled = true;
       aliveRef.current = false;
     };
-  }, [projectId, checkGeneration]);
+  }, [projectId, checkGeneration, checkSongEngines]);
 
   useEffect(() => {
     for (const clip of state.clips) if (!clip.notes) media.ensure(clip.assetId);
@@ -849,6 +860,78 @@ export function EditorApp({ projectId }: { projectId: string }) {
       if (aliveRef.current) setJobs((prev) => prev.filter((j) => j.job.id !== jobId));
     }, 3500);
     return true;
+  };
+
+  /** Generate a whole song (no source clip); it lands on a new track at the playhead. */
+  const runSong = async (params: SongParams, title: string): Promise<boolean> => {
+    const start = Math.max(0, engine.position());
+    let job: Job;
+    try {
+      job = await editorApi.startSong(projectId, params);
+    } catch (err) {
+      setNotice(errorMessage(err, "The song could not be started."));
+      return false;
+    }
+    const jobId = job.id;
+    const publish = (latest: Job) =>
+      setJobs((prev) => {
+        const entry = { job: latest, clipId: "", title };
+        return prev.some((j) => j.job.id === jobId)
+          ? prev.map((j) => (j.job.id === jobId ? entry : j))
+          : [...prev, entry];
+      });
+    publish(job);
+    let failures = 0;
+    while (aliveRef.current && (job.status === "queued" || job.status === "running")) {
+      // Songs take seconds to minutes, so the poll is gentler than for clip processing.
+      await delay(1200);
+      try {
+        job = await editorApi.getJob(projectId, jobId);
+        failures = 0;
+        publish(job);
+      } catch {
+        failures += 1;
+        if (failures > 8) {
+          publish({ ...job, status: "failed", error: "Lost contact with the Music Suite API." });
+          return false;
+        }
+      }
+    }
+    if (!aliveRef.current || job.status !== "completed" || !job.result_assets.length) return false;
+    const asset = job.result_assets[0];
+    setAssets((prev) => new Map(prev).set(asset.id, asset));
+    const current = stateRef.current;
+    const track = makeTrack(current, `Song · ${stripExtension(asset.name).slice(0, 40)}`);
+    const clip = { ...makeClip(asset, track.id, start), name: stripExtension(asset.name) };
+    commit({ ...current, tracks: [...current.tracks, track], clips: [...current.clips, clip] });
+    setTimeout(() => {
+      if (aliveRef.current) setJobs((prev) => prev.filter((j) => j.job.id !== jobId));
+    }, 3500);
+    return true;
+  };
+
+  const saveSongKey = async (provider: SongCloudProvider, key: string): Promise<boolean> => {
+    try {
+      const keys = await editorApi.saveSongKey(provider, key);
+      setSongEngines((prev) => (prev ? { ...prev, keys } : prev));
+      checkSongEngines();
+      return true;
+    } catch (err) {
+      setNotice(errorMessage(err, "The key could not be saved."));
+      return false;
+    }
+  };
+
+  const removeSongKey = async (provider: SongCloudProvider): Promise<boolean> => {
+    try {
+      const keys = await editorApi.removeSongKey(provider);
+      setSongEngines((prev) => (prev ? { ...prev, keys } : prev));
+      checkSongEngines();
+      return true;
+    } catch (err) {
+      setNotice(errorMessage(err, "The key could not be removed."));
+      return false;
+    }
   };
 
   /** Render a few seconds through a plugin and play them, without changing the session. */
@@ -1783,6 +1866,12 @@ export function EditorApp({ projectId }: { projectId: string }) {
           onOpenWam={(trackId) => setWamWindow(trackId)}
           generation={generation}
           onCheckGeneration={checkGeneration}
+          songs={songEngines}
+          songBusy={jobs.some((j) => j.job.op === "song" && (j.job.status === "queued" || j.job.status === "running"))}
+          onCheckSongs={checkSongEngines}
+          onGenerateSong={(params, title) => void runSong(params, title)}
+          onSaveSongKey={saveSongKey}
+          onRemoveSongKey={removeSongKey}
           onAddMidiTrack={addInstrumentTrack}
           onOpenPianoRoll={() => setShowPiano(true)}
           onExportMidi={() => {
