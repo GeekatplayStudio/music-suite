@@ -297,7 +297,11 @@ Open **AI Song Studio** from the workspace. It has three tabs.
 - *Keeping your computer responsive*: generation will not start when free memory is below the limit you set, and the engine unloads after the idle time you set.
 - *Loudness of new songs*: each new song is levelled towards −14 LUFS, never above −1 dBTP. Change the target or switch it off.
 - *Generators*: switch engines on or off. *ACE-Step 1.5 (your own Python server)* is for computers that already run ACE-Step's server (start it with `uv run acestep-api`). *YuE2* needs an NVIDIA GPU with about 24 GB and the `MUSIC_SUITE_YUE2_PYTHON` setting, and every song asks you to confirm its non-commercial licence.
-- *Online services*: paste your own ElevenLabs or fal.ai API key and press **Save key** to switch that service on. It then appears in the *Generator* list. Your style text and lyrics are sent to it and it bills your account; audio is never uploaded. **Remove key** switches it off again. Keys are stored in your computer's keychain and are never shown again.
+- *Online services*: paste your own ElevenLabs or fal.ai API key and press **Save key** to switch that service on. It then appears in the *Generator* list. Your style text and lyrics are sent to it and it bills your account. A clip's audio is uploaded only when you tick *Allow uploading this clip* in an AI edit. A cost estimate appears next to **Generate** before anything is sent. **Remove key** switches it off again. Keys are stored in your computer's keychain and are never shown again.
+
+### Song plans (ElevenLabs)
+
+With ElevenLabs chosen as the generator, a **Song plan** panel lets you write the song section by section: a name (Verse, Chorus…), the lyrics for that section, its length (3–120 s), styles to use and to avoid, and how closely it should follow its neighbours. **Draft a plan (free)** asks ElevenLabs for a plan from your description, which you can then edit. The first section's styles set the genre, so give it several. With a plan, the *Length* and *Lyrics* fields above it are not used. A plan needs the Music 2 or Music 2.5 model.
 
 ### AI edits in the Studio Editor
 
@@ -308,6 +312,7 @@ Select a clip; the side panel has an **AI edit** section.
 - **Restyle:** plays the clip in a new style. *Keep* sets how much of the original survives; *Stay close to the original* keeps melody and timing and changes the production.
 - **Extract an instrument / Add a part / Build a full song around it:** each result goes on a new track under the clip. These need the editing model (2.4 GB) from AI Song Studio ▸ Settings. Extracted parts are recreated by the AI rather than cut out of the mix, so for exact stems use **Separate into stems**. Build a full song works best on a single part, such as a vocal.
 - **Versions:** ask for up to 4. The first lands in place; the others go on muted tracks so you can compare them.
+- **Generator:** when ElevenLabs is set up, choose it in the panel to regenerate a section (3–120 s) or extend a clip with ElevenLabs. A clip that was not made with ElevenLabs must be uploaded first, which ElevenLabs bills like generating the same length; tick **Allow uploading this clip** to agree. The cost is shown before you press the button, and the same clip is never uploaded twice.
 - Every AI edit is one step in Undo.
 
 ## 9) Troubleshooting

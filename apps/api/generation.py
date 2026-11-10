@@ -140,6 +140,28 @@ def delete_key(
     return summary
 
 
+@router.post("/estimate")
+def estimate(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """The likely cost of a request on an online service; ``estimate`` is null for local ones."""
+    if set(payload) - {"params", "project_id", "asset_id"}:
+        raise HTTPException(status_code=422, detail="Unknown field(s) in the estimate request.")
+    project_id, asset_id = payload.get("project_id"), payload.get("asset_id")
+    for value in (project_id, asset_id):
+        if value is not None and not projects.is_canonical_uuid(value):
+            raise HTTPException(status_code=422, detail="Unknown project or clip.")
+    return {
+        "estimate": _guard(lambda: service.estimate(payload.get("params"), project_id, asset_id))
+    }
+
+
+@router.post("/providers/{provider_id}/plan")
+def draft_plan(provider_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """Draft a section-by-section song plan from the description (free on ElevenLabs)."""
+    if set(payload) - {"fields"}:
+        raise HTTPException(status_code=422, detail="Only 'fields' may be sent.")
+    return {"plan": _guard(lambda: service.draft_plan(provider_id, payload.get("fields")))}
+
+
 @router.get("/history")
 def history() -> list[dict[str, Any]]:
     return records.list_records()

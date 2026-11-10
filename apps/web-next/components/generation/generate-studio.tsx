@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AudioWaveform, Cpu, Download, History, Loader2, Settings2, Sparkles, Square, Trash2, Wand2 } from "lucide-react";
 
+import { PlanEditor } from "@/components/generation/plan-editor";
 import { SchemaForm } from "@/components/generation/schema-form";
 import { SettingsPanel } from "@/components/generation/settings-panel";
 import { editorApi } from "@/lib/editor/api";
@@ -16,8 +17,10 @@ import {
   type FieldSpec,
   type FieldValue,
   type FieldValues,
+  type CostEstimate,
   type HistoryRecord,
   type Overview,
+  type PlanSection,
   type ProviderInfo
 } from "@/lib/generation/api";
 import { cn } from "@/lib/utils";
@@ -204,7 +207,48 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
   const busy = job !== null;
   const hasLyricsField = provider?.schema.fields.some((f) => f.key === "lyrics") ?? false;
   const instrumental = values.instrumental === true;
+  const planField = provider?.schema.fields.find((f) => f.type === "plan") ?? null;
+  const plan = Array.isArray(values.plan) ? (values.plan as PlanSection[]) : null;
+  const [drafting, setDrafting] = useState(false);
+  const draftPlan = async () => {
+    if (!provider) return;
+    setDrafting(true);
+    setError(null);
+    try {
+      const { plan: drafted } = await generationApi.draftPlan(provider.id, submitValues(provider.schema, values));
+      setValue("plan", drafted);
+    } catch (err) {
+      setError(message(err, "The plan could not be drafted."));
+    } finally {
+      setDrafting(false);
+    }
+  };
+
+  // What an online service would charge for this request, refreshed as the form changes.
+  const [estimate, setEstimate] = useState<CostEstimate | null>(null);
+  const [estimateError, setEstimateError] = useState<string | null>(null);
+  const online = provider?.kind === "external" && provider.status.ready;
+  useEffect(() => {
+    if (!online || !provider) return;
+    const timer = setTimeout(() => {
+      generationApi
+        .estimate({ params: { provider: provider.id, task: "text2music", fields: submitValues(provider.schema, values) } })
+        .then((result) => {
+          setEstimate(result.estimate);
+          setEstimateError(null);
+        })
+        .catch((err: unknown) => {
+          // The estimate checks the request the same way generating would, so show why.
+          setEstimate(null);
+          setEstimateError(message(err, "The cost could not be estimated."));
+        });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [online, provider, values]);
+
   const hidden = (field: FieldSpec) =>
+    field.type === "plan" ||
+    (plan !== null && (field.key === "duration" || field.key === "lyrics" || field.key === "instrumental")) ||
     Boolean(field.editor) ||
     (field.tasks !== undefined && !field.tasks.includes("text2music")) ||
     (instrumental && (field.key === "lyrics" || field.key === "vocal_language"));
@@ -576,6 +620,19 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
 
               <SchemaForm schema={provider.schema} values={values} disabled={busy || writing} onChange={setValue} hidden={hidden} />
 
+              {planField ? (
+                <PlanEditor
+                  sections={plan}
+                  disabled={busy || writing}
+                  drafting={drafting}
+                  maxSections={planField.max_sections ?? 30}
+                  maxSeconds={planField.max_total_seconds ?? 600}
+                  defaultStyles={String(values.caption ?? "")}
+                  onChange={(sections) => setValue("plan", sections)}
+                  onDraft={() => void draftPlan()}
+                />
+              ) : null}
+
               {hasLyricsField && !instrumental && String(values.lyrics ?? "").trim() ? (
                 <div className="flex flex-wrap gap-2">
                   <input
@@ -628,13 +685,29 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
                       {provider.status.ready
                         ? provider.id === "acestep_local"
                           ? `About ${formatSeconds(estimateSeconds(values))} on this computer. One song at a time.`
-                          : provider.status.message
+                          : online && estimate
+                            ? estimate.summary
+                            : online && estimateError
+                              ? `Not ready to send yet: ${estimateError}`
+                              : provider.status.message
                         : provider.status.message}
+                      {online && estimate ? (
+                        <>
+                          {" "}
+                          <a href={estimate.url} target="_blank" rel="noreferrer noopener" className="underline">
+                            Prices as of {estimate.as_of}
+                          </a>
+                        </>
+                      ) : null}
                     </p>
                     <button
                       type="button"
                       className={primaryButton}
-                      disabled={!provider.status.ready || writing || String(values.caption ?? values.prompt ?? "").trim().length < 3}
+                      disabled={
+                        !provider.status.ready ||
+                        writing ||
+                        (String(values.caption ?? values.prompt ?? "").trim().length < 3 && !plan?.length)
+                      }
                       onClick={() => void generate()}
                     >
                       <Sparkles className="h-4 w-4" aria-hidden />

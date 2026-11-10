@@ -57,8 +57,9 @@ interface InspectorProps {
   onAddMidiTrack: () => void;
   onOpenWam: (trackId: string) => void;
   generation: GenerationStatus | null;
-  /** The local song engine, for AI edits of the selected clip. */
-  songProvider: ProviderInfo | null;
+  /** Generators that can edit the selected clip (local engine first). */
+  songProviders: ProviderInfo[];
+  projectId: string;
   onCheckGeneration: () => void;
   /** Opens AI Song Studio set to generate into this project. */
   onOpenSongStudio: () => void;
@@ -899,7 +900,8 @@ export function Inspector(props: InspectorProps) {
             key={clip.id}
             clip={clip}
             selection={noisePrint}
-            provider={props.songProvider}
+            providers={props.songProviders}
+            projectId={props.projectId}
             busy={busy}
             onRun={(params, title) => props.onRunJob("generate_song", params, title)}
             onOpenSongStudio={props.onOpenSongStudio}

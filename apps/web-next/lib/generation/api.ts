@@ -2,8 +2,19 @@ import type { Job } from "@/lib/editor/types";
 
 const BASE = "/suite-api";
 
-export type FieldType = "text" | "lyrics" | "int" | "float" | "bool" | "enum" | "seed" | "model";
-export type FieldValue = string | number | boolean | null;
+export type FieldType = "text" | "lyrics" | "int" | "float" | "bool" | "enum" | "seed" | "model" | "plan";
+
+/** One section of a song plan (ElevenLabs composition plan). */
+export interface PlanSection {
+  name: string;
+  lyrics: string;
+  seconds: number;
+  styles: string[];
+  avoid: string[];
+  adherence: "low" | "medium" | "high";
+}
+
+export type FieldValue = string | number | boolean | null | PlanSection[];
 export type FieldValues = Record<string, FieldValue>;
 
 export interface FieldOption {
@@ -25,6 +36,8 @@ export interface FieldSpec {
   min?: number;
   max?: number;
   step?: number;
+  max_sections?: number;
+  max_total_seconds?: number;
   unit?: string;
   default?: FieldValue;
   options?: (FieldOption | string)[];
@@ -61,6 +74,7 @@ export interface ProviderInfo {
     running?: boolean;
     key?: { configured: boolean; source: "environment" | "keychain" | "file" | null; env: string };
     terms_url?: string;
+    pricing?: { as_of: string; url: string; usd_per_minute?: number; note?: string };
   };
   schema: ProviderSchema;
 }
@@ -119,6 +133,13 @@ export interface SongBrief {
   timesignature?: string;
   vocal_language?: string;
   duration?: number;
+}
+
+export interface CostEstimate {
+  usd: number;
+  summary: string;
+  as_of: string;
+  url: string;
 }
 
 export interface HistoryRecord {
@@ -181,6 +202,15 @@ export const generationApi = {
   write: (body: { mode: "brief" | "lyrics"; idea: string; caption?: string; lyrics?: string; instrumental?: boolean }) =>
     request<{ brief: SongBrief; engine: string }>("/generation/lyrics", json(body)),
   history: () => request<HistoryRecord[]>("/generation/history"),
+  /** What a request would cost on an online service (null for local generators). */
+  estimate: (body: {
+    params: { provider: string; task: string; fields: FieldValues };
+    project_id?: string;
+    asset_id?: string;
+  }) => request<{ estimate: CostEstimate | null }>("/generation/estimate", json(body)),
+  /** Ask the provider to draft a section plan from the description (free on ElevenLabs). */
+  draftPlan: (providerId: string, fields: FieldValues) =>
+    request<{ plan: PlanSection[] }>(`/generation/providers/${providerId}/plan`, json({ fields })),
   deleteHistory: (id: string) => request<{ deleted: boolean }>(`/generation/history/${id}`, { method: "DELETE" }),
   startSong: (projectId: string, params: { provider: string; task: string; title: string; fields: FieldValues }) =>
     request<Job>(`/editor/projects/${projectId}/jobs`, json({ op: "generate_song", asset_id: null, params })),

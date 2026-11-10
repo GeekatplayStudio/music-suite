@@ -169,7 +169,7 @@ Every engine control is available under *Advanced* (planner sampling, diffusion 
 
 **More engines (optional, off by default):** ACE-Step's own Python server (for NVIDIA machines that already run it) and YuE2 (NVIDIA, 24 GB, non-commercial licence). Switch them on under *Settings ▸ Generators*.
 
-**Online services (optional):** add your own ElevenLabs Music or fal.ai (MiniMax Music, Lyria) key under *Settings ▸ Online services* to use them as generators. Only the style text and lyrics are sent; audio never is. Keys stay in your computer's keychain.
+**Online services (optional):** add your own ElevenLabs Music or fal.ai (MiniMax Music, Lyria) key under *Settings ▸ Online services* to use them as generators. Only the style text, lyrics and settings are sent; a clip's audio is uploaded only when you tick *Allow uploading* to edit it with ElevenLabs. A cost estimate is shown before every online request. ElevenLabs songs can be planned section by section (*Song plan*, drafted for free), and in the Studio Editor any clip can have a section regenerated or be extended with ElevenLabs. Keys stay in your computer's keychain.
 
 Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (about 8 GB); without Ollama the music engine's own planner writes a simpler draft. Measured on an Apple M5 with 24 GB: the engine peaks at 2.3 GB of memory, or 4.5 GB with its planner. Windows and Linux builds of the engine are untested. Plan and benchmarks: [docs/GENERATION_ROADMAP.md](docs/GENERATION_ROADMAP.md).
 

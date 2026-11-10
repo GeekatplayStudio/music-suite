@@ -745,7 +745,7 @@ class AceStepProvider:
         outputs: list[Output] = []
         for data, _content_type in _audio_parts(result):
             audio, out_rate = sf.read(io.BytesIO(data), dtype="float32", always_2d=True)
-            audio, level = _match_level(task, body, source, int(rate), audio, int(out_rate))
+            audio, level = match_level(task, body, source, int(rate), audio, int(out_rate))
             buffer = io.BytesIO()
             sf.write(buffer, audio, int(out_rate), format="WAV", subtype="FLOAT")
             meta: dict[str, Any] = {
@@ -803,7 +803,7 @@ def _rms(audio: np.ndarray) -> float:
     return float(np.sqrt(np.mean(np.square(audio, dtype=np.float64)))) if audio.size else 0.0
 
 
-def _match_level(
+def match_level(
     task: str,
     body: dict[str, Any],
     source: np.ndarray,
@@ -854,3 +854,6 @@ def _match_level(
         return levelled, {"matched_lufs": round(float(target), 2), **info}
     except EditorError:
         return result, {}
+
+
+_match_level = match_level  # Kept for callers that used the private name.

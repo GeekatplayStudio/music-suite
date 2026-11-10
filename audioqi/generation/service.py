@@ -15,7 +15,7 @@ import soundfile as sf
 
 from audioqi.editor import assets, processing, projects
 from audioqi.editor.projects import EditorError, NotFoundError, ParamError
-from audioqi.generation import records, resources, schema, settings
+from audioqi.generation import records, remote_songs, resources, schema, settings
 from audioqi.generation.providers.acestep import AceStepProvider
 from audioqi.generation.providers.acestep_server import AceStepServerProvider
 from audioqi.generation.providers.base import Output, Provider, RunContext
@@ -172,7 +172,11 @@ def run(
     created = []
     for index, output in enumerate(outputs):
         name = title if len(outputs) == 1 else f"{title} (version {index + 1})"
-        created.append(_import(project_id, output, name, parent_id))
+        asset = _import(project_id, output, name, parent_id)
+        created.append(asset)
+        if chosen.kind == "external" and output.meta.get("song_id"):
+            # The service keeps this song, so editing it later needs no upload.
+            remote_songs.put(project_id, asset["id"], chosen.id, output.meta["song_id"])
     taken = round(time.monotonic() - started, 1)
     record = records.add(
         {
@@ -193,3 +197,52 @@ def run(
         "seconds_taken": taken,
         "outputs": [output.meta for output in outputs],
     }
+
+
+def estimate(params: Any, project_id: str | None, asset_id: str | None) -> dict[str, Any] | None:
+    """What a request would cost on an online service, or None for local providers."""
+    if not isinstance(params, dict):
+        raise ParamError("The request must be an object.")
+    cleaned = validate_request(
+        {k: v for k, v in params.items() if k in ("provider", "task", "fields", "title")}
+    )
+    chosen = provider(cleaned["provider"])
+    estimator = getattr(chosen, "estimate", None)
+    if chosen.kind != "external" or estimator is None:
+        return None
+    source_seconds: float | None = None
+    stored = False
+    if cleaned["source"]:
+        if not project_id or not asset_id:
+            raise ParamError("Select a clip first: this edits existing audio.")
+        asset = assets.get_asset(project_id, asset_id)
+        source_seconds = float(asset["duration_seconds"])
+        stored = remote_songs.get(project_id, asset_id, chosen.id) is not None
+    if cleaned["task"] == "text2music" and hasattr(chosen, "payload"):
+        chosen.payload(cleaned["fields"])  # The same checks as sending it, without sending it.
+    result: dict[str, Any] = estimator(cleaned["task"], cleaned["fields"], source_seconds, stored)
+    return result
+
+
+def draft_plan(provider_id: Any, fields: Any) -> list[dict[str, Any]]:
+    """Ask a provider that supports song plans to draft one from the description."""
+    chosen = provider(provider_id)
+    drafter = getattr(chosen, "draft_plan", None)
+    if drafter is None:
+        raise ParamError("This provider does not draft song plans.")
+    if not settings.load()["providers"].get(chosen.id, False):
+        raise EditorError("This provider is switched off in AI Song Studio > Settings.", 403)
+    described = chosen.describe()
+    values = schema.validate(
+        described["fields"],
+        "text2music",
+        {
+            k: v
+            for k, v in (fields or {}).items()
+            if k in ("caption", "lyrics", "bpm", "keyscale", "duration", "model_id", "instrumental")
+        }
+        if isinstance(fields, dict)
+        else {},
+    )
+    sections: list[dict[str, Any]] = drafter(values)
+    return sections

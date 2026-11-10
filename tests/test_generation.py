@@ -750,8 +750,13 @@ def test_elevenlabs_sends_text_only_and_imports_the_song(client: TestClient, mon
         "music_length_ms": 30000,
         "model_id": "music_v2_5",
         "force_instrumental": False,
+        "store_for_inpainting": True,
     }
     assert job["result"]["outputs"][0]["song_id"] == "abc"
+    # The stored song is remembered, so editing this clip later needs no upload.
+    from audioqi.generation import remote_songs
+
+    assert remote_songs.get(project, job["result_assets"][0]["id"], "elevenlabs") == "abc"
     assert job["result"]["outputs"][0]["output_lufs"] == pytest.approx(-14.0, abs=0.2)
 
 
@@ -780,7 +785,13 @@ def test_elevenlabs_plan_mode_uses_the_seed(client: TestClient, monkeypatch) -> 
         "https://api.elevenlabs.io/v1/music/plan",
         "https://api.elevenlabs.io/v1/music",
     ]
-    assert sent[1]["json"] == {"composition_plan": plan, "model_id": "music_v2_5", "seed": 11}
+    drafted = cloud.plan_to_api(cloud.plan_from_api(plan))
+    assert sent[1]["json"] == {
+        "composition_plan": drafted,
+        "model_id": "music_v2_5",
+        "store_for_inpainting": True,
+        "seed": 11,
+    }
 
 
 @pytest.mark.parametrize(
@@ -1470,3 +1481,355 @@ def test_installer_fetches_the_editing_model_on_yes(installed_engine, monkeypatc
     assert installed_engine == ["editing"]
     assert setup.main(["--yes"]) == 0  # --yes includes it without asking.
     assert installed_engine == ["editing", "editing"]
+
+
+# --------------------------------------------------------------------------- phase G3: plans, edits, cost
+
+
+def _eleven_on(client: TestClient) -> None:
+    client.post("/generation/providers/elevenlabs/key", json={"key": KEY}, headers=_headers())
+
+
+PLAN = [
+    {
+        "name": "Intro",
+        "seconds": 8,
+        "styles": ["dream pop", "female vocal", "shimmering synths"],
+        "adherence": "high",
+    },
+    {
+        "name": "Verse",
+        "lyrics": "Neon on the water\nSalt upon my skin",
+        "seconds": 20,
+        "styles": ["soft drums"],
+        "avoid": ["distortion"],
+        "adherence": "medium",
+    },
+]
+
+
+def test_a_song_plan_is_validated_and_sent_as_chunks(client: TestClient, monkeypatch) -> None:
+    _eleven_on(client)
+    sent: list[dict[str, Any]] = []
+
+    def post(url: str, **kwargs: Any) -> _Resp:
+        sent.append({"url": url, **kwargs})
+        return _Resp(content=_wav_bytes(), headers={"content-type": "audio/wav", "song-id": "s1"})
+
+    monkeypatch.setattr(cloud.requests, "post", post)
+    project, response = _start(
+        client, {"caption": "dream pop", "plan": PLAN, "seed": 3}, provider="elevenlabs"
+    )
+    job = client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()
+    assert job["status"] == "completed", job["error"]
+    assert sent[0]["json"] == {
+        "composition_plan": {
+            "chunks": [
+                {
+                    "text": "[Intro]",
+                    "duration_ms": 8000,
+                    "positive_styles": ["dream pop", "female vocal", "shimmering synths"],
+                    "negative_styles": [],
+                    "context_adherence": "high",
+                },
+                {
+                    "text": "[Verse]\nNeon on the water\nSalt upon my skin",
+                    "duration_ms": 20000,
+                    "positive_styles": ["soft drums"],
+                    "negative_styles": ["distortion"],
+                    "context_adherence": "medium",
+                },
+            ]
+        },
+        "model_id": "music_v2_5",
+        "seed": 3,
+        "store_for_inpainting": True,
+    }
+
+
+@pytest.mark.parametrize(
+    "plan",
+    [
+        [],
+        [{"name": "", "seconds": 10, "styles": ["x"]}],
+        [{"name": "A", "seconds": 2, "styles": ["x"]}],
+        [{"name": "A", "seconds": 121, "styles": ["x"]}],
+        [{"name": "A", "seconds": 10}],  # the first section sets the genre
+        [{"name": "A", "seconds": 10, "styles": ["x"], "adherence": "max"}],
+        [{"name": "A", "seconds": 10, "styles": ["x"], "lyrics": "\n".join(["la"] * 31)}],
+        [{"name": "A", "seconds": 10, "styles": ["x"], "surprise": 1}],
+        [{"name": "A", "seconds": 120, "styles": ["x"]}] * 6,  # 12 minutes
+        [{"name": "A", "seconds": 10, "styles": ["x"]}] * 31,
+    ],
+)
+def test_bad_plans_are_rejected(client: TestClient, plan: list[dict[str, Any]]) -> None:
+    _eleven_on(client)
+    _, response = _start(client, {"caption": "dream pop", "plan": plan}, provider="elevenlabs")
+    assert response.status_code == 422
+
+
+def test_plans_need_a_plan_capable_model(client: TestClient, monkeypatch) -> None:
+    _eleven_on(client)
+    monkeypatch.setattr(cloud.requests, "post", lambda *_a, **_k: pytest.fail("must not be sent"))
+    project, response = _start(
+        client, {"caption": "x y z", "plan": PLAN, "model_id": "music_v1"}, provider="elevenlabs"
+    )
+    job = client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()
+    assert job["status"] == "failed" and "Music 2" in job["error"]
+
+
+def test_plan_drafting_returns_editable_sections(client: TestClient, monkeypatch) -> None:
+    _eleven_on(client)
+    reply = {
+        "chunks": [
+            {
+                "text": "[Chorus]\nHold on",
+                "duration_ms": 12000,
+                "positive_styles": ["pop"],
+                "negative_styles": [],
+                "context_adherence": "low",
+            }
+        ]
+    }
+    seen: list[dict[str, Any]] = []
+
+    def post(url: str, **kwargs: Any) -> _Resp:
+        seen.append({"url": url, **kwargs})
+        return _Resp(payload=reply)
+
+    monkeypatch.setattr(cloud.requests, "post", post)
+    body = client.post(
+        "/generation/providers/elevenlabs/plan",
+        json={"fields": {"caption": "upbeat pop", "duration": 60}},
+    )
+    assert body.status_code == 200, body.text
+    assert body.json()["plan"] == [
+        {
+            "name": "Chorus",
+            "lyrics": "Hold on",
+            "seconds": 12.0,
+            "styles": ["pop"],
+            "avoid": [],
+            "adherence": "low",
+        }
+    ]
+    assert seen[0]["url"] == "https://api.elevenlabs.io/v1/music/plan"
+    assert seen[0]["json"]["music_length_ms"] == 60000
+    assert (
+        client.post("/generation/providers/acestep_local/plan", json={"fields": {}}).status_code
+        == 422
+    )
+
+
+def test_old_style_plans_are_converted_too() -> None:
+    sections = cloud.plan_from_api(
+        {
+            "positive_global_styles": ["rock"],
+            "sections": [
+                {
+                    "section_name": "Verse",
+                    "lines": ["a", "b"],
+                    "duration_ms": 9000,
+                    "positive_local_styles": ["loud"],
+                }
+            ],
+        }
+    )
+    assert sections == [
+        {
+            "name": "Verse",
+            "lyrics": "a\nb",
+            "seconds": 9.0,
+            "styles": ["rock", "loud"],
+            "avoid": [],
+            "adherence": "high",
+        }
+    ]
+
+
+def test_inpaint_plans_keep_the_song_around_the_new_section() -> None:
+    chunks, region = cloud.inpaint_plan(
+        "repaint", {"caption": "folk, warm", "region_start": 40.0, "region_end": 60.0}, 300.0, "S"
+    )
+    assert region == (40.0, 60.0)
+    kinds = ["ref" if "song_id" in c else "gen" for c in chunks]
+    assert kinds == ["ref", "gen", "ref", "ref"]
+    assert chunks[0]["range"] == {"start_ms": 0, "end_ms": 40000}
+    assert chunks[1]["duration_ms"] == 20000 and chunks[1]["positive_styles"] == ["folk", "warm"]
+    assert chunks[1]["text"] == "[Instrumental]"
+    # The 240 s after the section is split into pieces of at most 120 s.
+    assert [c["range"] for c in chunks[2:]] == [
+        {"start_ms": 60000, "end_ms": 180000},
+        {"start_ms": 180000, "end_ms": 300000},
+    ]
+
+
+def test_inpaint_absorbs_slivers_and_checks_length() -> None:
+    chunks, region = cloud.inpaint_plan(
+        "repaint", {"caption": "x", "region_start": 1.0, "region_end": 28.5}, 30.0, "S"
+    )
+    assert region == (0.0, 30.0) and len(chunks) == 1  # Less than 3 s would remain on each side.
+    with pytest.raises(ParamError, match="3 to 120"):
+        cloud.inpaint_plan(
+            "repaint", {"caption": "x", "region_start": 10.0, "region_end": 140.0}, 300.0, "S"
+        )
+    follow, _ = cloud.inpaint_plan(
+        "repaint",
+        {
+            "caption": "x",
+            "region_start": 10.0,
+            "region_end": 60.0,
+            "follow_original": True,
+            "lyrics": "la la",
+        },
+        90.0,
+        "S",
+    )
+    gen = next(c for c in follow if "text" in c)
+    assert gen["conditioning_ref"] == {
+        "song_id": "S",
+        "range": {"start_ms": 10000, "end_ms": 40000},
+    }
+    assert gen["condition_strength"] == "high" and gen["text"] == "[Verse]\nla la"
+
+
+def test_extend_plans_add_a_section_at_either_end() -> None:
+    chunks, region = cloud.inpaint_plan(
+        "extend", {"caption": "x", "extend_seconds": 20, "extend_at": "start"}, 30.0, "S"
+    )
+    assert (
+        region == (-20.0, 0.0)
+        and "text" in chunks[0]
+        and chunks[1]["range"] == {"start_ms": 0, "end_ms": 30000}
+    )
+    chunks, region = cloud.inpaint_plan("extend", {"caption": "x", "extend_seconds": 20}, 30.0, "S")
+    assert region == (30.0, 50.0) and "text" in chunks[-1]
+
+
+def _clip(client: TestClient, seconds: float = 6.0) -> tuple[str, dict[str, Any]]:
+    project = client.post("/editor/projects", json={"name": "song"}).json()["id"]
+    buffer = io.BytesIO()
+    sf.write(buffer, _source(seconds), SR, format="WAV", subtype="FLOAT")
+    asset = client.post(
+        f"/editor/projects/{project}/assets",
+        files={"file": ("song.wav", buffer.getvalue(), "audio/wav")},
+    ).json()
+    return project, asset
+
+
+def _edit_job(
+    client: TestClient,
+    project: str,
+    asset: dict[str, Any],
+    fields: dict[str, Any],
+    task: str = "repaint",
+) -> dict[str, Any]:
+    params = {
+        "provider": "elevenlabs",
+        "task": task,
+        "title": "song (regenerated)",
+        "fields": fields,
+    }
+    response = client.post(
+        f"/editor/projects/{project}/jobs",
+        json={"op": "generate_song", "asset_id": asset["id"], "params": params},
+    )
+    assert response.status_code == 200, response.text
+    return client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()
+
+
+def test_editing_a_foreign_clip_needs_upload_consent(client: TestClient, monkeypatch) -> None:
+    _eleven_on(client)
+    monkeypatch.setattr(
+        cloud.requests, "post", lambda *_a, **_k: pytest.fail("nothing may be sent")
+    )
+    project, asset = _clip(client)
+    job = _edit_job(
+        client, project, asset, {"caption": "folk", "region_start": 0.0, "region_end": 3.0}
+    )
+    assert job["status"] == "failed" and "Allow uploading" in job["error"]
+
+
+def test_an_elevenlabs_edit_uploads_once_and_keeps_the_level(
+    client: TestClient, monkeypatch
+) -> None:
+    _eleven_on(client)
+    project, asset = _clip(client, seconds=12.0)
+    calls: list[dict[str, Any]] = []
+    source = _source(12.0)
+
+    def post(url: str, **kwargs: Any) -> _Resp:
+        calls.append({"url": url, **kwargs})
+        if url.endswith("/upload"):
+            assert kwargs["files"]["file"][0] == "clip.mp3"
+            return _Resp(payload={"song_id": "up-1"})
+        result = source.copy()
+        result[3 * SR : 9 * SR] = 0.02
+        buffer = io.BytesIO()
+        sf.write(buffer, result * 0.7, SR, format="WAV", subtype="FLOAT")
+        return _Resp(
+            content=buffer.getvalue(), headers={"content-type": "audio/wav", "song-id": "new-1"}
+        )
+
+    monkeypatch.setattr(cloud.requests, "post", post)
+    fields = {"caption": "folk", "region_start": 3.0, "region_end": 9.0, "allow_upload": True}
+    job = _edit_job(client, project, asset, fields)
+    assert job["status"] == "completed", job["error"]
+    assert [c["url"].rsplit("/", 1)[-1] for c in calls] == ["upload", "music"]
+    plan = calls[1]["json"]["composition_plan"]["chunks"]
+    assert plan[0] == {"song_id": "up-1", "range": {"start_ms": 0, "end_ms": 3000}}
+    assert calls[1]["params"] == {"output_format": "mp3_48000_192"}
+    out = client.get(f"/editor/projects/{project}/assets/{job['result_assets'][0]['id']}/audio")
+    edited, _ = sf.read(io.BytesIO(out.content), dtype="float32")
+    assert np.allclose(edited[: 3 * SR], source[: 3 * SR], atol=1e-4)
+    assert job["result"]["outputs"][0]["uploaded"] is True
+    # The second edit of the same clip reuses the upload.
+    calls.clear()
+    assert _edit_job(client, project, asset, fields)["status"] == "completed"
+    assert [c["url"].rsplit("/", 1)[-1] for c in calls] == ["music"]
+
+
+def test_cost_estimates(client: TestClient) -> None:
+    _eleven_on(client)
+    client.post("/generation/providers/fal/key", json={"key": KEY}, headers=_headers())
+    params = {
+        "provider": "elevenlabs",
+        "task": "text2music",
+        "fields": {"caption": "folk", "duration": 120},
+    }
+    body = client.post("/generation/estimate", json={"params": params}).json()["estimate"]
+    assert body["usd"] == 0.3 and "2.0 min" in body["summary"]
+    params["fields"] = {"caption": "folk", "plan": PLAN}
+    assert (
+        client.post("/generation/estimate", json={"params": params}).json()["estimate"]["usd"]
+        == 0.07
+    )
+    project, asset = _clip(client, seconds=60.0)
+    edit = {
+        "provider": "elevenlabs",
+        "task": "extend",
+        "fields": {"caption": "folk", "extend_seconds": 30},
+    }
+    body = client.post(
+        "/generation/estimate",
+        json={"params": edit, "project_id": project, "asset_id": asset["id"]},
+    ).json()
+    assert (
+        body["estimate"]["usd"] == 0.38 and "uploading" in body["estimate"]["summary"]
+    )  # 90 s + 60 s upload
+    fal = {
+        "provider": "fal",
+        "task": "text2music",
+        "fields": {"caption": "pop", "model": "fal-ai/lyria3/pro"},
+    }
+    assert (
+        client.post("/generation/estimate", json={"params": fal}).json()["estimate"]["usd"] == 0.08
+    )
+    local = {"provider": "acestep_local", "task": "text2music", "fields": {"caption": "pop"}}
+    assert client.post("/generation/estimate", json={"params": local}).json() == {"estimate": None}
+    assert (
+        client.post(
+            "/generation/estimate", json={"params": params, "project_id": "nope"}
+        ).status_code
+        == 422
+    )

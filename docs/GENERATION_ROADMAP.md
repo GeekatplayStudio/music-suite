@@ -314,12 +314,28 @@ Field types are `text`, `lyrics`, `int`, `float`, `bool`, `enum`, `seed`, `durat
 
 Its duplicate modules (`audioqi/editor/songs/`, the `song` job and the `/editor/songs` routes) were not kept, because AI Song Studio covers each of them; they remain in the merge history.
 
-**Still open from the G3 plan:**
+**Completed later the same day (G3 finish):**
 
-- A section-by-section composition-plan editor.
-- Inpainting a selection.
-- Cost hints.
-- Real calls against both services. They were tested only against recorded response shapes, because no paid key was available.
+- **Song plan editor** (ElevenLabs, Music 2 / 2.5):
+  - sections with name, lyrics, length (3–120 s), styles, styles to avoid and adherence;
+  - reorder, add and remove;
+  - **Draft a plan (free)** through `/v1/music/plan`, converted from either plan format;
+  - validated on the server: 1–30 sections, at most 10 minutes, at most 30 lines of 200 characters per section, and at least one style in the first section.
+- **ElevenLabs edits in the Studio Editor:**
+  - **Regenerate a section** (3–120 s) and **Extend** (5–120 s), built as a composition plan: kept parts of the stored song (pieces of 3–120 s, slivers under 3 s absorbed into the new section) plus one generated chunk;
+  - an optional conditioning on the original section (its first 30 s);
+  - songs generated here are stored for inpainting, and their ids are remembered per project;
+  - other clips are uploaded (MP3) only with the per-edit **Allow uploading this clip** tick, and only once;
+  - results are gain-matched to the source like local edits.
+- **Cost estimates** before every online request:
+  - ElevenLabs at about $0.15 per minute, including the upload;
+  - fal.ai at $0.15 per MiniMax song and $0.08 per Lyria song;
+  - all dated 2026-11 and linked to the provider's page. The ElevenLabs rate is from secondary sources; fal.ai's are from its model pages.
+
+**Still open:**
+
+- Real calls against both services. They were tested only against recorded response shapes, because no paid key was available. In particular, whether ElevenLabs accepts reference chunks longer than 120 s or shorter than 3 s is unknown, so the app keeps to 3–120 s.
+- A "compose detailed" mode with word timestamps.
 
 **Original G3 plan**
 
@@ -406,6 +422,26 @@ Phase G1 went ahead with the recommended defaults (2026-11-10):
   - 12 tests for the ported engines: ACE-Step server field mapping, versions, absolute-URL refusal, loopback-only addresses, a switched-off provider never touching the network; YuE2 off by default, the licence box, and a real separate-process run with a stand-in `yue2` package.
   - **Real check:** a 20-second song through ACE-Step's own Python server on this Mac, with the requested tempo and key, imported and levelled, in 91 s. The server's model list is empty until its first song loads a model, so the model picker appears after that.
 - **Full suite:** 351 passed, 1 skipped.
+
+### Phase G3 finish (2026-11-10)
+
+- **Automated:** 20 new tests:
+  - plan validation (10 kinds of bad plan) and plan-to-chunks mapping;
+  - plans needing Music 2+, and drafting plus conversion of both plan formats;
+  - inpaint plans: kept pieces split at 120 s, slivers absorbed, the 3–120 s rule, conditioning, extend at either end;
+  - upload consent: nothing is sent without it;
+  - one upload reused across edits, with gain matching;
+  - estimates for prompts, plans, edits with an upload, fal models and local providers;
+  - stored songs remembered after generation.
+
+  Full suite: 386 passed, 1 skipped.
+- **Browser, with an obviously fake key (nothing sent to ElevenLabs):**
+  - the Song plan panel: sections added, first-section styles taken from the description, commas typed in style lists;
+  - the live estimate ($0.10 for a 40 s plan), and a clear reason when the request is not ready;
+  - in the editor, ElevenLabs offered for Regenerate a section and Extend, with the upload consent and a $0.37 estimate for extending a 64 s clip by 20 s including its upload.
+
+  The key was removed afterwards, and `security find-generic-password` confirmed it was gone.
+- **Not tested:** any real ElevenLabs or fal.ai request.
 
 ### Phase G3 first pass (2026-11-10)
 

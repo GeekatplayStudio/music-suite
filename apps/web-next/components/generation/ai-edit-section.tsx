@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ActionButton, PanelSection, Slider, fieldClass } from "@/components/editor/controls";
 import type { Clip } from "@/lib/editor/types";
-import { optionLabel, optionValue, type ProviderInfo } from "@/lib/generation/api";
+import { generationApi, optionLabel, optionValue, type CostEstimate, type ProviderInfo } from "@/lib/generation/api";
 
 /** What each edit does, in the words shown to the user. */
 const TASK_HINTS: Record<string, string> = {
@@ -28,18 +28,26 @@ const NEEDS_STYLE = new Set(["repaint", "extend", "cover", "add_layer", "complet
 const EXTEND_CHOICES = [10, 20, 30, 60];
 
 interface AiEditSectionProps {
+  projectId: string;
   clip: Clip;
   /** The highlighted range inside this clip's audio, in seconds of the audio file. */
   selection: { start: number; end: number } | null;
-  provider: ProviderInfo | null;
+  /** Generators that can edit clips: the local engine first, then online services that are ready. */
+  providers: ProviderInfo[];
   busy: boolean;
   onRun: (params: Record<string, unknown>, title: string) => void;
   onOpenSongStudio: () => void;
 }
 
-export function AiEditSection({ clip, selection, provider, busy, onRun, onOpenSongStudio }: AiEditSectionProps) {
+export function AiEditSection({ projectId, clip, selection, providers, busy, onRun, onOpenSongStudio }: AiEditSectionProps) {
+  const usable = providers.filter((p) => p.status.ready && p.schema.tasks.some((t) => t.source));
+  const [providerId, setProviderId] = useState<string | null>(null);
+  const provider = usable.find((p) => p.id === providerId) ?? usable[0] ?? providers[0] ?? null;
+  const online = provider?.kind === "external";
   const tasks = (provider?.schema.tasks ?? []).filter((task) => task.source);
   const [taskId, setTaskId] = useState("repaint");
+  const [allowUpload, setAllowUpload] = useState(false);
+  const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   const [style, setStyle] = useState("");
   const [lyrics, setLyrics] = useState("");
   const [extendSeconds, setExtendSeconds] = useState(20);
@@ -49,8 +57,31 @@ export function AiEditSection({ clip, selection, provider, busy, onRun, onOpenSo
   const [track, setTrack] = useState("vocals");
   const [versions, setVersions] = useState(1);
 
+  // An online edit is billed; show what it would cost before it is sent.
+  const estimateKey = online && provider
+    ? JSON.stringify([provider.id, taskId, extendSeconds, clip.assetId, selection?.start, selection?.end, style.length > 2])
+    : null;
+  useEffect(() => {
+    if (!estimateKey || !provider) return;
+    const timer = setTimeout(() => {
+      const fields: Record<string, string | number | boolean> = { caption: style.trim() || "music" };
+      if (taskId === "extend") fields.extend_seconds = extendSeconds;
+      if (taskId === "repaint" && selection) {
+        fields.region_start = Number(selection.start.toFixed(3));
+        fields.region_end = Number(selection.end.toFixed(3));
+      }
+      generationApi
+        .estimate({ params: { provider: provider.id, task: taskId, fields }, project_id: projectId, asset_id: clip.assetId })
+        .then((result) => setEstimate(result.estimate))
+        .catch(() => setEstimate(null));
+    }, 400);
+    return () => clearTimeout(timer);
+    // Recomputed when what is billed changes, not on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estimateKey]);
+
   const hint =
-    "Change this clip with the local AI engine. Results are new audio, so every change can be undone.";
+    "Change this clip with AI, on this computer or with an online service you have set up. Every change can be undone.";
   if (!provider || !provider.status.ready) {
     return (
       <PanelSection title="AI edit" hint={hint}>
@@ -66,6 +97,8 @@ export function AiEditSection({ clip, selection, provider, busy, onRun, onOpenSo
 
   const task = tasks.find((t) => t.id === taskId) ?? tasks[0];
   if (!task) return null;
+  const has = (key: string) =>
+    provider.schema.fields.some((f) => f.key === key && (!f.tasks || f.tasks.includes(task.id)));
   const trackField = provider.schema.fields.find((f) => f.key === "track");
   const unavailable = task.available === false;
   const reversed = Boolean(clip.reversed);
@@ -75,7 +108,22 @@ export function AiEditSection({ clip, selection, provider, busy, onRun, onOpenSo
   const ready = !busy && !unavailable && !reversed && styleOk && (!needsSelection || selectionOk);
 
   const run = () => {
-    const fields: Record<string, unknown> = { variations: versions };
+    onRun({ provider: provider.id, task: task.id, title: editTitle().slice(0, 80), fields: editFields() }, `${task.label}: ${clip.name}`);
+  };
+
+  function editTitle(): string {
+    const label = TASK_TITLES[task.id] ?? task.id;
+    const instrument = optionLabel(trackField?.options?.find((o) => optionValue(o) === track) ?? track);
+    if (task.id === "extract") return `${instrument} (from ${clip.name})`;
+    if (task.id === "add_layer") return `New ${instrument.toLowerCase()} part`;
+    return `${clip.name} (${label})`;
+  }
+
+  function editFields(): Record<string, string | number | boolean> {
+    const fields: Record<string, string | number | boolean> = {};
+    if (has("variations")) fields.variations = versions;
+    if (has("allow_upload")) fields.allow_upload = allowUpload;
+    if (has("follow_original")) fields.follow_original = faithful;
     if (style.trim()) fields.caption = style.trim();
     if (task.id === "repaint" && selection) {
       fields.region_start = Number(selection.start.toFixed(3));
@@ -93,22 +141,31 @@ export function AiEditSection({ clip, selection, provider, busy, onRun, onOpenSo
       fields.faithful = faithful;
     }
     if (task.id === "extract" || task.id === "add_layer" || task.id === "complete") fields.track = track;
-    const label = TASK_TITLES[task.id] ?? task.id;
-    const instrument = optionLabel(trackField?.options?.find((o) => optionValue(o) === track) ?? track);
-    const title =
-      task.id === "extract"
-        ? `${instrument} (from ${clip.name})`
-        : task.id === "add_layer"
-          ? `New ${instrument.toLowerCase()} part`
-          : `${clip.name} (${label})`;
-    onRun(
-      { provider: provider.id, task: task.id, title: title.slice(0, 80), fields },
-      `${task.label}: ${clip.name}`
-    );
-  };
+    return fields;
+  }
 
   return (
     <PanelSection title="AI edit" hint={hint}>
+      {usable.length > 1 ? (
+        <label className="block space-y-1 text-[11px] text-slate-400">
+          <span>Generator</span>
+          <select
+            className={fieldClass}
+            value={provider.id}
+            aria-label="Generator for the AI edit"
+            onChange={(event) => {
+              setProviderId(event.target.value);
+              setTaskId("repaint");
+            }}
+          >
+            {usable.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <label className="block space-y-1 text-[11px] text-slate-400">
         <span>What to do</span>
         <select
@@ -242,6 +299,38 @@ export function AiEditSection({ clip, selection, provider, busy, onRun, onOpenSo
         </>
       ) : null}
 
+      {online && task.id === "repaint" ? (
+        <label className="flex min-h-6 cursor-pointer items-start gap-2 text-[11px] text-slate-200">
+          <input type="checkbox" checked={faithful} onChange={(event) => setFaithful(event.target.checked)} className="mt-0.5 h-4 w-4 accent-cyan-400" />
+          <span>Stay close to the original section</span>
+        </label>
+      ) : null}
+      {online ? (
+        <>
+          <label className="flex min-h-6 cursor-pointer items-start gap-2 rounded-lg bg-amber-500/10 p-2 text-[11px] text-amber-100">
+            <input
+              type="checkbox"
+              checked={allowUpload}
+              onChange={(event) => setAllowUpload(event.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-amber-300"
+            />
+            <span>
+              Allow uploading this clip&apos;s audio to {provider.name.replace(/ \(.*\)$/, "")} if it was not made there. The upload is billed
+              like generating the same length.
+            </span>
+          </label>
+          {estimate ? (
+            <p className="text-[11px] text-amber-200">
+              {estimate.summary}{" "}
+              <a href={estimate.url} target="_blank" rel="noreferrer noopener" className="underline">
+                Prices as of {estimate.as_of}
+              </a>
+            </p>
+          ) : null}
+        </>
+      ) : null}
+
+      {has("variations") ? (
       <label className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
         <span>Versions</span>
         <select className={`${fieldClass} w-20`} value={versions} onChange={(event) => setVersions(Number(event.target.value))}>
@@ -252,6 +341,7 @@ export function AiEditSection({ clip, selection, provider, busy, onRun, onOpenSo
           ))}
         </select>
       </label>
+      ) : null}
       <ActionButton variant="primary" className="w-full" disabled={!ready} onClick={run}>
         {task.label}
       </ActionButton>

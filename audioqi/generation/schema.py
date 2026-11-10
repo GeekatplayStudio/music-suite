@@ -11,7 +11,8 @@ from typing import Any
 
 from audioqi.editor.projects import ParamError
 
-TYPES = {"text", "lyrics", "int", "float", "bool", "enum", "seed", "model"}
+TYPES = {"text", "lyrics", "int", "float", "bool", "enum", "seed", "model", "plan"}
+ADHERENCE = ("low", "medium", "high")
 MAX_SEED = 2**32 - 1
 
 
@@ -46,8 +47,85 @@ def _number(spec: dict[str, Any], value: Any, *, integer: bool) -> float | int:
     return int(value) if integer else float(value)
 
 
+def _styles(value: Any, label: str) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > 50:
+        raise ParamError(f"{label} must be a list of up to 50 styles.")
+    styles = []
+    for item in value:
+        if not isinstance(item, str):
+            raise ParamError(f"{label} must be text.")
+        cleaned = " ".join("".join(ch for ch in item if ch.isprintable()).split())[:100]
+        if cleaned:
+            styles.append(cleaned)
+    return styles
+
+
+def _plan(spec: dict[str, Any], value: Any) -> list[dict[str, Any]]:
+    """A song plan: ordered sections, each with its own lyrics, length and styles."""
+    limit = int(spec.get("max_sections", 30))
+    if not isinstance(value, list) or not 1 <= len(value) <= limit:
+        raise ParamError(f"A song plan has 1 to {limit} sections.")
+    sections: list[dict[str, Any]] = []
+    total = 0.0
+    for index, raw in enumerate(value, start=1):
+        if not isinstance(raw, dict):
+            raise ParamError(f"Section {index} is not valid.")
+        unknown = set(raw) - {"name", "lyrics", "seconds", "styles", "avoid", "adherence"}
+        if unknown:
+            raise ParamError(f"Section {index} has unknown field(s).")
+        name = " ".join(
+            "".join(ch for ch in str(raw.get("name") or "") if ch.isprintable()).split()
+        )
+        if not 1 <= len(name) <= 100:
+            raise ParamError(f"Section {index} needs a name of 1 to 100 characters.")
+        lyrics = raw.get("lyrics") or ""
+        if not isinstance(lyrics, str):
+            raise ParamError(f"Section {index}: lyrics must be text.")
+        lines = [
+            "".join(ch for ch in line if ch.isprintable()).strip()
+            for line in lyrics.replace("\r\n", "\n").split("\n")
+        ]
+        lines = [line for line in lines if line]
+        if len(lines) > 30 or any(len(line) > 200 for line in lines):
+            raise ParamError(f"Section {index}: up to 30 lyric lines of 200 characters each.")
+        seconds = raw.get("seconds")
+        if (
+            isinstance(seconds, bool)
+            or not isinstance(seconds, (int, float))
+            or not math.isfinite(seconds)
+        ):
+            raise ParamError(f"Section {index} needs a length in seconds.")
+        if not 3 <= seconds <= 120:
+            raise ParamError(f"Section {index} must be 3 to 120 seconds long.")
+        adherence = raw.get("adherence") or "high"
+        if adherence not in ADHERENCE:
+            raise ParamError(f"Section {index}: adherence is low, medium or high.")
+        total += float(seconds)
+        sections.append(
+            {
+                "name": name,
+                "lyrics": "\n".join(lines),
+                "seconds": round(float(seconds), 2),
+                "styles": _styles(raw.get("styles"), f"Section {index} styles"),
+                "avoid": _styles(raw.get("avoid"), f"Section {index} styles to avoid"),
+                "adherence": adherence,
+            }
+        )
+    if total > float(spec.get("max_total_seconds", 600)):
+        raise ParamError(
+            f"The whole plan must be at most {spec.get('max_total_seconds', 600)} seconds."
+        )
+    if not sections[0]["styles"]:
+        raise ParamError("The first section needs at least one style: it sets the song's genre.")
+    return sections
+
+
 def _one(spec: dict[str, Any], value: Any) -> Any:
     kind = spec["type"]
+    if kind == "plan":
+        return _plan(spec, value)
     if kind in ("text", "lyrics"):
         return _text(spec, value)
     if kind == "int":

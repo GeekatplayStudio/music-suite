@@ -400,17 +400,23 @@ export function EditorApp({ projectId }: { projectId: string }) {
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
   const [generation, setGeneration] = useState<GenerationStatus | null>(null);
-  const [songProvider, setSongProvider] = useState<ProviderInfo | null>(null);
+  const [songProviders, setSongProviders] = useState<ProviderInfo[]>([]);
   const checkGeneration = useCallback(() => {
     editorApi
       .generation()
       .then(setGeneration)
       .catch(() => setGeneration({ available: false, node_installed: false, models: [] }));
-    // The local song engine powers the clip's AI edit panel.
+    // Generators that can edit clips power the AI edit panel: the local engine, then online ones.
     generationApi
       .overview()
-      .then((overview) => setSongProvider(overview.providers.find((p) => p.id === "acestep_local") ?? null))
-      .catch(() => setSongProvider(null));
+      .then((overview) =>
+        setSongProviders(
+          overview.providers.filter(
+            (p) => p.id === "acestep_local" || (p.enabled && p.kind === "external" && p.schema.tasks.some((t) => t.source))
+          )
+        )
+      )
+      .catch(() => setSongProviders([]));
   }, []);
   const [savedState, setSavedState] = useState<ProjectState | null>(null);
   const [saveError, setSaveError] = useState(false);
@@ -1855,7 +1861,8 @@ export function EditorApp({ projectId }: { projectId: string }) {
           generation={generation}
           onCheckGeneration={checkGeneration}
           onOpenSongStudio={openSongStudio}
-          songProvider={songProvider}
+          songProviders={songProviders}
+          projectId={projectId}
           onAddMidiTrack={addInstrumentTrack}
           onOpenPianoRoll={() => setShowPiano(true)}
           onExportMidi={() => {

@@ -120,7 +120,8 @@ function OnlineService({
       ) : (
         <p className="text-xs text-slate-400">
           Off. Adding your key switches it on. Your style text and lyrics are then sent to this service when you choose it
-          as the generator; it bills your account. Audio is never uploaded.
+          as the generator; it bills your account. A clip&apos;s audio is uploaded only when you tick &ldquo;Allow uploading&rdquo; to edit
+          it with ElevenLabs.
         </p>
       )}
       {fromEnvironment ? (
