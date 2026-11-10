@@ -296,6 +296,7 @@ Open **AI Song Studio** from the workspace. It has three tabs.
 - *Lyrics and style writer*: which Ollama model writes lyrics, and a button to download it.
 - *Keeping your computer responsive*: generation will not start when free memory is below the limit you set, and the engine unloads after the idle time you set.
 - *Loudness of new songs*: each new song is levelled towards −14 LUFS, never above −1 dBTP. Change the target or switch it off.
+- *Online services*: paste your own ElevenLabs or fal.ai API key and press **Save key** to switch that service on. It then appears in the *Generator* list. Your style text and lyrics are sent to it and it bills your account; audio is never uploaded. **Remove key** switches it off again. Keys are stored in your computer's keychain and are never shown again.
 
 ## 9) Troubleshooting
 
@@ -305,6 +306,7 @@ Open **AI Song Studio** from the workspace. It has three tabs.
 - **The install stops with a message about CMake or command line tools** — on macOS run `xcode-select --install`, then press the button again. The message names anything else that is missing.
 - **"Only N% of memory is free"** — close some apps or browser tabs and press Generate again, or lower the limit in Settings.
 - **Lyrics come out short or ignore the idea** — Ollama is not running or its model is not downloaded, so the simpler built-in planner wrote them. Start Ollama and download the model from Settings.
+- **"rejected the API key" / "no credit left"** — the online service refused the request. Check the key and your balance on the provider's site; **Terms and pricing** in Settings links there.
 - **The song ignores some lyrics or sings them unclearly** — try another seed or a second version; shorter lines and clear section tags help.
 
 ### Studio Editor

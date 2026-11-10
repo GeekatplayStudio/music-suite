@@ -22,7 +22,17 @@ import apps.api.editor as editor_api
 import apps.api.main as api_main
 from audioqi.editor import projects
 from audioqi.editor.projects import EditorError, ParamError
-from audioqi.generation import engine, records, resources, schema, service, settings, setup, writer
+from audioqi.generation import (
+    engine,
+    records,
+    resources,
+    schema,
+    secrets,
+    service,
+    settings,
+    setup,
+    writer,
+)
 from audioqi.generation.providers.acestep import AceStepProvider
 from audioqi.generation.providers.base import Output
 
@@ -61,6 +71,33 @@ class FakeProvider:
         return [Output(data=_wav_bytes(), meta={"bpm": 100, "seed": 5 + i}) for i in range(count)]
 
 
+class FakeKeychain:
+    """Stands in for the OS keychain so tests never read or write the real one."""
+
+    def __init__(self) -> None:
+        self.items: dict[tuple[str, str], str] = {}
+
+    def get_password(self, service: str, account: str) -> str | None:
+        return self.items.get((service, account))
+
+    def set_password(self, service: str, account: str, value: str) -> None:
+        self.items[(service, account)] = value
+
+    def delete_password(self, service: str, account: str) -> None:
+        self.items.pop((service, account), None)
+
+
+@pytest.fixture(autouse=True)
+def keychain(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeKeychain]:
+    fake = FakeKeychain()
+    monkeypatch.setattr(secrets, "_keyring", lambda: fake)
+    for env in secrets.PROVIDERS.values():
+        monkeypatch.delenv(env, raising=False)
+    secrets.reset_cache()
+    yield fake
+    secrets.reset_cache()
+
+
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setattr(projects, "SETTINGS", replace(projects.SETTINGS, data_dir=tmp_path / "d"))
@@ -81,9 +118,16 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> FakeProvider:
 
 def _start(client: TestClient, fields: dict[str, Any], **extra: Any) -> Any:
     project = client.post("/editor/projects", json={"name": "song"}).json()["id"]
-    params = {"provider": "acestep_local", "task": "text2music", "title": "My Song", "fields": fields, **extra}
+    params = {
+        "provider": "acestep_local",
+        "task": "text2music",
+        "title": "My Song",
+        "fields": fields,
+        **extra,
+    }
     response = client.post(
-        f"/editor/projects/{project}/jobs", json={"op": "generate_song", "asset_id": None, "params": params}
+        f"/editor/projects/{project}/jobs",
+        json={"op": "generate_song", "asset_id": None, "params": params},
     )
     return project, response
 
@@ -135,8 +179,22 @@ def test_lyrics_keep_line_breaks_but_lose_control_characters() -> None:
 
 def test_every_engine_field_is_described() -> None:
     keys = {spec["key"] for spec in _fields()}
-    assert {"caption", "lyrics", "bpm", "keyscale", "timesignature", "vocal_language", "duration", "seed",
-            "variations", "inference_steps", "guidance_scale", "shift", "solver", "lm_temperature"} <= keys
+    assert {
+        "caption",
+        "lyrics",
+        "bpm",
+        "keyscale",
+        "timesignature",
+        "vocal_language",
+        "duration",
+        "seed",
+        "variations",
+        "inference_steps",
+        "guidance_scale",
+        "shift",
+        "solver",
+        "lm_temperature",
+    } <= keys
     for spec in _fields():
         assert spec["type"] in schema.TYPES
         assert spec["label"] and spec["group"]
@@ -147,13 +205,27 @@ def test_every_engine_field_is_described() -> None:
 
 def test_settings_round_trip_and_reject_bad_values(client: TestClient) -> None:
     assert client.get("/generation/settings").json()["target_lufs"] == -14.0
-    saved = client.post("/generation/settings", json={"idle_minutes": 3, "providers": {"comfyui_musicgen": False}})
+    saved = client.post(
+        "/generation/settings", json={"idle_minutes": 3, "providers": {"comfyui_musicgen": False}}
+    )
     assert saved.status_code == 200
     body = client.get("/generation/settings").json()
     assert body["idle_minutes"] == 3
-    assert body["providers"] == {"acestep_local": True, "comfyui_musicgen": False}
-    for bad in ({"idle_minutes": 0}, {"min_free_percent": 99}, {"writer_model": "a b"}, {"nope": 1},
-                {"engine_dir": "relative/path"}, {"providers": {"someone_else": True}}, {"normalize": "yes"}):
+    assert body["providers"] == {
+        "acestep_local": True,
+        "comfyui_musicgen": False,
+        "elevenlabs": False,
+        "fal": False,
+    }
+    for bad in (
+        {"idle_minutes": 0},
+        {"min_free_percent": 99},
+        {"writer_model": "a b"},
+        {"nope": 1},
+        {"engine_dir": "relative/path"},
+        {"providers": {"someone_else": True}},
+        {"normalize": "yes"},
+    ):
         assert client.post("/generation/settings", json=bad).status_code == 422, bad
 
 
@@ -168,10 +240,17 @@ def test_overview_reports_missing_engine_without_starting_anything(client: TestC
     body = client.get("/generation/providers").json()
     local = next(p for p in body["providers"] if p["id"] == "acestep_local")
     assert local["status"]["ready"] is False
-    assert body["engine"] == {"built": False, "models": {"lm": [], "embedding": [], "dit": [], "vae": []},
-                              "missing_models": ["lm", "embedding", "dit", "vae"], "installed": False,
-                              "running": False}
-    assert {item["id"] for item in body["planned"]} == {"elevenlabs", "suno"}
+    assert body["engine"] == {
+        "built": False,
+        "models": {"lm": [], "embedding": [], "dit": [], "vae": []},
+        "missing_models": ["lm", "embedding", "dit", "vae"],
+        "installed": False,
+        "running": False,
+    }
+    assert {item["id"] for item in body["planned"]} == {"suno"}
+    online = {p["id"]: p for p in body["providers"] if p["kind"] == "external"}
+    assert set(online) == {"elevenlabs", "fal"}
+    assert all(not p["enabled"] and not p["status"]["ready"] for p in online.values())
     assert not engine.SUPERVISOR.running()
 
 
@@ -185,7 +264,10 @@ def test_generate_song_imports_normalised_versions_and_records_history(
     assert response.status_code == 200, response.text
     job = client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()
     assert job["status"] == "completed", job["error"]
-    assert [asset["name"] for asset in job["result_assets"]] == ["My Song (version 1)", "My Song (version 2)"]
+    assert [asset["name"] for asset in job["result_assets"]] == [
+        "My Song (version 1)",
+        "My Song (version 2)",
+    ]
     assert fake.calls == [{"caption": "warm folk song", "variations": 2, "bpm": 100}]
     # A loud tone is turned down to the loudness target, with its peak under -1 dBTP.
     audio = client.get(f"/editor/projects/{project}/assets/{job['result_assets'][0]['id']}/audio")
@@ -200,7 +282,9 @@ def test_generate_song_imports_normalised_versions_and_records_history(
     assert client.delete("/generation/history/not-a-uuid").status_code == 404
 
 
-def test_generate_song_validates_against_the_provider_schema(client: TestClient, fake: FakeProvider) -> None:
+def test_generate_song_validates_against_the_provider_schema(
+    client: TestClient, fake: FakeProvider
+) -> None:
     for fields in ({"caption": "ok song", "bpm": 999}, {"caption": "ok song", "extra": 1}, {}):
         _, response = _start(client, fields)
         assert response.status_code == 422, fields
@@ -209,21 +293,29 @@ def test_generate_song_validates_against_the_provider_schema(client: TestClient,
     assert fake.calls == []
 
 
-def test_generate_song_respects_disabled_provider_and_unknown_provider(client: TestClient, fake: FakeProvider) -> None:
+def test_generate_song_respects_disabled_provider_and_unknown_provider(
+    client: TestClient, fake: FakeProvider
+) -> None:
     client.post("/generation/settings", json={"providers": {"acestep_local": False}})
     _, response = _start(client, {"caption": "ok song"})
     assert response.status_code == 403
     project = client.post("/editor/projects", json={"name": "x"}).json()["id"]
     response = client.post(
         f"/editor/projects/{project}/jobs",
-        json={"op": "generate_song", "asset_id": None, "params": {"provider": "suno", "fields": {}}},
+        json={
+            "op": "generate_song",
+            "asset_id": None,
+            "params": {"provider": "suno", "fields": {}},
+        },
     )
     assert response.status_code == 404
 
 
 def test_other_jobs_still_require_an_asset(client: TestClient) -> None:
     project = client.post("/editor/projects", json={"name": "x"}).json()["id"]
-    response = client.post(f"/editor/projects/{project}/jobs", json={"op": "normalize", "asset_id": None})
+    response = client.post(
+        f"/editor/projects/{project}/jobs", json={"op": "normalize", "asset_id": None}
+    )
     assert response.status_code == 422
 
 
@@ -242,13 +334,16 @@ def test_low_memory_stops_generation_with_a_clear_message(
     assert not resources.GENERATION_LOCK.locked()
 
 
-def test_cancel_marks_the_job_and_frees_the_generator(client: TestClient, fake: FakeProvider, monkeypatch) -> None:
+def test_cancel_marks_the_job_and_frees_the_generator(
+    client: TestClient, fake: FakeProvider, monkeypatch
+) -> None:
     project = client.post("/editor/projects", json={"name": "song"}).json()["id"]
     held: list[Any] = []
     monkeypatch.setattr(editor_api, "submit", lambda _job_id, fn: held.append(fn))
     params = {"provider": "acestep_local", "fields": {"caption": "ok song"}}
     job_id = client.post(
-        f"/editor/projects/{project}/jobs", json={"op": "generate_song", "asset_id": None, "params": params}
+        f"/editor/projects/{project}/jobs",
+        json={"op": "generate_song", "asset_id": None, "params": params},
     ).json()["id"]
     assert client.post(f"/editor/projects/{project}/jobs/{job_id}/cancel").status_code == 200
     held[0]()
@@ -290,9 +385,13 @@ GOOD = (
 )
 
 
-def test_writer_returns_a_bounded_normalised_brief(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_writer_returns_a_bounded_normalised_brief(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sent = _ollama(monkeypatch, [GOOD])
-    body = client.post("/generation/lyrics", json={"mode": "brief", "idea": "a night drive by the sea"}).json()
+    body = client.post(
+        "/generation/lyrics", json={"mode": "brief", "idea": "a night drive by the sea"}
+    ).json()
     assert body["engine"] == "ollama:gemma4:12b"
     assert body["brief"] == {
         "title": "Tide",
@@ -310,9 +409,16 @@ def test_writer_returns_a_bounded_normalised_brief(client: TestClient, monkeypat
     assert writer.OLLAMA.startswith("http://127.0.0.1:")
 
 
-def test_writer_retries_once_then_reports_failure(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_writer_retries_once_then_reports_failure(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sent = _ollama(monkeypatch, ["not json", GOOD])
-    assert client.post("/generation/lyrics", json={"mode": "lyrics", "idea": "add a bridge"}).status_code == 200
+    assert (
+        client.post(
+            "/generation/lyrics", json={"mode": "lyrics", "idea": "add a bridge"}
+        ).status_code
+        == 200
+    )
     assert len(sent) == 2 and "unusable" in sent[1]["prompt"]
     _ollama(monkeypatch, ['{"caption": ""}', "[]"])
     failed = client.post("/generation/lyrics", json={"mode": "lyrics", "idea": "add a bridge"})
@@ -320,8 +426,15 @@ def test_writer_retries_once_then_reports_failure(client: TestClient, monkeypatc
     assert not resources.GENERATION_LOCK.locked()
 
 
-def test_writer_validates_its_request_and_waits_for_generation(client: TestClient, monkeypatch) -> None:
-    for bad in ({"mode": "poem", "idea": "abc"}, {"idea": "x"}, {"idea": "abc", "extra": 1}, {"idea": 5}):
+def test_writer_validates_its_request_and_waits_for_generation(
+    client: TestClient, monkeypatch
+) -> None:
+    for bad in (
+        {"mode": "poem", "idea": "abc"},
+        {"idea": "x"},
+        {"idea": "abc", "extra": 1},
+        {"idea": 5},
+    ):
         assert client.post("/generation/lyrics", json=bad).status_code == 422, bad
     _ollama(monkeypatch, [GOOD])
     with resources.GENERATION_LOCK:
@@ -329,7 +442,9 @@ def test_writer_validates_its_request_and_waits_for_generation(client: TestClien
     assert busy.status_code == 409
 
 
-def test_writer_without_ollama_explains_what_is_missing(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_writer_without_ollama_explains_what_is_missing(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     def down(*_: Any, **__: Any) -> None:
         raise writer.requests.ConnectionError
 
@@ -343,8 +458,17 @@ def test_writer_without_ollama_explains_what_is_missing(client: TestClient, monk
 
 @pytest.mark.parametrize(
     ("raw", "expected"),
-    [("G Major", "G major"), ("a minor", "A minor"), ("Bbm", "Bb minor"), ("Db major", "C# major"),
-     ("EM", "E major"), ("C", "C major"), ("H minor", None), ("", None), (7, None)],
+    [
+        ("G Major", "G major"),
+        ("a minor", "A minor"),
+        ("Bbm", "Bb minor"),
+        ("Db major", "C# major"),
+        ("EM", "E major"),
+        ("C", "C major"),
+        ("H minor", None),
+        ("", None),
+        (7, None),
+    ],
 )
 def test_key_names_are_normalised(raw: Any, expected: str | None) -> None:
     assert writer._normal_key(raw) == expected
@@ -394,22 +518,31 @@ def test_models_are_grouped_like_the_engine_groups_them(client: TestClient) -> N
         "vae": ["vae-BF16.gguf"],
     }
     status = engine.install_status()
-    assert status["missing_models"] == [] and status["built"] is False and status["installed"] is False
+    assert (
+        status["missing_models"] == [] and status["built"] is False and status["installed"] is False
+    )
 
 
 def test_setup_sources_are_pinned() -> None:
     assert len(setup.ENGINE_COMMIT) == 40 and set(setup.ENGINE_COMMIT) <= set("0123456789abcdef")
     assert setup.ENGINE_REPO.startswith("https://github.com/")
-    assert setup.MODEL_BASE.startswith("https://huggingface.co/") and "/resolve/main/" not in setup.MODEL_BASE
+    assert (
+        setup.MODEL_BASE.startswith("https://huggingface.co/")
+        and "/resolve/main/" not in setup.MODEL_BASE
+    )
     for size, digest in setup.MODELS.values():
         assert size > 1_000_000 and len(digest) == 64
 
 
-def test_setup_download_verifies_checksums_and_resumes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_setup_download_verifies_checksums_and_resumes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import hashlib
 
     payload = b"model-bytes" * 1000
-    monkeypatch.setattr(setup, "MODELS", {"tiny.gguf": (len(payload), hashlib.sha256(payload).hexdigest())})
+    monkeypatch.setattr(
+        setup, "MODELS", {"tiny.gguf": (len(payload), hashlib.sha256(payload).hexdigest())}
+    )
     monkeypatch.setattr(setup, "DOWNLOAD_BYTES", len(payload))
     ranges: list[str | None] = []
 
@@ -454,9 +587,13 @@ def test_setup_command_line_skips_quietly_without_a_terminal(client: TestClient,
     assert capsys.readouterr().out.strip() == "missing"
 
 
-def test_setup_route_rejects_unknown_fields(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_setup_route_rejects_unknown_fields(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     started: list[bool] = []
-    monkeypatch.setattr(setup, "start_background", lambda writer=False: started.append(writer) or setup.state())
+    monkeypatch.setattr(
+        setup, "start_background", lambda writer=False: started.append(writer) or setup.state()
+    )
     assert client.post("/generation/setup", json={"writer": "yes"}).status_code == 422
     assert client.post("/generation/setup", json={"url": "http://x"}).status_code == 422
     assert client.post("/generation/setup", json={"writer": True}).status_code == 200
@@ -468,3 +605,291 @@ def test_history_is_capped(client: TestClient) -> None:
         records.add({"title": str(index)})
     items = records.list_records()
     assert len(items) == records.MAX_RECORDS and items[0]["title"] == str(records.MAX_RECORDS + 4)
+
+
+# --------------------------------------------------------------------------- online services
+
+from audioqi.generation.providers import cloud  # noqa: E402
+
+KEY = "sk_test_0123456789abcdef"
+
+
+def _headers() -> dict[str, str]:
+    return {"X-Music-Suite-Action": "generation-key"}
+
+
+def test_keys_are_write_only_and_switch_the_service_on_and_off(
+    client: TestClient, keychain
+) -> None:
+    assert client.post("/generation/providers/elevenlabs/key", json={"key": KEY}).status_code == 400
+    saved = client.post(
+        "/generation/providers/elevenlabs/key", json={"key": f"Bearer {KEY}"}, headers=_headers()
+    )
+    assert saved.json() == {
+        "configured": True,
+        "source": "keychain",
+        "env": "MUSIC_SUITE_ELEVENLABS_API_KEY",
+    }
+    assert keychain.items == {("Music Suite", "generation:elevenlabs"): KEY}
+    overview = client.get("/generation/providers")
+    assert KEY not in overview.text
+    eleven = next(p for p in overview.json()["providers"] if p["id"] == "elevenlabs")
+    assert eleven["enabled"] and eleven["status"]["ready"]
+    # Nothing is written to disk while a keychain is available.
+    assert not (projects.SETTINGS.data_dir / "secrets").exists()
+    removed = client.delete("/generation/providers/elevenlabs/key", headers=_headers())
+    assert removed.json()["configured"] is False and keychain.items == {}
+    eleven = next(
+        p
+        for p in client.get("/generation/providers").json()["providers"]
+        if p["id"] == "elevenlabs"
+    )
+    assert not eleven["enabled"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"key": "short"},
+        {"key": "has space in the key here"},
+        {"key": 12345678901234567},
+        {"key": KEY, "x": 1},
+    ],
+)
+def test_bad_keys_are_rejected(client: TestClient, body: dict[str, Any]) -> None:
+    assert (
+        client.post("/generation/providers/fal/key", json=body, headers=_headers()).status_code
+        == 422
+    )
+
+
+def test_keys_only_for_online_services(client: TestClient) -> None:
+    response = client.post(
+        "/generation/providers/acestep_local/key", json={"key": KEY}, headers=_headers()
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
+def test_without_a_keychain_keys_go_to_an_owner_only_file(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr(secrets, "_keyring", lambda: None)
+    secrets.reset_cache()
+    saved = client.post(
+        "/generation/providers/fal/key", json={"key": KEY}, headers=_headers()
+    ).json()
+    assert saved["source"] == "file"
+    path = projects.SETTINGS.data_dir / "secrets" / "generation_keys.json"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+    client.delete("/generation/providers/fal/key", headers=_headers())
+    assert not path.exists()
+
+
+def test_environment_key_wins(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MUSIC_SUITE_FAL_KEY", "env_key_0123456789abcd")
+    assert secrets.summary("fal")["source"] == "environment"
+    assert secrets.get("fal") == "env_key_0123456789abcd"
+
+
+def test_online_services_need_a_key_and_to_be_switched_on(client: TestClient) -> None:
+    _, response = _start(client, {"caption": "ok song"}, provider="elevenlabs")
+    assert response.status_code == 403  # Off until a key is saved.
+
+
+class _Resp:
+    def __init__(
+        self, status: int = 200, payload: Any = None, content: bytes = b"", headers=None
+    ) -> None:
+        self.status_code = status
+        self._payload = payload
+        self.content = content or (b"{}" if payload is not None else b"")
+        self.headers = headers or {}
+
+    def json(self) -> Any:
+        if self._payload is None:
+            raise ValueError("no json")
+        return self._payload
+
+    def iter_content(self, _size: int) -> Iterator[bytes]:
+        yield self.content
+
+    def close(self) -> None:
+        return None
+
+
+def test_elevenlabs_sends_text_only_and_imports_the_song(client: TestClient, monkeypatch) -> None:
+    client.post("/generation/providers/elevenlabs/key", json={"key": KEY}, headers=_headers())
+    sent: list[dict[str, Any]] = []
+
+    def post(url: str, **kwargs: Any) -> _Resp:
+        sent.append({"url": url, **kwargs})
+        return _Resp(content=_wav_bytes(), headers={"content-type": "audio/wav", "song-id": "abc"})
+
+    monkeypatch.setattr(cloud.requests, "post", post)
+    fields = {
+        "caption": "warm folk",
+        "lyrics": "[Verse]\nhello",
+        "duration": 30,
+        "bpm": 90,
+        "keyscale": "A minor",
+    }
+    project, response = _start(client, fields, provider="elevenlabs")
+    job = client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()
+    assert job["status"] == "completed", job["error"]
+    call = sent[0]
+    assert call["url"] == "https://api.elevenlabs.io/v1/music"
+    assert call["headers"]["xi-api-key"] == KEY and call["allow_redirects"] is False
+    assert call["json"] == {
+        "prompt": "warm folk, 90 BPM, in A minor\n\nLyrics:\n[Verse]\nhello",
+        "music_length_ms": 30000,
+        "model_id": "music_v2_5",
+        "force_instrumental": False,
+    }
+    assert job["result"]["outputs"][0]["song_id"] == "abc"
+    assert job["result"]["outputs"][0]["output_lufs"] == pytest.approx(-14.0, abs=0.2)
+
+
+def test_elevenlabs_plan_mode_uses_the_seed(client: TestClient, monkeypatch) -> None:
+    client.post("/generation/providers/elevenlabs/key", json={"key": KEY}, headers=_headers())
+    sent: list[dict[str, Any]] = []
+    plan = {
+        "chunks": [{"text": "[Verse] hello", "duration_ms": 10000, "positive_styles": ["folk"]}]
+    }
+
+    def post(url: str, **kwargs: Any) -> _Resp:
+        sent.append({"url": url, **kwargs})
+        if url.endswith("/plan"):
+            return _Resp(payload=plan)
+        return _Resp(content=_wav_bytes(), headers={"content-type": "audio/wav"})
+
+    monkeypatch.setattr(cloud.requests, "post", post)
+    project, response = _start(
+        client, {"caption": "warm folk", "use_plan": True, "seed": 11}, provider="elevenlabs"
+    )
+    assert (
+        client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()["status"]
+        == "completed"
+    )
+    assert [c["url"] for c in sent] == [
+        "https://api.elevenlabs.io/v1/music/plan",
+        "https://api.elevenlabs.io/v1/music",
+    ]
+    assert sent[1]["json"] == {"composition_plan": plan, "model_id": "music_v2_5", "seed": 11}
+
+
+@pytest.mark.parametrize(
+    ("status", "words"), [(401, "rejected the API key"), (402, "no credit"), (429, "limiting")]
+)
+def test_service_refusals_are_explained(
+    client: TestClient, monkeypatch, status: int, words: str
+) -> None:
+    client.post("/generation/providers/elevenlabs/key", json={"key": KEY}, headers=_headers())
+    monkeypatch.setattr(cloud.requests, "post", lambda *_a, **_k: _Resp(status=status, payload={}))
+    project, response = _start(client, {"caption": "warm folk"}, provider="elevenlabs")
+    job = client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()
+    assert job["status"] == "failed" and words in job["error"] and KEY not in job["error"]
+
+
+def test_fal_queues_polls_and_downloads_only_from_its_hosts(
+    client: TestClient, monkeypatch
+) -> None:
+    client.post("/generation/providers/fal/key", json={"key": KEY}, headers=_headers())
+    monkeypatch.setattr(cloud.time, "sleep", lambda _s: None)
+    calls: list[tuple[str, str]] = []
+    ticket = {
+        "status_url": "https://queue.fal.run/fal-ai/minimax-music/requests/1/status",
+        "response_url": "https://queue.fal.run/fal-ai/minimax-music/requests/1",
+    }
+    states = iter([{"status": "IN_QUEUE"}, {"status": "COMPLETED"}])
+
+    def post(url: str, **kwargs: Any) -> _Resp:
+        calls.append(("POST", url))
+        assert kwargs["headers"]["Authorization"] == f"Key {KEY}"
+        assert (
+            kwargs["json"]["is_instrumental"] is False
+            and kwargs["json"]["lyrics"] == "[Verse]\nla la"
+        )
+        return _Resp(payload=ticket)
+
+    def get(url: str, **kwargs: Any) -> _Resp:
+        calls.append(("GET", url))
+        if url.endswith("/status"):
+            return _Resp(payload=next(states))
+        if url == ticket["response_url"]:
+            return _Resp(
+                payload={
+                    "audio": {
+                        "url": "https://v3.fal.media/files/song.wav",
+                        "content_type": "audio/wav",
+                    }
+                }
+            )
+        return _Resp(content=_wav_bytes(), headers={"content-type": "audio/wav"})
+
+    monkeypatch.setattr(cloud.requests, "post", post)
+    monkeypatch.setattr(cloud.requests, "get", get)
+    project, response = _start(
+        client, {"caption": "dream pop", "lyrics": "[Verse]\nla la"}, provider="fal"
+    )
+    job = client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()
+    assert job["status"] == "completed", job["error"]
+    assert calls[0] == ("POST", "https://queue.fal.run/fal-ai/minimax-music/v2.6")
+    assert calls[-1] == ("GET", "https://v3.fal.media/files/song.wav")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://v3.fal.media/x.wav",
+        "https://fal.media.evil.com/x.wav",
+        "https://user:pw@v3.fal.media/x.wav",
+        "https://v3.fal.media:8443/x.wav",
+        "https://127.0.0.1/x.wav",
+    ],
+)
+def test_downloads_outside_the_allowlist_are_refused(url: str) -> None:
+    assert not cloud.host_allowed(url, cloud.FAL_MEDIA_HOSTS)
+
+
+def test_redirects_off_the_allowlist_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    hops = iter(
+        [
+            _Resp(status=302, headers={"location": "https://cdn.fal.media/next.wav"}),
+            _Resp(status=302, headers={"location": "https://attacker.example/steal"}),
+        ]
+    )
+    monkeypatch.setattr(cloud.requests, "get", lambda *_a, **_k: next(hops))
+    with pytest.raises(EditorError, match="unexpected address"):
+        cloud.download("https://v3.fal.media/song.wav", cloud.FAL_MEDIA_HOSTS)
+
+
+def test_fal_rejects_a_ticket_pointing_elsewhere(client: TestClient, monkeypatch) -> None:
+    client.post("/generation/providers/fal/key", json={"key": KEY}, headers=_headers())
+    bad = {"status_url": "https://evil.example/status", "response_url": "https://queue.fal.run/x"}
+    monkeypatch.setattr(cloud.requests, "post", lambda *_a, **_k: _Resp(payload=bad))
+    project, response = _start(client, {"caption": "dream pop"}, provider="fal")
+    job = client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()
+    assert job["status"] == "failed" and "unexpected address" in job["error"]
+
+
+def test_lyria_gets_lyrics_inside_its_single_prompt() -> None:
+    model, payload = cloud.FalProvider().payload(
+        {"model": "fal-ai/lyria3/pro", "caption": "jazz trio", "lyrics": "[Verse]\nhi", "bpm": 100}
+    )
+    assert model == "fal-ai/lyria3/pro"
+    assert payload == {"prompt": "jazz trio, 100 BPM\n\nLyrics:\n[Verse]\nhi"}
+
+
+def test_online_services_are_not_memory_checked(client: TestClient, monkeypatch) -> None:
+    client.post("/generation/providers/elevenlabs/key", json={"key": KEY}, headers=_headers())
+    monkeypatch.setattr(resources, "free_memory_percent", lambda: 1.0)
+    monkeypatch.setattr(
+        cloud.requests,
+        "post",
+        lambda *_a, **_k: _Resp(content=_wav_bytes(), headers={"content-type": "audio/wav"}),
+    )
+    project, response = _start(client, {"caption": "warm folk"}, provider="elevenlabs")
+    assert (
+        client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()["status"]
+        == "completed"
+    )

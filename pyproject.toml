@@ -32,6 +32,7 @@ dependencies = [
   "jinja2>=3.1.6",
   "weasyprint>=70.0",
   "requests>=2.33.1",
+  "keyring>=25.7.0",
   "python-multipart>=0.0.26",
   "pydantic>=2.13.3",
   "langgraph>=0.1.0",

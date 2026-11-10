@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, CircleAlert, Download, Loader2, Power } from "lucide-react";
+import { CheckCircle2, CircleAlert, Download, ExternalLink, Globe, KeyRound, Loader2, Power } from "lucide-react";
 
-import { generationApi, type GenerationSettings, type Overview } from "@/lib/generation/api";
+import { generationApi, type GenerationSettings, type Overview, type ProviderInfo } from "@/lib/generation/api";
 import { cn } from "@/lib/utils";
 
 const button =
@@ -80,6 +80,91 @@ function NumberSetting({ label, help, value, min, max, step, unit, disabled, onC
   );
 }
 
+const KEY_SOURCES: Record<string, string> = {
+  environment: "from an environment variable",
+  keychain: "in this computer's keychain",
+  file: "in a private file on this computer (no keychain was available)"
+};
+
+function OnlineService({
+  provider,
+  working,
+  run
+}: {
+  provider: ProviderInfo;
+  working: boolean;
+  run: (action: () => Promise<unknown>) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState("");
+  const key = provider.status.key;
+  const fromEnvironment = key?.source === "environment";
+  return (
+    <li className="space-y-2 rounded-xl bg-slate-900/70 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-slate-200">{provider.name}</p>
+        {provider.status.terms_url ? (
+          <a
+            href={provider.status.terms_url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex items-center gap-1 text-xs text-cyan-300 hover:underline"
+          >
+            Terms and pricing <ExternalLink className="h-3 w-3" aria-hidden />
+          </a>
+        ) : null}
+      </div>
+      {key?.configured ? (
+        <Status ok>
+          On. Key saved {KEY_SOURCES[key.source ?? ""] ?? ""}. {provider.status.message}
+        </Status>
+      ) : (
+        <p className="text-xs text-slate-400">
+          Off. Adding your key switches it on. Your style text and lyrics are then sent to this service when you choose it
+          as the generator; it bills your account. Audio is never uploaded.
+        </p>
+      )}
+      {fromEnvironment ? (
+        <p className="text-xs text-slate-400">To change it, edit the {key?.env} environment variable.</p>
+      ) : (
+        <form
+          className="flex flex-wrap gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const value = draft;
+            setDraft("");
+            void run(() => generationApi.saveKey(provider.id, value));
+          }}
+        >
+          <input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={draft}
+            disabled={working}
+            onChange={(event) => setDraft(event.target.value)}
+            aria-label={`${provider.name} API key`}
+            placeholder={key?.configured ? "Paste a new key to replace it" : "Paste your API key"}
+            className={cn(input, "min-w-0 flex-1")}
+          />
+          <button type="submit" className={primary} disabled={working || draft.trim().length < 16}>
+            <KeyRound className="h-4 w-4" aria-hidden /> {key?.configured ? "Replace key" : "Save key"}
+          </button>
+          {key?.configured ? (
+            <button
+              type="button"
+              className={quiet}
+              disabled={working}
+              onClick={() => void run(() => generationApi.removeKey(provider.id))}
+            >
+              Remove key
+            </button>
+          ) : null}
+        </form>
+      )}
+    </li>
+  );
+}
+
 export function SettingsPanel({ overview, onChanged }: { overview: Overview; onChanged: () => Promise<void> }) {
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -99,6 +184,7 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
   };
   const save = (patch: Partial<GenerationSettings>) => void run(() => generationApi.saveSettings(patch));
   const local = overview.providers.filter((p) => p.kind === "local");
+  const online = overview.providers.filter((p) => p.kind === "external");
   const writerReady = writer.available && writer.model_installed;
 
   return (
@@ -268,6 +354,21 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
           disabled={working || !settings.normalize}
           onCommit={(value) => save({ target_lufs: value })}
         />
+      </Card>
+
+      <Card title="Online services" tag="Optional">
+        <p className="flex items-start gap-2 text-sm text-slate-300">
+          <Globe className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+          <span>
+            These run on the provider&apos;s servers with your own account. Each stays off until you add its key. Keys are kept
+            on this computer and are never shown again, even here.
+          </span>
+        </p>
+        <ul className="space-y-3">
+          {online.map((provider) => (
+            <OnlineService key={provider.id} provider={provider} working={working} run={run} />
+          ))}
+        </ul>
       </Card>
 
       <Card title="Generators">

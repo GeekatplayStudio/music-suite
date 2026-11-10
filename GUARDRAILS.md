@@ -120,7 +120,21 @@ Installing the local engine contacts two fixed hosts, only when the user answers
 
 Nothing is uploaded. After the install, generation works offline. The install request takes no address or command from the browser.
 
-External generation services (planned) will be a separate, per-provider opt-in and are not part of this release.
+### Online generation services: a deliberate, per-service exception to "local only"
+
+ElevenLabs Music and fal.ai (MiniMax Music, Google Lyria) run on the provider's servers with the user's own account.
+
+- **Off by default.** A service is switched on only by saving its API key in AI Song Studio ▸ Settings, and switched off by removing it. It is used only when the user picks it as the generator.
+- **What is sent:** the style text, the lyrics, and the musical settings typed into the form, to that one service. **What is never sent:** audio, file paths or project data.
+- **Fixed hosts:**
+  - requests go to `https://api.elevenlabs.io` or `https://queue.fal.run` only;
+  - fal.ai audio is downloaded only from `*.fal.media`, over HTTPS on port 443 with no credentials in the address;
+  - redirects are followed only inside that allowlist, and the download is capped at the upload size limit.
+- **Keys are write-only:**
+  - they are stored in the OS keychain, or in an owner-only file under `data/secrets/` when no keychain exists, or read from `MUSIC_SUITE_ELEVENLABS_API_KEY` / `MUSIC_SUITE_FAL_KEY`;
+  - the API never returns or logs a key, and error messages never include it;
+  - saving or removing one requires the `X-Music-Suite-Action: generation-key` header.
+- **Billing and terms** are the provider's; the Settings card links to them.
 
 ## Verification
 

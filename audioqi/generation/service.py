@@ -18,19 +18,15 @@ from audioqi.editor.projects import EditorError, NotFoundError, ParamError
 from audioqi.generation import records, resources, schema, settings
 from audioqi.generation.providers.acestep import AceStepProvider
 from audioqi.generation.providers.base import Output, Provider, RunContext
+from audioqi.generation.providers.cloud import ElevenLabsProvider, FalProvider
 from audioqi.generation.providers.comfyui import ComfyUiProvider
 
 PROVIDERS: dict[str, Provider] = {
-    provider.id: provider for provider in (AceStepProvider(), ComfyUiProvider())
+    provider.id: provider
+    for provider in (AceStepProvider(), ComfyUiProvider(), ElevenLabsProvider(), FalProvider())
 }
 #: Shown in settings so the user can see what is coming and why it is not there yet.
 PLANNED = [
-    {
-        "id": "elevenlabs",
-        "name": "ElevenLabs Music",
-        "kind": "external",
-        "message": "Planned. It will be off until you switch it on and add your own API key.",
-    },
     {
         "id": "suno",
         "name": "Suno",
@@ -68,7 +64,7 @@ def describe_all() -> list[dict[str, Any]]:
                 "id": item.id,
                 "name": item.name,
                 "kind": item.kind,
-                "enabled": bool(enabled.get(item.id, True)),
+                "enabled": bool(enabled.get(item.id, item.kind == "local")),
                 "status": item.status(),
                 "schema": item.describe(),
             }
@@ -82,7 +78,7 @@ def validate_request(params: dict[str, Any]) -> dict[str, Any]:
     if unknown:
         raise ParamError("Unknown parameter(s) in the generation request.")
     chosen = provider(params.get("provider"))
-    if not settings.load()["providers"].get(chosen.id, True):
+    if not settings.load()["providers"].get(chosen.id, chosen.kind == "local"):
         raise EditorError("This provider is switched off in AI Song Studio > Settings.", 403)
     described = chosen.describe()
     task = params.get("task", described["tasks"][0]["id"])
@@ -105,7 +101,7 @@ def _import(project_id: str, output: Output, name: str, parent_id: str | None) -
     with tempfile.TemporaryDirectory(dir=projects.scratch_dir()) as tmp:
         staged = Path(tmp) / f"generated{output.suffix}"
         staged.write_bytes(output.data)
-        if config["normalize"] and output.suffix == ".wav":
+        if config["normalize"]:
             try:
                 audio, rate = sf.read(io.BytesIO(output.data), dtype="float32", always_2d=True)
                 audio, loudness = processing.normalize(
@@ -113,8 +109,8 @@ def _import(project_id: str, output: Output, name: str, parent_id: str | None) -
                 )
                 staged = Path(tmp) / "normalized.wav"
                 sf.write(str(staged), audio, int(rate), subtype="FLOAT")
-            except (EditorError, RuntimeError, ValueError):
-                loudness = {}  # Silent or unreadable: import it as it came.
+            except (EditorError, RuntimeError, ValueError, sf.LibsndfileError):
+                loudness = {}  # Silent, or a format this build cannot read: import it as it came.
         record = assets.import_audio_file(project_id, staged, name=name, source="process")
     if parent_id:
         record["parent_id"] = parent_id

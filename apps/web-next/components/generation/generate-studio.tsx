@@ -621,7 +621,7 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
                   </div>
                 ) : (
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="text-xs text-slate-400">
+                    <p className={cn("text-xs", provider.kind === "external" ? "text-amber-200" : "text-slate-400")}>
                       {provider.status.ready
                         ? provider.id === "acestep_local"
                           ? `About ${formatSeconds(estimateSeconds(values))} on this computer. One song at a time.`

@@ -265,7 +265,31 @@ Field types are `text`, `lyrics`, `int`, `float`, `bool`, `enum`, `seed`, `durat
 - LoRA adapters: list, apply and set scale. Training them stays out of scope.
 - Reference audio for style ("make it sound like this clip").
 
-### Phase G3 — External providers
+### Phase G3 — External providers *(first pass shipped 2026-11-10)*
+
+**Shipped:** ported from the `feature/song-generation` branch (commit `4b304ac`, written in a parallel session) and fitted into the G1 provider framework.
+
+- **Key storage** (`audioqi/generation/secrets.py`). Keys are looked up in an environment variable first, then the OS keychain through `keyring`, then an owner-only file under `data/secrets/` on systems with no keychain. A key saved while a keychain is available is never written to disk. Keys are write-only: routes need the `X-Music-Suite-Action: generation-key` header, return only "configured" and the source, and never echo the key.
+- **Saving a key switches that service on; removing it switches the service off.** Until then the service is off and absent from the generator list.
+- **ElevenLabs Music:** style, lyrics, length (10–600 s), tempo and key folded into the prompt, instrumental, model (`music_v2_5`, `music_v2`, `music_v1`) and download quality. With *Plan the sections first*, it drafts a plan through the free `/v1/music/plan`, then composes from that plan, which is when a seed applies.
+- **fal.ai:** MiniMax Music 2.6 (separate lyrics field) and Google Lyria 3 Pro (lyrics inside the prompt). Uses the queue API with polling and cancel, and downloads only from `*.fal.media`, following redirects only inside that allowlist.
+- Online songs are levelled on import like local ones (MP3 included) and recorded in history.
+- The memory guard is skipped for online services, since they use no local memory.
+
+**Not ported from the branch:**
+
+- Its ACE-Step adapter for the Python REST server, which G1's acestep.cpp provider replaces.
+- YuE2: CC BY-NC weights, and it needs an NVIDIA GPU with 24 GB.
+- Its in-editor "Create a song" panel: AI Song Studio and the editor's ✨ button cover it.
+
+**Still open from the G3 plan:**
+
+- A section-by-section composition-plan editor.
+- Inpainting a selection.
+- Cost hints.
+- Real calls against both services. They were tested only against recorded response shapes, because no paid key was available.
+
+**Original G3 plan**
 
 - Key storage (`keyring`), provider consent dialogs, and the GUARDRAILS update.
 - **ElevenLabs Music:**
@@ -310,9 +334,15 @@ Phase G1 went ahead with the recommended defaults (2026-11-10):
 2. **Default lyrics model:** `gemma4:12b`, changeable in AI Song Studio ▸ Settings.
 3. **Import loudness:** −14 LUFS, changeable or switched off in Settings.
 4. **First external provider:** ElevenLabs, in phase G3. It needs the user's own API key and paid plan.
-5. **Still open:** the benchmark copies at `~/Projects/ACE-Step-1.5` (about 10 GB) and `~/Projects/acestep.cpp` (about 5.6 GB) are no longer used and can be deleted by the user.
+5. **Parallel branch:** `origin/feature/song-generation` has been ported in part (see G3) and can be deleted from GitHub once you are happy with this.
+6. **Still open:** the benchmark copies at `~/Projects/ACE-Step-1.5` (about 10 GB) and `~/Projects/acestep.cpp` (about 5.6 GB) are no longer used and can be deleted by the user.
 
 ## 7.1 Verification log
+
+### Phase G3 first pass (2026-11-10)
+
+- **Automated:** 24 new tests: key storage (write-only, keychain-first with the on-disk file absent, file fallback 0600 inside a 0700 folder, environment wins, bad keys rejected), ElevenLabs payloads in prompt and plan mode, refusal messages that never contain the key, the fal.ai queue flow, download allowlist and redirect escape, foreign queue addresses, Lyria prompt folding, and no memory check for online services. Every test uses a fake keychain. Full suite: 331 passed, 1 skipped.
+- **Browser:** saved an obviously fake key from Settings. The key never appeared in any API response, ElevenLabs switched on, and its form showed its own controls with the "sends your text, bills your account" note. Removing the key switched it off, and `security find-generic-password` confirmed the Keychain item was gone. No request was sent to either service.
 
 ### Phase G1 (2026-11-10, Apple M5, 24 GB, macOS 26.6)
 

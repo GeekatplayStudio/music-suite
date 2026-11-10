@@ -10,11 +10,20 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, Header, HTTPException
 
 from audioqi.editor import projects
 from audioqi.editor.projects import EditorError
-from audioqi.generation import engine, records, resources, service, settings, setup, writer
+from audioqi.generation import (
+    engine,
+    records,
+    resources,
+    secrets,
+    service,
+    settings,
+    setup,
+    writer,
+)
 
 router = APIRouter(prefix="/generation", tags=["generation"])
 T = TypeVar("T")
@@ -82,6 +91,41 @@ def stop_engine() -> dict[str, Any]:
 @router.post("/lyrics")
 def write_lyrics(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return _guard(lambda: writer.write(payload))
+
+
+KEY_ACTION = "generation-key"
+
+
+def _require_key_action(action: str | None) -> None:
+    if action != KEY_ACTION:
+        raise HTTPException(status_code=400, detail="Explicit key confirmation header is required.")
+
+
+@router.post("/providers/{provider_id}/key")
+def save_key(
+    provider_id: str,
+    payload: dict[str, Any] = Body(...),
+    action: str | None = Header(default=None, alias="X-Music-Suite-Action"),
+) -> dict[str, Any]:
+    """Store an API key and switch that online service on. The key is never sent back."""
+    _require_key_action(action)
+    if set(payload) - {"key"}:
+        raise HTTPException(status_code=422, detail="Only 'key' may be sent.")
+    summary = _guard(lambda: secrets.save(provider_id, payload.get("key")))
+    settings.update({"providers": {provider_id: True}})
+    return summary
+
+
+@router.delete("/providers/{provider_id}/key")
+def delete_key(
+    provider_id: str,
+    action: str | None = Header(default=None, alias="X-Music-Suite-Action"),
+) -> dict[str, Any]:
+    """Forget an API key and switch that online service off."""
+    _require_key_action(action)
+    summary = _guard(lambda: secrets.remove(provider_id))
+    settings.update({"providers": {provider_id: False}})
+    return summary
 
 
 @router.get("/history")

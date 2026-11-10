@@ -395,7 +395,9 @@ class AceStepProvider:
                 raise EditorError("The AI engine could not generate this request.", 502)
             time.sleep(0.5)
         try:
-            result = requests.get(f"{base}/job", params={"id": job_id, "result": "1"}, timeout=300.0)
+            result = requests.get(
+                f"{base}/job", params={"id": job_id, "result": "1"}, timeout=300.0
+            )
         except requests.RequestException as exc:
             raise EditorError("The result could not be fetched from the AI engine.", 502) from exc
         if result.status_code != 200:

@@ -21,7 +21,13 @@ DEFAULTS: dict[str, Any] = {
     "writer_model": "gemma4:12b",
     "normalize": True,
     "target_lufs": -14.0,
-    "providers": {"acestep_local": True, "comfyui_musicgen": True},
+    # Online services stay off until the user saves a key for them.
+    "providers": {
+        "acestep_local": True,
+        "comfyui_musicgen": True,
+        "elevenlabs": False,
+        "fal": False,
+    },
     "setup_declined": False,
 }
 _RANGES: dict[str, tuple[float, float]] = {

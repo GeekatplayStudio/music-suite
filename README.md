@@ -37,7 +37,7 @@ The former **AudioQI Analyzer** and **Sonic Visual AI** projects now share one c
 | 🪐 **Map** | Full-song 3D geometry with tempo and key estimation, structural repeat detection, per-node inspection, presets, overlays, and exports |
 | 🧠 **Describe** | Local Ollama model writes the track's style, always shown beside the description derived from the measurements |
 | 🔌 **Integrate** | Guarded local MCP server, plus optional ComfyUI nodes for music generation |
-| 🔒 **Stay local** | Loopback-only binding, no cloud calls for audio, explicit opt-in for every mutation. The one network feature — in-browser editor plugins — is off until you switch it on |
+| 🔒 **Stay local** | Loopback-only binding, no cloud calls for audio, explicit opt-in for every mutation. The network features — in-browser editor plugins and the online song services — stay off until you switch them on |
 
 ---
 
@@ -164,6 +164,8 @@ Open it from the **AI Song Studio** button in the workspace or at `/generate`.
 4. **Open in Studio Editor** to cut, mix, separate stems or master the result.
 
 Every engine control is available under *Advanced* (planner sampling, diffusion steps, solver, models). *History* keeps the settings of each song so you can reuse them. *Settings* covers the lyrics model, the loudness of new songs, and the memory limits that keep the computer responsive: one song at a time, and the engine unloads when idle.
+
+**Online services (optional):** add your own ElevenLabs Music or fal.ai (MiniMax Music, Lyria) key under *Settings ▸ Online services* to use them as generators. Only the style text and lyrics are sent; audio never is. Keys stay in your computer's keychain.
 
 Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (about 8 GB); without Ollama the music engine's own planner writes a simpler draft. Measured on an Apple M5 with 24 GB: the engine peaks at 2.3 GB of memory, or 4.5 GB with its planner. Windows and Linux builds of the engine are untested. Plan and benchmarks: [docs/GENERATION_ROADMAP.md](docs/GENERATION_ROADMAP.md).
 

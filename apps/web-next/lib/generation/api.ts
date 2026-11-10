@@ -43,7 +43,13 @@ export interface ProviderInfo {
   name: string;
   kind: "local" | "external";
   enabled: boolean;
-  status: { ready: boolean; message: string; running?: boolean };
+  status: {
+    ready: boolean;
+    message: string;
+    running?: boolean;
+    key?: { configured: boolean; source: "environment" | "keychain" | "file" | null; env: string };
+    terms_url?: string;
+  };
   schema: ProviderSchema;
 }
 
@@ -139,6 +145,18 @@ export const generationApi = {
     request<GenerationSettings>("/generation/settings", json(patch)),
   startSetup: (writer: boolean) => request<SetupState>("/generation/setup", json({ writer })),
   setupState: () => request<SetupState>("/generation/setup"),
+  /** Saves the key in this computer's keychain and switches the service on. The key is never sent back. */
+  saveKey: (providerId: string, key: string) =>
+    request<{ configured: boolean }>(`/generation/providers/${providerId}/key`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Music-Suite-Action": "generation-key" },
+      body: JSON.stringify({ key })
+    }),
+  removeKey: (providerId: string) =>
+    request<{ configured: boolean }>(`/generation/providers/${providerId}/key`, {
+      method: "DELETE",
+      headers: { "X-Music-Suite-Action": "generation-key" }
+    }),
   stopEngine: () => request<{ running: boolean }>("/generation/engine/stop", { method: "POST" }),
   write: (body: { mode: "brief" | "lyrics"; idea: string; caption?: string; lyrics?: string; instrumental?: boolean }) =>
     request<{ brief: SongBrief; engine: string }>("/generation/lyrics", json(body)),
