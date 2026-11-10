@@ -263,6 +263,11 @@ def get_job(project_id: str, job_id: str) -> dict[str, Any]:
     return _guard(lambda: editor_jobs.get_job(project_id, job_id))
 
 
+@router.post("/projects/{project_id}/jobs/{job_id}/cancel")
+def cancel_job(project_id: str, job_id: str) -> dict[str, Any]:
+    return _guard(lambda: editor_jobs.cancel_job(project_id, job_id))
+
+
 def _discard(*paths: Path) -> None:
     for path in paths:
         with contextlib.suppress(OSError):

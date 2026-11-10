@@ -93,8 +93,22 @@ else
 fi
 
 cd "$ROOT"
+
+# --- Optional: local AI music engine (AI Song Studio) ---
+# Asks once and remembers a "no". MUSIC_SUITE_INSTALL_AI=1 installs without asking, =0 skips.
+# A failure here never fails the install: the rest of Music Suite works without it, and the
+# engine can be installed later with one click from AI Song Studio > Settings.
+case "${MUSIC_SUITE_INSTALL_AI:-ask}" in
+  0) echo "Skipping the local AI music engine (MUSIC_SUITE_INSTALL_AI=0)." ;;
+  1) .venv/bin/python -m audioqi.generation.setup --yes || true ;;
+  *) .venv/bin/python -m audioqi.generation.setup --ask || true ;;
+esac
+
 GIT_REVISION="$(git rev-parse HEAD 2>/dev/null || printf 'no-git-revision')"
 .venv/bin/python -c 'import hashlib, pathlib, sys; files=(pathlib.Path("pyproject.toml"), pathlib.Path("apps/web-next/pnpm-lock.yaml")); print("-".join([*(hashlib.sha256(path.read_bytes()).hexdigest().upper() for path in files), sys.argv[1]]))' "$GIT_REVISION" > .music-suite-install-state
 
 echo
 echo "Installation complete. Double-click start.command to launch Music Suite."
+if ! command -v ollama >/dev/null 2>&1; then
+  echo "Tip: for the best AI-written lyrics, install Ollama from https://ollama.com (optional)."
+fi

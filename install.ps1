@@ -123,7 +123,7 @@ try {
     & $venvPython -m ensurepip --upgrade
     & $venvPython -m pip install --upgrade pip setuptools wheel
 
-    $extras = @("dev")
+    $extras = @("dev", "editor")
     if ($WithGpu) { $extras += "gpu" }
     if ($WithPro) { $extras += "pro" }
     $extraSpec = $extras -join ","
@@ -185,6 +185,22 @@ try {
             & $comfyPython -m pip install "git+https://github.com/suno-ai/bark.git" --no-deps
             & $comfyPython -m pip install "git+https://github.com/facebookresearch/audiocraft.git" --no-deps
         }
+    }
+
+    # --- Optional: local AI music engine (AI Song Studio) ---
+    # Asks once and remembers a "no". MUSIC_SUITE_INSTALL_AI=1 installs without asking, =0 skips.
+    # A failure here never fails the install: the engine can be installed later with one click
+    # from AI Song Studio > Settings.
+    $aiChoice = if ($env:MUSIC_SUITE_INSTALL_AI) { $env:MUSIC_SUITE_INSTALL_AI } else { "ask" }
+    if ($aiChoice -eq "0") {
+        Write-Host "Skipping the local AI music engine (MUSIC_SUITE_INSTALL_AI=0)."
+    } else {
+        $aiFlag = if ($aiChoice -eq "1") { "--yes" } else { "--ask" }
+        & $venvPython -m audioqi.generation.setup $aiFlag
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "The AI music engine was not installed. Music Suite itself is ready." -ForegroundColor Yellow
+        }
+        $global:LASTEXITCODE = 0
     }
 
     Write-Host ""

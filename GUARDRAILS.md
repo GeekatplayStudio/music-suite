@@ -103,6 +103,25 @@ Web Audio Modules (WAM) are effects that run in the browser. They are third-part
 - A session that contains such a plugin still opens with internet plugins switched off; the track simply plays without it and the editor says so.
 - The WAM host files under `apps/web-next/public/wam-host/` are a pinned local copy (MIT); only plugins come from the network.
 
+## Generation boundary
+
+- The local music engine (acestep.cpp) is started by the API on `127.0.0.1` only, on a free port, and is stopped after an idle period and when the API stops. Its program file must be a regular file owned by the user and not writable by others.
+- Every generation request is checked against the provider's own parameter schema on the server; unknown fields are rejected and numbers must be in range.
+- One generation runs at a time. Before a local generation, loaded Ollama models are unloaded and free memory is checked; below the configured threshold (default 25%) the job stops with a message instead of pushing the machine into swap.
+- The lyrics writer talks to Ollama on loopback with a time limit and an output-token limit, and its answer is bounded and normalised before use.
+- Generated audio is levelled with one static gain towards the loudness target, never above −1 dBTP.
+
+### Installing the engine: a deliberate, one-time download
+
+Installing the local engine contacts two fixed hosts, only when the user answers yes in the installer or presses **Install local engine**:
+
+- **GitHub**, for the engine's source code at one pinned commit, which is then compiled on this machine.
+- **Hugging Face**, for four model files at one pinned revision. Each file is checked against a SHA-256 fingerprint stored in this repository; a file that does not match is discarded.
+
+Nothing is uploaded. After the install, generation works offline. The install request takes no address or command from the browser.
+
+External generation services (planned) will be a separate, per-provider opt-in and are not part of this release.
+
 ## Verification
 
 `verify_pipeline.ps1` stops on the first failure and checks dependency consistency, Python lint, ComfyUI syntax, backend tests, TypeScript, ESLint, the production frontend build, and the production npm dependency audit.

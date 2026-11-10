@@ -31,6 +31,7 @@ The former **AudioQI Analyzer** and **Sonic Visual AI** projects now share one c
 |---|---|
 | 🎚️ **Measure** | Loudness (LUFS), true peak, crest, LRA, stereo correlation, phase, spectrum, and four spectrogram types |
 | 🤖 **Master** | Internal, FFmpeg, Pedalboard, and Matchering paths with per-stage progress, marker-aware refinement, and a regression guard that refuses passes which add glare |
+| ✨ **Create** | AI Song Studio: write lyrics and a style with a local language model, then generate full songs with vocals on this computer (ACE-Step 1.5) |
 | ✂️ **Edit** | Multitrack Studio Editor: waveform clips, stem separation, repair tools, a spectral view, mixing with buses and automation, voice effects (vocoder, pitch shift, robot), recording, MIDI with a piano roll and a live MIDI keyboard, and AI tempo/key matching |
 | 🌈 **Visualize** | 60 FPS Spectrum, Orbit, and Waveform modes driven by the Web Audio analyser |
 | 🪐 **Map** | Full-song 3D geometry with tempo and key estimation, structural repeat detection, per-node inspection, presets, overlays, and exports |
@@ -153,6 +154,21 @@ What is planned next, and exactly what has and has not been verified, is in **[d
 
 ---
 
+## AI Song Studio
+
+Open it from the **AI Song Studio** button in the workspace or at `/generate`.
+
+1. **Install the engine once.** The installer offers it, or press **Install local engine** in the studio. It builds the open-source ACE-Step engine ([acestep.cpp](https://github.com/ServeurpersoCom/acestep.cpp), MIT) and downloads about 5.3 GB of models. After that it works offline.
+2. **Describe your song.** *Write style and lyrics* turns an idea into a style description, lyrics with section tags, tempo and key. Edit anything, or type it all yourself.
+3. **Generate.** A 2-minute song takes about a minute on an Apple Silicon Mac. Ask for up to four versions; each lands on its own track.
+4. **Open in Studio Editor** to cut, mix, separate stems or master the result.
+
+Every engine control is available under *Advanced* (planner sampling, diffusion steps, solver, models). *History* keeps the settings of each song so you can reuse them. *Settings* covers the lyrics model, the loudness of new songs, and the memory limits that keep the computer responsive: one song at a time, and the engine unloads when idle.
+
+Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (about 8 GB); without Ollama the music engine's own planner writes a simpler draft. Measured on an Apple M5 with 24 GB: the engine peaks at 2.3 GB of memory, or 4.5 GB with its planner. Windows and Linux builds of the engine are untested. Plan and benchmarks: [docs/GENERATION_ROADMAP.md](docs/GENERATION_ROADMAP.md).
+
+---
+
 ## Requirements
 
 - Windows 10/11 or a current macOS release
@@ -163,6 +179,7 @@ What is planned next, and exactly what has and has not been verified, is in **[d
 - Git for in-app updates
 - Optional: ComfyUI with a compatible Torch/CUDA environment (for music generation)
 - Optional: the `editor` and `editor-ai` extras for the Studio Editor's best engines (see above)
+- Optional, for AI Song Studio: about 6 GB of free disk, CMake and a C++ compiler (the installer adds CMake through Homebrew or winget), and Ollama for the best lyrics
 
 ---
 
@@ -188,6 +205,13 @@ Double-click `install.command`, then `start.command`. Use `stop.command` or pres
 ./install.command
 ./start.command
 ./stop.command
+```
+
+The installer asks once whether to add the local AI music engine. To decide ahead of time, or to add it later:
+
+```bash
+MUSIC_SUITE_INSTALL_AI=1 ./install.command   # install without asking (0 skips)
+make install-ai                              # add it later; or use the button in AI Song Studio
 ```
 
 Install FFmpeg with Homebrew when needed:
@@ -294,12 +318,14 @@ music-suite/
   apps/mcp/                          guarded MCP server
   apps/web-next/                     Next.js interface and Visual AI
     app/editor/, components/editor/  Studio Editor interface
+    app/generate/, components/generation/  AI Song Studio interface
     lib/editor/                      editor audio engine, MIDI, waveforms, plugin host
     public/editor-worklets.js        gate, true-peak limiter, loudness meter, recorder
     public/wam-host/                 pinned Web Audio Modules host (MIT)
     public/song-mapper/              integrated Song Geometry Mapper workspace
   audioqi/                           analysis, mastering, update, and integrations
     editor/                          editor projects, assets and processing jobs
+    generation/                      AI song generation: providers, engine, writer, installer
     geometry_mapper/                 mapper deep-analysis and managed cache service
     integrations/comfyui/
       sonic_holodeck/                bundled ComfyUI nodes and workflows
@@ -356,7 +382,7 @@ The mapper's own unit tests cover the pure analysis helpers — tempo and key
 estimation, chroma folding, and the visual density maths — including the cases
 where an estimate must be refused rather than guessed.
 
-Further reading: [Help guide](docs/HELP_GUIDE.md) · [Studio Editor roadmap](docs/EDITOR_ROADMAP.md) · [Competitive analysis](docs/MAPPER_COMPETITIVE_ANALYSIS.md) · [Product requirements](docs/PRD.md) · [Technical requirements](docs/TRD.md) · [References](docs/REFERENCES.md)
+Further reading: [Help guide](docs/HELP_GUIDE.md) · [Studio Editor roadmap](docs/EDITOR_ROADMAP.md) · [AI generation roadmap](docs/GENERATION_ROADMAP.md) · [Competitive analysis](docs/MAPPER_COMPETITIVE_ANALYSIS.md) · [Product requirements](docs/PRD.md) · [Technical requirements](docs/TRD.md) · [References](docs/REFERENCES.md)
 
 ---
 

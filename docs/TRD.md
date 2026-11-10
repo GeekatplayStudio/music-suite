@@ -141,6 +141,7 @@
 - Editor assets: `POST /editor/projects/{id}/assets`, `POST /editor/projects/{id}/assets/from-run/{run_id}`, `GET /editor/projects/{id}/assets/{asset_id}/audio|peaks`, `DELETE /editor/projects/{id}/assets/{asset_id}`
 - Editor jobs: `POST /editor/projects/{id}/jobs`, `GET /editor/projects/{id}/jobs/{job_id}`. Operations: `separate`, `stretch`, `pitch`, `warp`, `quantize`, `denoise`, `declick`, `dehum`, `declip`, `dereverb`, `spectral_repair`, `normalize`, `analyze`, `match`, `to_midi`, `structure`, `plugin`, `generate`
 - Editor export: `POST /editor/export/mp3|flac`
+- Generation: `GET /generation/providers` (providers, schemas, engine, writer, memory, settings), `GET|POST /generation/settings`, `GET|POST /generation/setup`, `POST /generation/engine/stop`, `POST /generation/lyrics`, `GET /generation/history`, `DELETE /generation/history/{id}`. Songs run as the editor job `generate_song` (no source asset needed) and are cancelled with `POST /editor/projects/{id}/jobs/{job_id}/cancel`. Design: [GENERATION_ROADMAP.md](GENERATION_ROADMAP.md)
 
 ## 7. GPU Strategy
 

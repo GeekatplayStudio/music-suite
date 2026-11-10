@@ -77,6 +77,21 @@ def test_port_scan_falls_back_to_an_os_assigned_port() -> None:
     assert "free(0)" in mac_startup
 
 
+def test_installers_offer_the_ai_engine_without_ever_failing_the_install() -> None:
+    mac = Path("install.command").read_text(encoding="utf-8")
+    assert "audioqi.generation.setup --ask || true" in mac
+    assert "audioqi.generation.setup --yes || true" in mac
+    assert "MUSIC_SUITE_INSTALL_AI" in mac
+    # The core install (Python packages and the web build) finishes before the optional engine.
+    assert mac.index("pnpm build") < mac.index("audioqi.generation.setup")
+
+    windows = Path("install.ps1").read_text(encoding="utf-8")
+    assert "audioqi.generation.setup" in windows
+    assert "MUSIC_SUITE_INSTALL_AI" in windows
+    assert '"dev", "editor"' in windows
+    assert windows.index("pnpm.cmd build") < windows.index("audioqi.generation.setup")
+
+
 def test_root_package_json_exposes_the_unified_launchers() -> None:
     """`npm run start` from the project root must work instead of failing with ENOENT."""
     manifest = json.loads(Path("package.json").read_text(encoding="utf-8"))
@@ -129,7 +144,8 @@ def test_installers_create_production_frontend_build() -> None:
 
 
 def test_only_one_readme_exists() -> None:
-    generated = {".venv", ".next", ".pytest_cache", ".obsolete-cache", "node_modules"}
+    # "data" holds user data and the optional AI engine checkout, which ships its own README.
+    generated = {".venv", ".next", ".pytest_cache", ".obsolete-cache", "node_modules", "data"}
     readmes = [
         path
         for path in Path(".").rglob("README.md")

@@ -1,7 +1,7 @@
 PYTHON ?= python
 PIP ?= pip
 
-.PHONY: install dev lint typecheck test run-api run-web install-web start verify format
+.PHONY: install dev lint typecheck test run-api run-web install-web install-ai start verify format
 
 install:
 	$(PIP) install -e .
@@ -26,6 +26,10 @@ run-web:
 
 install-web:
 	cd apps/web-next && npm install
+
+# Build the local AI music engine and download its models (about 5.3 GB).
+install-ai:
+	$(PYTHON) -m audioqi.generation.setup --yes
 
 start:
 	powershell -ExecutionPolicy Bypass -File .\start.ps1

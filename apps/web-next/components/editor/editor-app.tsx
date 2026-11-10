@@ -21,6 +21,7 @@ import {
   Spline,
   Undo2,
   Upload,
+  Sparkles,
   ZoomIn,
   ZoomOut
 } from "lucide-react";
@@ -1414,6 +1415,18 @@ export function EditorApp({ projectId }: { projectId: string }) {
           </span>
         </div>
 
+        <IconButton
+          label="Generate a song with AI into this project"
+          onClick={() => {
+            // Save first so the generated tracks are added to the latest version of the project.
+            void editorApi
+              .saveState(projectId, state)
+              .catch(() => undefined)
+              .then(() => router.push(`/generate?project=${projectId}`));
+          }}
+        >
+          <Sparkles className="h-4 w-4" />
+        </IconButton>
         <div className="flex items-center gap-1.5 border-l border-white/10 pl-2">
           <IconButton label="Return to start" shortcut="Home" onClick={() => { seek(0); setScrollSec(0); }}>
             <SkipBack className="h-4 w-4" />

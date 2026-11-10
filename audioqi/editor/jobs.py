@@ -29,6 +29,7 @@ from audioqi.editor import (
     separation,
 )
 from audioqi.editor.projects import EditorError, NotFoundError, ParamError
+from audioqi.generation import service as song_service
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,8 @@ JOB_FIELDS = (
     "updated_at",
 )
 MAX_PLUGIN_PARAMETERS = 256
+#: Jobs that can start from nothing, so they need no source asset.
+ASSETLESS_OPS = frozenset({"generate_song"})
 
 
 # --------------------------------------------------------------------------- validation
@@ -305,6 +308,7 @@ _VALIDATORS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "dereverb": _v_dereverb,
     "spectral_repair": _v_spectral_repair,
     "generate": _v_generate,
+    "generate_song": song_service.validate_request,
     "to_midi": _v_analyze,
     "structure": _v_analyze,
     "warp": _v_warp,
@@ -346,9 +350,12 @@ def _public(record: dict[str, Any]) -> dict[str, Any]:
 
 def create_job(project_id: str, op: Any, asset_id: Any, params: Any) -> dict[str, Any]:
     cleaned = validate_params(op, params)
-    if not projects.is_canonical_uuid(asset_id):
+    if asset_id is None and op in ASSETLESS_OPS:
+        pass
+    elif not projects.is_canonical_uuid(asset_id):
         raise ParamError("'asset_id' must be a UUID.")
-    assets.get_asset(project_id, asset_id)
+    else:
+        assets.get_asset(project_id, asset_id)
     target = cleaned.get("target_asset_id")
     if target:
         assets.get_asset(project_id, target)
@@ -648,6 +655,16 @@ def _op_generate(ctx: _Context) -> _Outcome:
     return [outcome["asset"]], {"model": outcome["model"], "prompt": params["prompt"]}
 
 
+def _op_generate_song(ctx: _Context) -> _Outcome:
+    return song_service.run(
+        ctx.project_id,
+        str(ctx.record["id"]),
+        ctx.params,
+        ctx.asset.get("id"),
+        lambda percent, detail: ctx.progress("process", percent, detail),
+    )
+
+
 def _op_to_midi(ctx: _Context) -> _Outcome:
     audio, sr = ctx.load()
     engine = composition.transcription_engine()
@@ -778,6 +795,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "dereverb": _op_dereverb,
     "spectral_repair": _op_spectral_repair,
     "generate": _op_generate,
+    "generate_song": _op_generate_song,
     "to_midi": _op_to_midi,
     "structure": _op_structure,
     "warp": _op_warp,
@@ -802,7 +820,8 @@ def run_job(project_id: str, job_id: str) -> None:
     op = str(record.get("op"))
     try:
         _save(project_id, record, status="running", stage="load", detail="Starting.", progress=1)
-        asset = assets.get_asset(project_id, str(record.get("asset_id")))
+        asset_id = record.get("asset_id")
+        asset = assets.get_asset(project_id, str(asset_id)) if asset_id else {}
         ctx = _Context(project_id, record, asset, dict(record.get("params") or {}))
         created, result = _HANDLERS[op](ctx)
         _save(
@@ -822,6 +841,14 @@ def run_job(project_id: str, job_id: str) -> None:
     except Exception as exc:
         logger.exception("Editor job %s (%s) failed", job_id, op)
         _fail(project_id, record, f"The {op} job failed unexpectedly ({type(exc).__name__}).")
+
+
+def cancel_job(project_id: str, job_id: str) -> dict[str, Any]:
+    """Ask a running generation to stop. Other job types cannot be cancelled."""
+    record = _load(project_id, job_id)
+    if record.get("op") in ASSETLESS_OPS and record.get("status") in ("queued", "running"):
+        song_service.cancel(job_id)
+    return _public(record)
 
 
 def _fail(project_id: str, record: dict[str, Any], message: str) -> None:

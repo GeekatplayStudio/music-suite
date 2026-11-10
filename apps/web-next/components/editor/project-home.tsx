@@ -87,6 +87,12 @@ export function ProjectHome({ runId, runName }: ProjectHomeProps) {
           </p>
         </div>
         <Link
+          href="/generate"
+          className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-cyan-200 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
+        >
+          AI Song Studio
+        </Link>
+        <Link
           href="/"
           className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
         >

@@ -10,6 +10,7 @@ import {
   Network,
   Pause,
   Play,
+  Sparkles,
   RefreshCcw,
   Repeat,
   Rocket,
@@ -2278,6 +2279,14 @@ export default function HomePage() {
             >
               <Network className="mr-2 h-4 w-4" />
               Geometry Mapper
+            </Button>
+            <Button
+              variant="secondary"
+              title="Write and generate a new song with AI on this computer"
+              onClick={() => router.push("/generate")}
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              AI Song Studio
             </Button>
             <Button
               variant="secondary"

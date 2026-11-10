@@ -272,7 +272,40 @@ Select a track and press the microphone button. With a range highlighted it beco
 
 *Export* offers the mixdown as WAV 24-bit, WAV 32-bit float, FLAC or MP3, the highlighted range, every track separately, or *Send mix to Mastering*, which adds the mix to the workspace as a new run.
 
+## 8d) AI Song Studio
+
+Open **AI Song Studio** from the workspace. It has three tabs.
+
+**Create**
+
+- *Start from an idea*: type what the song is about and press **Write style and lyrics**. A language model on this computer fills in the title, style description, lyrics, tempo, key and length. This takes about 30 seconds. Everything it writes can be edited.
+- *Style description* is the only required field. Say the genre, mood, instruments, kind of voice and production.
+- *Lyrics*: use the **+ Verse**, **+ Chorus** buttons to add section tags; the model follows them. Leave the lyrics empty to let the model write them, or tick **Instrumental**.
+- *Tempo, Key, Time signature, Length*: leave on **Auto** to let the model choose.
+- *Versions to make*: up to four takes of the same song. Each uses the next seed.
+- *Seed*: −1 is random. **Keep this seed** on a result makes the next song start from the same point.
+- *Change the lyrics*: type an instruction such as "add a bridge" or "translate to Spanish" and press **Rewrite**.
+- **Generate** shows progress and a **Cancel** button. Only one song generates at a time.
+- Results play in the page. **Open in Studio Editor** opens the song's project with each version on its own track (extra versions start muted).
+
+**History** lists every song with the settings that made it. **Use these settings** loads them back into the form.
+
+**Settings**
+
+- *Local music engine*: install it, see whether it is loaded, or **Unload now** to free its memory.
+- *Lyrics and style writer*: which Ollama model writes lyrics, and a button to download it.
+- *Keeping your computer responsive*: generation will not start when free memory is below the limit you set, and the engine unloads after the idle time you set.
+- *Loudness of new songs*: each new song is levelled towards −14 LUFS, never above −1 dBTP. Change the target or switch it off.
+
 ## 9) Troubleshooting
+
+### AI Song Studio
+
+- **"The local AI music engine is not installed yet"** — press **Install local engine**. It needs about 6 GB of free disk and an internet connection, once.
+- **The install stops with a message about CMake or command line tools** — on macOS run `xcode-select --install`, then press the button again. The message names anything else that is missing.
+- **"Only N% of memory is free"** — close some apps or browser tabs and press Generate again, or lower the limit in Settings.
+- **Lyrics come out short or ignore the idea** — Ollama is not running or its model is not downloaded, so the simpler built-in planner wrote them. Start Ollama and download the model from Settings.
+- **The song ignores some lyrics or sings them unclearly** — try another seed or a second version; shorter lines and clear section tags help.
 
 ### Studio Editor
 

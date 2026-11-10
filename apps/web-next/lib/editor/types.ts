@@ -43,7 +43,8 @@ export type JobOp =
   | "quantize"
   | "to_midi"
   | "structure"
-  | "generate";
+  | "generate"
+  | "generate_song";
 
 export interface GenerationStatus {
   available: boolean;

@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from apps.api.editor import router as editor_router
+from apps.api.generation import router as generation_router
 from audioqi.config import ensure_data_dirs, get_settings
 from audioqi.conversion import (
     convert_audio_formats,
@@ -139,6 +140,9 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     ensure_data_dirs(SETTINGS)
     init_db()
     yield
+    from audioqi.generation.engine import SUPERVISOR
+
+    SUPERVISOR.stop()  # Never leave the AI engine running after the API has gone.
 
 
 app = FastAPI(title="Music Suite API", version="1.0.0", lifespan=lifespan)
@@ -151,6 +155,7 @@ app.add_middleware(
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
 app.include_router(editor_router)
+app.include_router(generation_router)
 
 
 def get_db() -> Generator[Session, None, None]:
