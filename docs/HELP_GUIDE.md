@@ -235,7 +235,25 @@ Each tool renders a new take beside the original. With several clips selected, t
 
 ### Mixing
 
-Every track has a 3-band EQ (frequencies adjustable), gate, distortion, compressor, delay and reverb, stereo width and pan. Add **Reverb**, **Delay** or **Group** buses in the project panel, then send tracks to them or route a track's output into a bus. The master has a true-peak limiter (ceiling adjustable); the readout shows integrated, short-term and momentary loudness and the highest true peak for the current playback.
+Every track has a 3-band EQ (frequencies adjustable), gate, voice effect, distortion, compressor, delay and reverb, stereo width and pan. Add **Reverb**, **Delay** or **Group** buses in the project panel, then send tracks to them or route a track's output into a bus. The master has a true-peak limiter (ceiling adjustable); the readout shows integrated, short-term and momentary loudness and the highest true peak for the current playback.
+
+### Voice effects
+
+Turn on **Voice** in a track's effects and pick a preset, or choose the type yourself:
+
+- **Vocoder (robot singer)** — the voice shapes a synth, the classic robot-vocal sound. *Notes* either follows the singing, snapped to semitones (with *Transpose* for an octave down), or holds one note for a monotone robot. Hold keys on a MIDI keyboard while the track plays to choose the notes and chords yourself.
+- **Pitch shift** — up for chipmunk or helium, down for a monster. At 50% mix it becomes a harmony.
+- **Robot** — a ring modulator; low rates sound like a classic sci-fi robot, high rates metallic.
+- **Synth voice** — an oscillator (saw or 8-bit square) that follows the sung pitch and loudness.
+- **Vox distortion** — a thin, clipped megaphone or old-radio voice.
+
+Vocoder and synth voice work best on a solo voice. Exports use the saved settings: notes held on a MIDI keyboard shape live playback only and are not part of an export.
+
+### Playing a MIDI keyboard
+
+Plug a USB MIDI keyboard in (Roland and other class-compliant keyboards work without a driver) and press the keyboard button beside the record button. Chrome and Edge ask once for permission to use MIDI devices; Safari has no Web MIDI. The button lights up as you play and its panel lets you pick one keyboard when several are connected.
+
+The keyboard plays the selected track, or the first track with MIDI notes when nothing is selected. Velocity, the sustain pedal and the pitch-bend wheel all work. If that track's voice effect is a vocoder or synth voice, the keys set the robot voice's notes instead of playing the instrument. Select a track that has a MIDI clip (for example from *Add an instrument track*) and press record to record what you play as notes: the take lands in a new clip, whole bars when snapping is on, and on a new track when it would overlap an existing clip.
 
 ### Recording
 

@@ -103,8 +103,55 @@ export interface AutoPoint {
   v: number;
 }
 
+/**
+ * Voice effects. "vocoder" imposes the voice on a synth carrier (the classic robot-singer
+ * sound), "pitch" shifts it (chipmunk up, monster down), "robot" ring-modulates it, "synth"
+ * replaces it with an oscillator that follows its pitch, and "distort" is a megaphone fuzz.
+ */
+export type VoiceMode = "vocoder" | "pitch" | "robot" | "synth" | "distort";
+
+export interface VoiceFx {
+  on: boolean;
+  mode: VoiceMode;
+  /** Pitch shift, or the carrier's transposition when it follows the voice. */
+  semitones: number;
+  mix: number;
+  /** Vocoder and synth voice: follow the sung pitch, or hold one note. A held key on a MIDI keyboard overrides both. */
+  carrier: "follow" | "note";
+  /** MIDI note the carrier holds when `carrier` is "note". */
+  note: number;
+  wave: "saw" | "square";
+  /** Robot ring-modulator frequency in Hz. */
+  rate: number;
+  drive: number;
+}
+
+export const VOICE_MODES: VoiceMode[] = ["vocoder", "pitch", "robot", "synth", "distort"];
+
+export function defaultVoice(): VoiceFx {
+  return { on: false, mode: "vocoder", semitones: 0, mix: 1, carrier: "follow", note: 48, wave: "saw", rate: 50, drive: 0.6 };
+}
+
+/** Starting points for the voice unit; each replaces every voice setting except on/off. */
+export const VOICE_PRESETS: { id: string; label: string; voice: Omit<VoiceFx, "on"> }[] = [
+  { id: "robot-singer", label: "Robot singer (vocoder)", voice: { ...defaultVoice(), mode: "vocoder", carrier: "follow", semitones: 0 } },
+  { id: "deep-vocoder", label: "Deep vocoder, an octave down", voice: { ...defaultVoice(), mode: "vocoder", carrier: "follow", semitones: -12 } },
+  { id: "monotone", label: "Monotone robot (one note)", voice: { ...defaultVoice(), mode: "vocoder", carrier: "note", note: 45 } },
+  { id: "chipmunk", label: "Chipmunk (+12)", voice: { ...defaultVoice(), mode: "pitch", semitones: 12 } },
+  { id: "helium", label: "Helium (+5)", voice: { ...defaultVoice(), mode: "pitch", semitones: 5 } },
+  { id: "monster", label: "Monster (−7)", voice: { ...defaultVoice(), mode: "pitch", semitones: -7 } },
+  { id: "harmony", label: "Octave harmony (50% mix)", voice: { ...defaultVoice(), mode: "pitch", semitones: 12, mix: 0.5 } },
+  { id: "dalek", label: "Ring-mod robot", voice: { ...defaultVoice(), mode: "robot", rate: 40 } },
+  { id: "metal", label: "Metallic robot", voice: { ...defaultVoice(), mode: "robot", rate: 160 } },
+  { id: "synth-saw", label: "Synth voice (saw)", voice: { ...defaultVoice(), mode: "synth", wave: "saw" } },
+  { id: "synth-square", label: "8-bit voice (square)", voice: { ...defaultVoice(), mode: "synth", wave: "square", mix: 0.85 } },
+  { id: "megaphone", label: "Vox distortion (megaphone)", voice: { ...defaultVoice(), mode: "distort", drive: 0.6 } },
+  { id: "radio", label: "Old radio (light)", voice: { ...defaultVoice(), mode: "distort", drive: 0.2 } }
+];
+
 export interface TrackFx {
   gate: { on: boolean; threshold: number; attack: number; hold: number; release: number };
+  voice: VoiceFx;
   dist: { on: boolean; drive: number; mix: number };
   comp: { on: boolean; threshold: number; ratio: number; attack: number; release: number; makeup: number };
   delay: { on: boolean; time: number; feedback: number; mix: number };
@@ -232,6 +279,7 @@ export function formatLaneValue(lane: LaneId, value: number): string {
 export function defaultFx(): TrackFx {
   return {
     gate: { on: false, threshold: -45, attack: 0.002, hold: 0.06, release: 0.15 },
+    voice: defaultVoice(),
     dist: { on: false, drive: 0.4, mix: 1 },
     comp: { on: false, threshold: -18, ratio: 3, attack: 0.01, release: 0.2, makeup: 0 },
     delay: { on: false, time: 0.375, feedback: 0.35, mix: 0.25 },
@@ -363,6 +411,7 @@ export function normalizeFx(saved: Partial<TrackFx> | undefined): TrackFx {
   const fx = defaultFx();
   return {
     gate: { ...fx.gate, ...saved?.gate },
+    voice: { ...fx.voice, ...saved?.voice },
     dist: { ...fx.dist, ...saved?.dist },
     comp: { ...fx.comp, ...saved?.comp },
     delay: { ...fx.delay, ...saved?.delay },

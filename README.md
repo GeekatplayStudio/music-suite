@@ -31,7 +31,7 @@ The former **AudioQI Analyzer** and **Sonic Visual AI** projects now share one c
 |---|---|
 | 🎚️ **Measure** | Loudness (LUFS), true peak, crest, LRA, stereo correlation, phase, spectrum, and four spectrogram types |
 | 🤖 **Master** | Internal, FFmpeg, Pedalboard, and Matchering paths with per-stage progress, marker-aware refinement, and a regression guard that refuses passes which add glare |
-| ✂️ **Edit** | Multitrack Studio Editor: waveform clips, stem separation, repair tools, a spectral view, mixing with buses and automation, recording, MIDI with a piano roll, and AI tempo/key matching |
+| ✂️ **Edit** | Multitrack Studio Editor: waveform clips, stem separation, repair tools, a spectral view, mixing with buses and automation, voice effects (vocoder, pitch shift, robot), recording, MIDI with a piano roll and a live MIDI keyboard, and AI tempo/key matching |
 | 🌈 **Visualize** | 60 FPS Spectrum, Orbit, and Waveform modes driven by the Web Audio analyser |
 | 🪐 **Map** | Full-song 3D geometry with tempo and key estimation, structural repeat detection, per-node inspection, presets, overlays, and exports |
 | 🧠 **Describe** | Local Ollama model writes the track's style, always shown beside the description derived from the measurements |
@@ -126,9 +126,10 @@ Open it from the **Studio Editor** button in the workspace (it opens the selecte
 | **Arrange** | Move, trim, split, duplicate and reverse clips; fades with linear, equal-power or S-curve shapes; automatic crossfades where clips overlap; ripple delete; snapping; markers; named sections you can repeat or cut out as a block |
 | **Separate and transform** | Split a song into 2, 4 or 6 stems on aligned tracks; time-stretch, pitch-shift, warp markers and beat quantise (Rubber Band); match a clip's tempo and key to the project or to another clip |
 | **Repair** | Noise reduction with an optional noise print, DeClick, DeHum, DeClip, DeReverb, loudness normalise, and a spectral view where you box a sound and attenuate or heal it |
-| **Mix** | Per-track EQ, gate, distortion, compressor, delay and reverb; buses and sends; automation lanes for volume, pan, EQ and effect settings; a true-peak limiter; EBU R 128 loudness and a phase scope |
-| **Record** | Uncompressed recording with punch-in, and loop recording into take lanes you can comp |
-| **Compose** | Instrument tracks with a built-in synth or drum kit, a piano roll, computer- or MIDI-keyboard note input, MIDI file import/export, audio-to-MIDI, and automatic song-section detection |
+| **Mix** | Per-track EQ, gate, voice effects, distortion, compressor, delay and reverb; buses and sends; automation lanes for volume, pan, EQ and effect settings; a true-peak limiter; EBU R 128 loudness and a phase scope |
+| **Voice** | Robot-singer vocoder (follows the sung pitch, holds one note, or takes its notes and chords from a MIDI keyboard), chipmunk and monster pitch shift, ring-modulator robot, a synth voice that follows your pitch, and megaphone distortion, with presets |
+| **Record** | Uncompressed recording with punch-in, loop recording into take lanes you can comp, and MIDI-keyboard performances recorded as notes |
+| **Compose** | Instrument tracks with a built-in synth or drum kit, a piano roll, live playing from a USB MIDI keyboard (velocity, sustain pedal, pitch bend), computer- or MIDI-keyboard note input, MIDI file import/export, audio-to-MIDI, and automatic song-section detection |
 | **Plugins** | VST3 and Audio Units rendered in an isolated process; Web Audio Module effects that run live in the browser (opt-in, see below) |
 | **Generate** | Describe a part and a local ComfyUI (MusicGen, via the bundled Sonic Holodeck nodes) generates it at the project tempo |
 | **Export** | Mixdown, highlighted range or every track as WAV (24-bit or 32-bit float), FLAC or MP3; or send the mix straight to AI Mastering |
@@ -143,6 +144,8 @@ pip install -e ".[editor-ai]"   # audio-separator, Demucs, beat_this, PyTorch �
 ```
 
 The macOS installer adds the `editor` extra automatically. `editor-ai` is a large download and is left to you. Some separation models carry non-commercial licences, and Pedalboard and Rubber Band are GPLv3; check them before distributing a bundled build or releasing separated stems commercially.
+
+**MIDI keyboards.** Plug in a USB keyboard (Roland and other class-compliant keyboards need no driver), press the keyboard button beside record, and allow MIDI devices when the browser asks. It plays the selected track; on a track with a MIDI clip, the record button records what you play as notes. Web MIDI works in Chrome and Edge; Safari does not support it. Details are in the [Help Guide](docs/HELP_GUIDE.md).
 
 **In-browser plugins.** Web Audio Modules are third-party JavaScript downloaded from the internet and run inside the editor page. They stay off until you choose *Allow internet plugins in this browser* on a track. Your audio is still processed on this machine, but a plugin can see the open session, so load only plugins you trust. See [GUARDRAILS.md](GUARDRAILS.md).
 

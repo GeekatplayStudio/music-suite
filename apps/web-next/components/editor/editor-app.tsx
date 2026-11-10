@@ -30,15 +30,17 @@ import { useCallback, useEffect, useEffectEvent, useMemo, useReducer, useRef, us
 
 import { ActionButton, IconButton } from "@/components/editor/controls";
 import { Inspector, type JobEntry } from "@/components/editor/inspector";
+import { MidiControl } from "@/components/editor/midi-control";
 import { PianoRoll } from "@/components/editor/piano-roll";
 import { SpectralPanel } from "@/components/editor/spectral-panel";
 import { RULER_HEIGHT, Timeline } from "@/components/editor/timeline";
 import { TrackHeader } from "@/components/editor/track-header";
 import { uploadAudio } from "@/lib/api";
 import { editorApi } from "@/lib/editor/api";
-import { EditorEngine } from "@/lib/editor/engine";
+import { EditorEngine, playsCarrier } from "@/lib/editor/engine";
 import { type ProcessStep, favouriteStore } from "@/lib/editor/favourites";
 import { MediaStore } from "@/lib/editor/media";
+import { type MidiEvent, midiHub } from "@/lib/editor/midi";
 import { parseMidi, writeMidi } from "@/lib/editor/smf";
 import {
   addAssetOnNewTrack,
@@ -106,6 +108,11 @@ import { downloadBlob, encodeWav } from "@/lib/editor/wav";
 import { cn } from "@/lib/utils";
 
 const HEADER_WIDTH = 236;
+
+/** Tempo for display: at most one decimal, so float noise such as 120.30000000000001 never shows. */
+function formatBpm(bpm: number): string {
+  return Number.isInteger(bpm) ? String(bpm) : bpm.toFixed(1);
+}
 const MIN_ZOOM = 2;
 const MAX_ZOOM = 6000;
 
@@ -114,6 +121,31 @@ interface MenuState {
   y: number;
   clipId: string | null;
   time: number;
+}
+
+/** Notes being recorded from a MIDI keyboard, in timeline seconds. */
+interface MidiTake {
+  trackId: string;
+  from: number;
+  /** Furthest timeline position heard while recording. */
+  furthest: number;
+  notes: Note[];
+  held: Map<number, { t: number; v: number }>;
+  pedal: boolean;
+  /** Keys let go while the sustain pedal was down: they end when it comes up. */
+  pedalled: Set<number>;
+}
+
+/** Finish a held note at `at`. A note that wrapped round the loop ends at the loop's end. */
+function closeTakeNote(take: MidiTake, pitch: number, at: number, loopEnd: number | null): void {
+  const start = take.held.get(pitch);
+  if (!start) return;
+  take.held.delete(pitch);
+  take.pedalled.delete(pitch);
+  const length = at > start.t ? at - start.t : loopEnd !== null && loopEnd > start.t ? loopEnd - start.t : 0;
+  const d = Math.max(0.03, length);
+  take.notes.push({ t: start.t, d, p: pitch, v: start.v });
+  take.furthest = Math.max(take.furthest, start.t + d);
 }
 
 const SHORTCUTS: [string, string][] = [
@@ -522,7 +554,7 @@ export function EditorApp({ projectId }: { projectId: string }) {
       tick += 1;
       if (statsRef.current && tick % 6 === 0) {
         const stats = engine.masterStats();
-        const show = (value: number | null) => (value === null ? "  — " : value.toFixed(1).padStart(5, " "));
+        const show = (value: number | null) => (value === null ? "   —" : value.toFixed(1)).padStart(5, " ");
         const over = stats.truePeakDb !== null && stats.truePeakDb > current.limiterCeiling + 0.1 && current.limiter;
         statsRef.current.textContent = `I${show(stats.integrated)} S${show(stats.shortTerm)} M${show(stats.momentary)} LUFS · TP${show(stats.truePeakDb)}`;
         statsRef.current.style.color = over || (stats.truePeakDb ?? -99) > 0 ? "#fda4af" : "";
@@ -547,6 +579,15 @@ export function EditorApp({ projectId }: { projectId: string }) {
   const primaryClip = selectedClips[0] ?? null;
   const selectedTrack =
     state.tracks.find((t) => t.id === (primaryClip?.trackId ?? selectedTrackId)) ?? null;
+  const midiStatus = useSyncExternalStore(midiHub.watch, midiHub.snapshot, midiHub.serverSnapshot);
+  const keyboardConnected =
+    midiStatus.state === "ready" && midiStatus.inputs.some((input) => midiStatus.selected === "all" || input.id === midiStatus.selected);
+  const hasNotes = (trackId: string) => state.clips.some((c) => c.trackId === trackId && c.notes);
+  // The keyboard plays the selected track, or else the first track that holds MIDI notes.
+  const midiTrack = selectedTrack ?? state.tracks.find((t) => hasNotes(t.id)) ?? null;
+  const midiPlaysVoice = midiTrack !== null && playsCarrier(midiTrack);
+  // Recording captures keyboard notes on an instrument track; everywhere else it records the microphone.
+  const recordsNotes = keyboardConnected && midiTrack !== null && hasNotes(midiTrack.id) && !midiPlaysVoice;
   const duration = projectDuration(state);
   const totalSec = Math.max(duration * 1.2 + 20, viewWidth / pxPerSec);
 
@@ -846,7 +887,104 @@ export function EditorApp({ projectId }: { projectId: string }) {
 
   /* ---------- Recording ---------- */
 
+  /* MIDI keyboard: live play-through, and note recording onto instrument tracks. */
+
+  const midiTakeRef = useRef<MidiTake | null>(null);
+
+  const onMidi = useEffectEvent((event: MidiEvent) => {
+    const take = midiTakeRef.current;
+    const loopEnd = state.loop.enabled && state.loop.end > state.loop.start ? state.loop.end : null;
+    // Where the key went down on the timeline: what was audible then, not what was being scheduled.
+    const at = () => Math.max(0, engine.heardPosition() - Math.max(0, (performance.now() - event.timeStamp) / 1000));
+    if (event.kind === "reset") {
+      engine.allNotesOff();
+      if (take) for (const pitch of [...take.held.keys()]) closeTakeNote(take, pitch, at(), loopEnd);
+    } else if (event.kind === "sustain") {
+      engine.setSustain(event.down);
+      if (take) {
+        take.pedal = event.down;
+        if (!event.down) for (const pitch of [...take.pedalled]) closeTakeNote(take, pitch, at(), loopEnd);
+      }
+    } else if (event.kind === "bend") {
+      // Two semitones each way, the General MIDI default.
+      engine.pitchBend(event.value * 2);
+    } else if (event.kind === "on") {
+      const trackId = take?.trackId ?? midiTrack?.id;
+      if (trackId) engine.liveNoteOn(trackId, event.pitch, event.velocity);
+      if (take) {
+        const time = at();
+        closeTakeNote(take, event.pitch, time, loopEnd);
+        take.held.set(event.pitch, { t: time, v: event.velocity });
+      }
+    } else {
+      engine.liveNoteOff(event.pitch);
+      if (take?.held.has(event.pitch)) {
+        if (take.pedal) take.pedalled.add(event.pitch);
+        else closeTakeNote(take, event.pitch, at(), loopEnd);
+      }
+    }
+  });
+  useEffect(() => midiHub.subscribe((event) => onMidi(event)), []);
+  useEffect(() => () => engine.allNotesOff(), [engine]);
+
+  const finishMidiTake = () => {
+    const take = midiTakeRef.current;
+    if (!take) return;
+    midiTakeRef.current = null;
+    const end = engine.heardPosition();
+    engine.pause();
+    setRecording(false);
+    let current = stateRef.current;
+    const loopEnd = current.loop.enabled && current.loop.end > current.loop.start ? current.loop.end : null;
+    for (const pitch of [...take.held.keys()]) closeTakeNote(take, pitch, end, loopEnd);
+    if (!take.notes.length) {
+      setNotice("No keys were played, so nothing was recorded.");
+      return;
+    }
+    let start = take.from;
+    let stop = Math.max(take.furthest, end);
+    for (const note of take.notes) {
+      start = Math.min(start, note.t);
+      stop = Math.max(stop, note.t + note.d);
+    }
+    if (current.snap) {
+      // With snapping on, the new clip covers whole bars.
+      const bar = (60 / current.bpm) * current.beatsPerBar;
+      start = Math.floor(start / bar + 1e-6) * bar;
+      stop = Math.max(start + bar, Math.ceil(stop / bar - 1e-6) * bar);
+    }
+    let trackId = take.trackId;
+    const source = current.tracks.find((t) => t.id === trackId);
+    // Like audio, a take never lands on top of existing clips: it gets a track of its own.
+    const occupied = current.clips.some((c) => c.trackId === trackId && c.start < stop && c.start + c.duration > start);
+    if (!source || occupied) {
+      const added = addTrack(current, source ? `${source.name} (take)` : "Keyboard");
+      current = source ? updateTrack(added.state, added.track.id, { synth: source.synth, fx: source.fx }) : added.state;
+      trackId = added.track.id;
+    }
+    const notes = take.notes.map((note) => ({ ...note, t: note.t - start })).sort((a, b) => a.t - b.t);
+    const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const clip = makeMidiClip(trackId, start, stop - start, notes, `Played ${stamp}`);
+    commit({ ...current, clips: [...current.clips, clip] });
+    select(new Set([clip.id]), trackId);
+  };
+
+  /** A track with an empty four-bar MIDI clip at the playhead, opened in the piano roll. */
+  const addInstrumentTrack = () => {
+    const added = addTrack(state, `Instrument ${state.tracks.length + 1}`);
+    const bar = (60 / state.bpm) * state.beatsPerBar;
+    const start = Math.floor(engine.position() / bar + 1e-6) * bar;
+    const clip = makeMidiClip(added.track.id, start, bar * 4, []);
+    commit({ ...added.state, clips: [...added.state.clips, clip] });
+    select(new Set([clip.id]), added.track.id);
+    setShowPiano(true);
+  };
+
   const stopRecording = async () => {
+    if (midiTakeRef.current) {
+      finishMidiTake();
+      return;
+    }
     // The stop button and the end-of-range watcher can both fire; only the first counts.
     if (stoppingRef.current) return;
     stoppingRef.current = true;
@@ -930,8 +1068,15 @@ export function EditorApp({ projectId }: { projectId: string }) {
   const onRecordingEnded = useEffectEvent(() => void stopRecording());
 
   const toggleRecording = async () => {
-    if (engine.isRecording()) {
+    if (engine.isRecording() || midiTakeRef.current) {
       await stopRecording();
+      return;
+    }
+    if (recordsNotes && midiTrack) {
+      const from = engine.position();
+      await engine.play(from);
+      midiTakeRef.current = { trackId: midiTrack.id, from, furthest: from, notes: [], held: new Map(), pedal: false, pedalled: new Set() };
+      setRecording(true);
       return;
     }
     const punch = range && range.end - range.start > 0.1 ? range : null;
@@ -948,6 +1093,8 @@ export function EditorApp({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (!recording) return;
     const timer = setInterval(() => {
+      const take = midiTakeRef.current;
+      if (take && engine.playing) take.furthest = Math.max(take.furthest, engine.heardPosition());
       const punch = punchRef.current;
       // Stop at the end of a punch-in range, or if playback was stopped another way.
       if ((punch && engine.position() >= punch.end + 0.15) || !engine.playing) onRecordingEnded();
@@ -1287,7 +1434,9 @@ export function EditorApp({ projectId }: { projectId: string }) {
             label={
               recording
                 ? "Stop recording"
-                : range
+                : recordsNotes && midiTrack
+                  ? `Record the MIDI keyboard as notes on ${midiTrack.name}`
+                  : range
                   ? "Record into the highlighted range (punch-in, 2 s pre-roll)"
                   : state.loop.enabled
                     ? "Record takes: each pass of the loop becomes its own take"
@@ -1300,6 +1449,12 @@ export function EditorApp({ projectId }: { projectId: string }) {
           >
             <Mic className="h-4 w-4" />
           </IconButton>
+          <MidiControl
+            targetName={midiTrack?.name ?? null}
+            playsVoice={midiPlaysVoice}
+            recordsNotes={recordsNotes}
+            onAddInstrument={addInstrumentTrack}
+          />
         </div>
 
         <div className="flex flex-col items-stretch">
@@ -1317,16 +1472,17 @@ export function EditorApp({ projectId }: { projectId: string }) {
             <div ref={masterMeterRef} className="h-full origin-left bg-emerald-400" style={{ transform: "scaleX(0)" }} />
           </div>
         </div>
-        <div className="hidden flex-col text-[11px] leading-tight text-slate-400 xl:flex">
-          <span>
-            {state.bpm} BPM · {state.beatsPerBar}/4{state.keyLabel ? ` · ${state.keyLabel}` : ""}
+        {/* A fixed width: tempo, key and loudness readings changing must never shift the buttons beside them. */}
+        <div className="hidden w-60 shrink-0 flex-col overflow-hidden text-[11px] leading-tight text-slate-400 xl:flex">
+          <span className="truncate tabular-nums">
+            {formatBpm(state.bpm)} BPM · {state.beatsPerBar}/4{state.keyLabel ? ` · ${state.keyLabel}` : ""}
           </span>
           <span
             ref={statsRef}
             className="whitespace-pre font-mono tabular-nums text-slate-300"
             title="Master loudness per EBU R 128 for this playback pass: Integrated, Short-term (3 s), Momentary (0.4 s), and the highest true peak in dBTP."
           >
-            {"I  —  S  —  M  —  LUFS · TP  — "}
+            {"I    — S    — M    — LUFS · TP    —"}
           </span>
         </div>
 
@@ -1627,15 +1783,7 @@ export function EditorApp({ projectId }: { projectId: string }) {
           onOpenWam={(trackId) => setWamWindow(trackId)}
           generation={generation}
           onCheckGeneration={checkGeneration}
-          onAddMidiTrack={() => {
-            const added = addTrack(state, `Instrument ${state.tracks.length + 1}`);
-            const bar = (60 / state.bpm) * state.beatsPerBar;
-            const start = Math.floor(engine.position() / bar + 1e-6) * bar;
-            const clip = makeMidiClip(added.track.id, start, bar * 4, []);
-            commit({ ...added.state, clips: [...added.state.clips, clip] });
-            select(new Set([clip.id]), added.track.id);
-            setShowPiano(true);
-          }}
+          onAddMidiTrack={addInstrumentTrack}
           onOpenPianoRoll={() => setShowPiano(true)}
           onExportMidi={() => {
             if (!primaryClip?.notes) return;

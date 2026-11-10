@@ -344,6 +344,375 @@ class RecorderProcessor extends AudioWorkletProcessor {
   }
 }
 
+/* ---------- Voice effects: vocoder, pitch shift, robot, synth voice, vox distortion ---------- */
+
+const VOICE_MODE_VOCODER = 0;
+const VOICE_MODE_PITCH = 1;
+const VOICE_MODE_ROBOT = 2;
+const VOICE_MODE_SYNTH = 3;
+const VOICE_MODE_DISTORT = 4;
+
+const VOCODER_BANDS = 20;
+const MAX_CARRIERS = 8;
+const SHIFT_RING = 16384;
+const SHIFT_MASK = SHIFT_RING - 1;
+const TRACK_WINDOW = 512;
+const TRACK_HOP = 128;
+
+/** RBJ biquad coefficients as [b0, b1, b2, a1, a2], normalised by a0. */
+function biquad(type, frequency, q) {
+  const w0 = (2 * Math.PI * Math.min(frequency, sampleRate * 0.45)) / sampleRate;
+  const cos = Math.cos(w0);
+  const alpha = Math.sin(w0) / (2 * q);
+  const a0 = 1 + alpha;
+  if (type === "bandpass") return [alpha / a0, 0, -alpha / a0, (-2 * cos) / a0, (1 - alpha) / a0];
+  if (type === "highpass") return [(1 + cos) / 2 / a0, -(1 + cos) / a0, (1 + cos) / 2 / a0, (-2 * cos) / a0, (1 - alpha) / a0];
+  return [(1 - cos) / 2 / a0, (1 - cos) / a0, (1 - cos) / 2 / a0, (-2 * cos) / a0, (1 - alpha) / a0];
+}
+
+/** One biquad step in transposed direct form II; `z` holds two state values at `i` and `i + 1`. */
+function runBiquad(c, z, i, x) {
+  const y = c[0] * x + z[i];
+  z[i] = c[1] * x - c[3] * y + z[i + 1];
+  z[i + 1] = c[2] * x - c[4] * y;
+  return y;
+}
+
+/** PolyBLEP correction that removes most of the aliasing from a naive saw or square edge. */
+function polyBlep(t, dt) {
+  if (t < dt) {
+    const x = t / dt;
+    return x + x - x * x - 1;
+  }
+  if (t > 1 - dt) {
+    const x = (t - 1) / dt;
+    return x * x + x + x + 1;
+  }
+  return 0;
+}
+
+class VoiceProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: "mode", defaultValue: 0, minValue: 0, maxValue: 4, automationRate: "k-rate" },
+      { name: "semitones", defaultValue: 0, minValue: -24, maxValue: 24, automationRate: "k-rate" },
+      { name: "mix", defaultValue: 1, minValue: 0, maxValue: 1, automationRate: "k-rate" },
+      { name: "carrier", defaultValue: 0, minValue: 0, maxValue: 1, automationRate: "k-rate" },
+      { name: "note", defaultValue: 48, minValue: 24, maxValue: 96, automationRate: "k-rate" },
+      { name: "wave", defaultValue: 0, minValue: 0, maxValue: 1, automationRate: "k-rate" },
+      { name: "rate", defaultValue: 50, minValue: 5, maxValue: 400, automationRate: "k-rate" },
+      { name: "drive", defaultValue: 0.6, minValue: 0, maxValue: 1, automationRate: "k-rate" }
+    ];
+  }
+
+  constructor() {
+    super();
+    const sr = sampleRate;
+    this.mode = -1;
+    // Negative until the first block, which then starts at the set mix instead of ramping to it.
+    this.mix = -1;
+    // Frequencies of keys held on a MIDI keyboard; while any are held they are the carrier.
+    this.keys = [];
+    this.port.onmessage = (event) => {
+      if (event.data && Array.isArray(event.data.keys)) this.keys = event.data.keys.slice(0, MAX_CARRIERS);
+    };
+
+    // Pitch shifter: two crossfading read taps sweeping a delay line.
+    this.ring = [new Float32Array(SHIFT_RING), new Float32Array(SHIFT_RING)];
+    this.write = 0;
+    this.phase = 0;
+    this.window = Math.round(sr * 0.045);
+
+    // Vocoder: matching band-pass banks for the voice and the carrier, log-spaced 110 Hz to 7.5 kHz.
+    this.bands = [];
+    for (let b = 0; b < VOCODER_BANDS; b++) {
+      const frequency = 110 * Math.pow(7500 / 110, b / (VOCODER_BANDS - 1));
+      this.bands.push(biquad("bandpass", frequency, 5));
+    }
+    this.modZ = new Float64Array(VOCODER_BANDS * 4);
+    this.carZ = new Float64Array(VOCODER_BANDS * 4);
+    this.modEnv = new Float64Array(VOCODER_BANDS);
+    this.carEnv = new Float64Array(VOCODER_BANDS);
+    this.envAttack = 1 - Math.exp(-1 / (sr * 0.004));
+    this.envRelease = 1 - Math.exp(-1 / (sr * 0.03));
+    // Sibilants live above the bank; a little of the voice's own top end keeps words intelligible.
+    this.hiss = biquad("highpass", 7000, 0.707);
+    this.hissZ = new Float64Array(2);
+    this.noise = 0x1234567;
+    this.noiseLevel = 0.5;
+
+    // Carrier oscillators.
+    this.phases = new Float64Array(MAX_CARRIERS);
+    this.freqs = new Float64Array(MAX_CARRIERS).fill(110);
+    this.voices = 1;
+    this.glide = 1 - Math.exp(-1 / (sr * 0.012));
+
+    // Pitch tracker (YIN) on a decimated copy of the input.
+    this.decimate = Math.max(1, Math.round(sr / 12000));
+    this.trackRate = sr / this.decimate;
+    this.antiAlias = biquad("lowpass", Math.min(3000, this.trackRate * 0.4), 0.707);
+    this.antiAliasZ = new Float64Array(4);
+    this.decimateCount = 0;
+    this.trackRing = new Float32Array(TRACK_WINDOW);
+    this.trackFrame = new Float32Array(TRACK_WINDOW);
+    this.trackIndex = 0;
+    this.trackFill = 0;
+    this.sinceHop = 0;
+    this.minLag = Math.max(2, Math.floor(this.trackRate / 1000));
+    this.maxLag = Math.min(TRACK_WINDOW / 2, Math.ceil(this.trackRate / 70));
+    this.diff = new Float32Array(this.maxLag + 2);
+    this.pitch = 0;
+    this.voiced = false;
+
+    // Synth voice: amplitude follower and a smoothing low-pass.
+    this.level = 0;
+    this.levelAttack = 1 - Math.exp(-1 / (sr * 0.005));
+    this.levelRelease = 1 - Math.exp(-1 / (sr * 0.06));
+    this.gate = 0;
+    this.synthTone = biquad("lowpass", 3200, 0.9);
+    this.synthZ = new Float64Array(2);
+
+    // Robot and distortion.
+    this.ringPhase = 0;
+    this.fuzzLow = biquad("highpass", 450, 0.707);
+    this.fuzzHigh = biquad("lowpass", 3400, 0.9);
+    this.fuzzZ = new Float64Array(8);
+  }
+
+  reset() {
+    for (const ring of this.ring) ring.fill(0);
+    this.phase = 0;
+    this.modZ.fill(0);
+    this.carZ.fill(0);
+    this.modEnv.fill(0);
+    this.carEnv.fill(0);
+    this.hissZ.fill(0);
+    this.synthZ.fill(0);
+    this.fuzzZ.fill(0);
+    this.level = 0;
+    this.gate = 0;
+  }
+
+  /** Feed the tracker one input sample; re-estimates the pitch once per hop. */
+  track(x) {
+    const filtered = runBiquad(this.antiAlias, this.antiAliasZ, 0, x);
+    const smoothed = runBiquad(this.antiAlias, this.antiAliasZ, 2, filtered);
+    if (++this.decimateCount < this.decimate) return;
+    this.decimateCount = 0;
+    this.trackRing[this.trackIndex] = smoothed;
+    this.trackIndex = (this.trackIndex + 1) % TRACK_WINDOW;
+    if (this.trackFill < TRACK_WINDOW) this.trackFill += 1;
+    if (++this.sinceHop < TRACK_HOP || this.trackFill < TRACK_WINDOW) return;
+    this.sinceHop = 0;
+    this.estimate();
+  }
+
+  estimate() {
+    const frame = this.trackFrame;
+    let energy = 0;
+    for (let i = 0; i < TRACK_WINDOW; i++) {
+      const value = this.trackRing[(this.trackIndex + i) % TRACK_WINDOW];
+      frame[i] = value;
+      energy += value * value;
+    }
+    if (Math.sqrt(energy / TRACK_WINDOW) < 0.004) {
+      this.voiced = false;
+      return;
+    }
+    const span = TRACK_WINDOW - this.maxLag - 1;
+    const diff = this.diff;
+    // YIN: squared-difference function, then its cumulative-mean normalisation.
+    let running = 0;
+    diff[0] = 1;
+    for (let lag = 1; lag <= this.maxLag + 1; lag++) {
+      let total = 0;
+      for (let j = 0; j < span; j++) {
+        const d = frame[j] - frame[j + lag];
+        total += d * d;
+      }
+      running += total;
+      diff[lag] = running > 0 ? (total * lag) / running : 1;
+    }
+    let lag = -1;
+    for (let tau = this.minLag; tau <= this.maxLag; tau++) {
+      if (diff[tau] < 0.15) {
+        while (tau + 1 <= this.maxLag && diff[tau + 1] < diff[tau]) tau += 1;
+        lag = tau;
+        break;
+      }
+    }
+    if (lag < 0) {
+      this.voiced = false;
+      return;
+    }
+    // Parabolic interpolation between lags for sub-sample accuracy.
+    const a = diff[lag - 1];
+    const b = diff[lag];
+    const c = diff[lag + 1];
+    const denominator = a - 2 * b + c;
+    const refined = Math.abs(denominator) > 1e-9 ? lag + (0.5 * (a - c)) / denominator : lag;
+    this.pitch = this.trackRate / refined;
+    this.voiced = true;
+  }
+
+  /** Carrier frequencies for this block: held keys, else the snapped sung pitch, else a fixed note. */
+  targets(parameters) {
+    if (this.keys.length) return this.keys;
+    if (parameters.carrier[0] >= 0.5) return [440 * Math.pow(2, (parameters.note[0] - 69) / 12)];
+    if (this.pitch <= 0) return [110];
+    // Snapping to the nearest semitone is what makes it sound like a machine singing.
+    const midi = Math.round(69 + 12 * Math.log2(this.pitch / 440)) + Math.round(parameters.semitones[0]);
+    return [440 * Math.pow(2, (Math.min(108, Math.max(12, midi)) - 69) / 12)];
+  }
+
+  oscillator(square) {
+    let sum = 0;
+    for (let v = 0; v < this.voices; v++) {
+      const dt = this.freqs[v] / sampleRate;
+      let t = this.phases[v] + dt;
+      if (t >= 1) t -= 1;
+      this.phases[v] = t;
+      if (square) {
+        let half = t + 0.5;
+        if (half >= 1) half -= 1;
+        sum += (t < 0.5 ? 1 : -1) + polyBlep(t, dt) - polyBlep(half, dt);
+      } else {
+        sum += 2 * t - 1 - polyBlep(t, dt);
+      }
+    }
+    return sum / Math.sqrt(this.voices);
+  }
+
+  random() {
+    this.noise = (this.noise * 1664525 + 1013904223) >>> 0;
+    return this.noise / 0x80000000 - 1;
+  }
+
+  process(inputs, outputs, parameters) {
+    const input = inputs[0];
+    const output = outputs[0];
+    const frames = output[0].length;
+    const left = input && input[0];
+    const right = input && (input[1] || input[0]);
+    const mode = Math.round(parameters.mode[0]);
+    if (mode !== this.mode) {
+      this.reset();
+      this.mode = mode;
+    }
+    const targetMix = parameters.mix[0];
+    if (this.mix < 0) this.mix = targetMix;
+    const mixStep = (targetMix - this.mix) / frames;
+
+    if (mode === VOICE_MODE_VOCODER || mode === VOICE_MODE_SYNTH) {
+      const targets = this.targets(parameters);
+      const count = Math.max(1, Math.min(MAX_CARRIERS, targets.length));
+      // A newly added carrier starts on its note; existing ones glide to theirs.
+      for (let v = 0; v < count; v++) {
+        if (v >= this.voices) this.freqs[v] = targets[v];
+      }
+      this.voices = count;
+      this.carrierTargets = targets;
+    }
+
+    const square = parameters.wave[0] >= 0.5;
+    const ratio = Math.pow(2, parameters.semitones[0] / 12);
+    const ringStep = parameters.rate[0] / sampleRate;
+    const gain = 1 + parameters.drive[0] * 60;
+    const trim = 1 / Math.pow(gain, 0.45);
+
+    for (let i = 0; i < frames; i++) {
+      const l = left ? left[i] : 0;
+      const r = right ? right[i] : 0;
+      let wetL = l;
+      let wetR = r;
+
+      if (mode === VOICE_MODE_VOCODER || mode === VOICE_MODE_SYNTH) {
+        const mono = 0.5 * (l + r);
+        this.track(mono);
+        const targets = this.carrierTargets;
+        for (let v = 0; v < this.voices; v++) this.freqs[v] += (targets[v] - this.freqs[v]) * this.glide;
+        const held = this.keys.length > 0;
+        if (mode === VOICE_MODE_VOCODER) {
+          // Unvoiced sounds (s, t, f) need a noisy carrier or they vanish.
+          this.noiseLevel += ((this.voiced || held ? 0.06 : 0.6) - this.noiseLevel) * 0.002;
+          const carrier = this.oscillator(square) * 0.5 + this.random() * this.noiseLevel;
+          let sum = 0;
+          for (let b = 0; b < VOCODER_BANDS; b++) {
+            const c = this.bands[b];
+            const m = runBiquad(c, this.modZ, b * 4, runBiquad(c, this.modZ, b * 4 + 2, mono));
+            const k = runBiquad(c, this.carZ, b * 4, runBiquad(c, this.carZ, b * 4 + 2, carrier));
+            const am = Math.abs(m);
+            const ak = Math.abs(k);
+            this.modEnv[b] += (am - this.modEnv[b]) * (am > this.modEnv[b] ? this.envAttack : this.envRelease);
+            this.carEnv[b] += (ak - this.carEnv[b]) * (ak > this.carEnv[b] ? this.envAttack : this.envRelease);
+            // The carrier band is flattened, then given the voice's level in that band.
+            sum += k * Math.min(40, this.modEnv[b] / (this.carEnv[b] + 1e-4));
+          }
+          const air = runBiquad(this.hiss, this.hissZ, 0, mono) * 0.35;
+          wetL = wetR = sum * 2 + air;
+        } else {
+          const magnitude = Math.abs(mono);
+          this.level += (magnitude - this.level) * (magnitude > this.level ? this.levelAttack : this.levelRelease);
+          // Breaths and consonants have no pitch to follow, so the oscillator is gated off for them.
+          this.gate += ((this.voiced || held ? 1 : 0) - this.gate) * 0.0015;
+          const tone = runBiquad(this.synthTone, this.synthZ, 0, this.oscillator(square));
+          wetL = wetR = tone * this.level * this.gate * 1.3;
+        }
+      } else if (mode === VOICE_MODE_PITCH) {
+        const write = this.write;
+        this.ring[0][write & SHIFT_MASK] = l;
+        this.ring[1][write & SHIFT_MASK] = r;
+        this.phase += (1 - ratio) / this.window;
+        if (this.phase >= 1) this.phase -= 1;
+        else if (this.phase < 0) this.phase += 1;
+        let other = this.phase + 0.5;
+        if (other >= 1) other -= 1;
+        // Each tap fades out as it wraps; the pair always sums to unity gain.
+        const fadeA = Math.sin(Math.PI * this.phase) ** 2;
+        const fadeB = 1 - fadeA;
+        const delayA = this.phase * this.window;
+        const delayB = other * this.window;
+        wetL = this.tap(0, write, delayA) * fadeA + this.tap(0, write, delayB) * fadeB;
+        wetR = this.tap(1, write, delayA) * fadeA + this.tap(1, write, delayB) * fadeB;
+        this.write = (write + 1) & SHIFT_MASK;
+      } else if (mode === VOICE_MODE_ROBOT) {
+        this.ringPhase += ringStep;
+        if (this.ringPhase >= 1) this.ringPhase -= 1;
+        const carrier = Math.sin(2 * Math.PI * this.ringPhase) * 1.4;
+        wetL = l * carrier;
+        wetR = r * carrier;
+      } else if (mode === VOICE_MODE_DISTORT) {
+        wetL = this.fuzz(l, 0, gain) * trim;
+        wetR = this.fuzz(r, 4, gain) * trim;
+      }
+
+      this.mix += mixStep;
+      const dry = 1 - this.mix;
+      output[0][i] = l * dry + wetL * this.mix;
+      if (output[1]) output[1][i] = r * dry + wetR * this.mix;
+    }
+    this.mix = targetMix;
+    return true;
+  }
+
+  /** Linearly interpolated read `delay` samples behind the write head. */
+  tap(channel, write, delay) {
+    const position = write - delay;
+    const base = Math.floor(position);
+    const fraction = position - base;
+    const ring = this.ring[channel];
+    return ring[base & SHIFT_MASK] * (1 - fraction) + ring[(base + 1) & SHIFT_MASK] * fraction;
+  }
+
+  /** Megaphone fuzz: thin the voice, clip it hard, then roll off the fizz. */
+  fuzz(x, slot, gain) {
+    const thin = runBiquad(this.fuzzLow, this.fuzzZ, slot, x);
+    const clipped = Math.tanh(gain * thin);
+    return runBiquad(this.fuzzHigh, this.fuzzZ, slot + 2, clipped);
+  }
+}
+
+registerProcessor("ms-voice", VoiceProcessor);
 registerProcessor("ms-recorder", RecorderProcessor);
 registerProcessor("ms-gate", GateProcessor);
 registerProcessor("ms-true-peak-limiter", TruePeakLimiter);

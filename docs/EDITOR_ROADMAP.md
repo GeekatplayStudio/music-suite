@@ -204,8 +204,16 @@ Third pass (2026-11-09) — in-browser plugins:
 - **Web Audio Modules 2.** Each track has one insert slot, after its own effects, for a WAM effect. Plugins come from the community catalogue (53 effects at the time of writing) or any `https://` address, show their own control panel, run live, are re-created on the export context so they are included in exports, and have their settings saved with the session.
 - This is opt-in per browser and is the suite's one deliberate exception to "local only"; see the Studio Editor section of `GUARDRAILS.md` for exactly what is fetched and the risk a plugin carries.
 
+Fourth pass (2026-11-09) — MIDI keyboard and voice effects:
+
+- **MIDI keyboard connector.** One Web MIDI connection for the whole editor, with a header button that connects, lists keyboards as they are plugged in or out, and lets you choose one. Keys play the selected track live (velocity, sustain pedal, ±2-semitone pitch bend; system messages such as Roland's active sensing are ignored). On a track with a MIDI clip, the record button records the performance as a new MIDI clip, compensated for output latency and rounded to whole bars when snapping is on.
+- **Voice effects** (an AudioWorklet in each track's effect chain, after the gate): a 20-band vocoder whose carrier follows the sung pitch (YIN, snapped to semitones), holds one note, or is played from the MIDI keyboard; a two-tap pitch shifter (chipmunk / monster / harmony); a ring-modulator robot; a synth voice that follows pitch and loudness; and a megaphone distortion. Thirteen presets. Included in exports.
+- **Header layout**: the tempo and loudness readout has a fixed width, so a tempo change no longer moves the buttons beside it.
+
 Not done, and why:
 
+- **Keyboard-played vocoder notes in exports.** Held keys steer the vocoder live only; exports use the saved carrier setting. Recording the keys onto a MIDI track that feeds the vocoder would fix this.
+- **Live microphone through the voice effects.** Recording does not yet monitor the input through the track's effects.
 - **Live (real-time) warp audio.** Markers can now be dragged on the waveform, but you hear the result only after applying. `signalsmith-stretch` (MIT) can do it; wiring a second playback path through it is the remaining work.
 - **Sample-based instruments**, lasso and brush selections in the spectral view, mid/side EQ, bus automation, and automation of the remaining effect parameters.
 
@@ -492,3 +500,32 @@ Tested on 2026-11-09 with "Simple Distortion" from the community catalogue.
 - Opening a session that contains a plugin while internet plugins are switched off (it should play without the plugin and show a notice).
 - A custom plugin address, removing a plugin, and one plugin on several tracks at once.
 - Other browsers. Firefox and Safari handle cross-origin module loading and AudioWorklets differently.
+
+### Phase 4 (fourth pass: MIDI keyboard and voice effects)
+
+Tested on 2026-11-09.
+
+**Automated**
+
+- Frontend: TypeScript, ESLint and the production build are clean.
+
+**Measured by running the voice processor on synthetic signals (Node, 48 kHz)**
+
+| Check | Result |
+|---|---|
+| Pitch shift +12 on a 220 Hz tone | Output peak 442 Hz; level unchanged (RMS 0.212 → 0.211) |
+| Pitch shift −7 on a 440 Hz tone | Output peak 292 Hz (target 294) |
+| Pitch tracker on harmonic tones at 196 Hz and 330 Hz | 196.0 Hz and 330.3 Hz |
+| Vocoder level (follow, fixed note, three held keys) | −2.1 dB, 0 dB and +3 dB against the input |
+| Silence through the vocoder and synth voice | Exact silence, no NaNs |
+| Mix at 0% | Bit-identical to the dry input |
+| Cost | Vocoder 53× real time, pitch shift 134× real time, on this machine |
+
+**Found and fixed**: the vocoder ran about 5 dB quiet, and the first audio block ignored a 0% mix setting.
+
+**Not yet verified**
+
+- **A real MIDI keyboard.** No hardware was connected; connection, hot-plugging, live playing, sustain, pitch bend and MIDI recording have not been exercised in a browser.
+- **Listening.** None of the voice effects has been judged by ear or run in a browser AudioWorklet; the measurements above came from the same code run in Node.
+- MIDI recording across a loop wrap, and the overlap rule that puts a take on a new track.
+- Firefox's Web MIDI permission flow.

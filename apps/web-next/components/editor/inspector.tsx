@@ -22,8 +22,12 @@ import {
   type TimeRange,
   type Track,
   type TrackFx,
+  type VoiceFx,
+  type VoiceMode,
   EQ_DEFAULTS,
   TRACK_COLORS,
+  VOICE_MODES,
+  VOICE_PRESETS,
   formatTime
 } from "@/lib/editor/types";
 
@@ -1423,6 +1427,8 @@ function EffectRack({ fx, onChange, bare }: { fx: TrackFx; onChange: (fx: TrackF
           <Slider label="Release" value={fx.gate.release} min={0.01} max={1} step={0.01} defaultValue={0.15} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(release) => set("gate", { release }, "fx-gr")} />
         </div>
       ) : null}
+      <Toggle label="Voice (vocoder, chipmunk, robot…)" checked={fx.voice.on} onChange={(on) => set("voice", { on }, "")} />
+      {fx.voice.on ? <VoiceUnit voice={fx.voice} onChange={(patch, key) => set("voice", patch, key)} /> : null}
       <Toggle label="Distortion" checked={fx.dist.on} onChange={(on) => set("dist", { on }, "")} />
       {fx.dist.on ? (
         <div className="space-y-1 border-l-2 border-cyan-400/40 pl-2">
@@ -1459,9 +1465,101 @@ function EffectRack({ fx, onChange, bare }: { fx: TrackFx; onChange: (fx: TrackF
   );
   if (bare) return <div className="space-y-2">{units}</div>;
   return (
-    <PanelSection title="Effects" hint="Applied live, in this order: EQ, gate, distortion, compressor, then delay and reverb.">
+    <PanelSection title="Effects" hint="Applied live and in exports, in this order: EQ, gate, voice, distortion, compressor, then delay and reverb.">
       {units}
     </PanelSection>
+  );
+}
+
+const VOICE_MODE_LABELS: Record<VoiceMode, string> = {
+  vocoder: "Vocoder (robot singer)",
+  pitch: "Pitch shift (chipmunk / monster)",
+  robot: "Robot (ring modulator)",
+  synth: "Synth voice (follows your pitch)",
+  distort: "Vox distortion (megaphone)"
+};
+
+function noteName(note: number): string {
+  const n = Math.round(note);
+  return `${NOTES[((n % 12) + 12) % 12]}${Math.floor(n / 12) - 1}`;
+}
+
+function VoiceUnit({ voice, onChange }: { voice: VoiceFx; onChange: (patch: Partial<VoiceFx>, key: string) => void }) {
+  const carrierMode = voice.mode === "vocoder" || voice.mode === "synth";
+  const semis = (v: number) => `${v > 0 ? "+" : ""}${Math.round(v)} st`;
+  return (
+    <div className="space-y-1.5 border-l-2 border-cyan-400/40 pl-2">
+      <select
+        className={fieldClass}
+        aria-label="Voice preset"
+        value=""
+        onChange={(event) => {
+          const preset = VOICE_PRESETS.find((p) => p.id === event.target.value);
+          if (preset) onChange(preset.voice, "");
+        }}
+      >
+        <option value="">Load a preset…</option>
+        {VOICE_PRESETS.map((preset) => (
+          <option key={preset.id} value={preset.id}>
+            {preset.label}
+          </option>
+        ))}
+      </select>
+      <label className="flex items-center gap-2 text-[11px] text-slate-400">
+        <span className="w-16 shrink-0">Type</span>
+        <select className={fieldClass} aria-label="Voice effect type" value={voice.mode} onChange={(event) => onChange({ mode: event.target.value as VoiceMode }, "")}>
+          {VOICE_MODES.map((mode) => (
+            <option key={mode} value={mode}>
+              {VOICE_MODE_LABELS[mode]}
+            </option>
+          ))}
+        </select>
+      </label>
+      {carrierMode ? (
+        <>
+          <label className="flex items-center gap-2 text-[11px] text-slate-400">
+            <span className="w-16 shrink-0">Notes</span>
+            <select
+              className={fieldClass}
+              aria-label="Where the robot voice's notes come from"
+              value={voice.carrier}
+              onChange={(event) => onChange({ carrier: event.target.value as VoiceFx["carrier"] }, "")}
+            >
+              <option value="follow">Follow the singing, snapped to semitones</option>
+              <option value="note">Hold one note (monotone)</option>
+            </select>
+          </label>
+          {voice.carrier === "follow" ? (
+            <Slider label="Transpose" value={voice.semitones} min={-24} max={24} step={1} defaultValue={0} format={semis} onChange={(semitones) => onChange({ semitones }, "vx-st")} />
+          ) : (
+            <Slider label="Note" value={voice.note} min={24} max={84} step={1} defaultValue={48} format={noteName} onChange={(note) => onChange({ note }, "vx-n")} />
+          )}
+          <label className="flex items-center gap-2 text-[11px] text-slate-400">
+            <span className="w-16 shrink-0">Wave</span>
+            <select className={fieldClass} aria-label="Robot voice wave" value={voice.wave} onChange={(event) => onChange({ wave: event.target.value as VoiceFx["wave"] }, "")}>
+              <option value="saw">Saw (bright, classic)</option>
+              <option value="square">Square (hollow, 8-bit)</option>
+            </select>
+          </label>
+          <p className="text-[11px] leading-snug text-slate-400">
+            Hold keys on a MIDI keyboard while this track plays to choose the notes yourself, chords included. Exports use the setting above.
+          </p>
+        </>
+      ) : null}
+      {voice.mode === "pitch" ? (
+        <Slider label="Shift" value={voice.semitones} min={-24} max={24} step={1} defaultValue={12} format={semis} onChange={(semitones) => onChange({ semitones }, "vx-st")} />
+      ) : null}
+      {voice.mode === "robot" ? (
+        <Slider label="Rate" value={voice.rate} min={5} max={400} step={1} defaultValue={50} format={(v) => `${Math.round(v)} Hz`} onChange={(rate) => onChange({ rate }, "vx-r")} />
+      ) : null}
+      {voice.mode === "distort" ? (
+        <Slider label="Drive" value={voice.drive} min={0} max={1} step={0.01} defaultValue={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(drive) => onChange({ drive }, "vx-d")} />
+      ) : null}
+      <Slider label="Mix" value={voice.mix} min={0} max={1} step={0.01} defaultValue={1} format={(v) => `${Math.round(v * 100)}%`} onChange={(mix) => onChange({ mix }, "vx-m")} />
+      {voice.mode === "vocoder" || voice.mode === "synth" ? (
+        <p className="text-[11px] leading-snug text-slate-400">Works best on a solo voice; on a full mix it follows whichever note is loudest.</p>
+      ) : null}
+    </div>
   );
 }
 

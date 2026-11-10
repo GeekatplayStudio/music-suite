@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { ActionButton, Slider } from "@/components/editor/controls";
+import { midiHub } from "@/lib/editor/midi";
 import type { Clip, Note } from "@/lib/editor/types";
 
 const HEIGHT = 264;
@@ -210,10 +211,10 @@ export function PianoRoll(props: PianoRollProps) {
   const snapTime = (time: number, bypass: boolean) => (snap && !bypass ? Math.round(time / step) * step : time);
 
   /** Step input: put a note at the playhead and move the playhead on by its length. */
-  const stepInput = useEffectEvent((pitch: number, velocity: number) => {
+  const stepInput = useEffectEvent((pitch: number, velocity: number, preview: boolean) => {
     const length = lengthRef.current || step * 2;
     const local = snapTime(getPosition() - clip.start + clip.offset, false);
-    onPreview(pitch);
+    if (preview) onPreview(pitch);
     if (local < clip.offset - 1e-6 || local >= clip.offset + clip.duration - 0.01) return;
     onNotes([...notes, { t: local, d: length, p: pitch, v: velocity }], "commit");
     onSeek(clip.start + local - clip.offset + length);
@@ -229,27 +230,18 @@ export function PianoRoll(props: PianoRollProps) {
       // These letters are editor shortcuts too; while typing notes they belong to the keyboard.
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (!event.repeat) stepInput(60 + offset, 0.8);
+      if (!event.repeat) stepInput(60 + offset, 0.8, true);
     };
     window.addEventListener("keydown", onKey, true);
-    let access: MIDIAccess | null = null;
-    const onMidi = (event: MIDIMessageEvent) => {
-      const data = event.data;
-      if (data && (data[0] & 0xf0) === 0x90 && data[2] > 0) stepInput(data[1], data[2] / 127);
-    };
-    // A connected MIDI keyboard enters notes the same way; the browser asks for permission once.
-    if (navigator.requestMIDIAccess) {
-      navigator
-        .requestMIDIAccess()
-        .then((granted) => {
-          access = granted;
-          for (const input of granted.inputs.values()) input.addEventListener("midimessage", onMidi);
-        })
-        .catch(() => undefined);
-    }
+    // A connected MIDI keyboard enters notes the same way. It is already heard through the
+    // editor's live play-through, so it is not previewed a second time here.
+    void midiHub.connect();
+    const unsubscribe = midiHub.subscribe((event) => {
+      if (event.kind === "on") stepInput(event.pitch, event.velocity, false);
+    });
     return () => {
       window.removeEventListener("keydown", onKey, true);
-      if (access) for (const input of access.inputs.values()) input.removeEventListener("midimessage", onMidi);
+      unsubscribe();
     };
   }, [typing]);
 
