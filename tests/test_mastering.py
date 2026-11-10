@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 
 import audioqi.mastering as mastering_module
@@ -7,6 +9,7 @@ from audioqi.core.metrics import dbfs, loudness_integrated_lufs, oversampled_tru
 from audioqi.mastering import (
     PRESETS,
     _apply_master_chain,
+    _apply_stereo_stage,
     _build_source_adaptive_config,
     _finalize_master,
     _master_metrics,
@@ -177,6 +180,120 @@ def test_safe_limiter_is_transparent_when_signal_is_already_safe() -> None:
 
     assert delta < 0.02
     assert float(np.max(np.abs(limited))) <= 0.999
+
+
+def test_bass_mono_collapses_out_of_phase_low_end_without_touching_the_mid() -> None:
+    sr = 48_000
+    t = np.linspace(0, 1.0, sr, endpoint=False, dtype=np.float64)
+
+    # 50 Hz fully out of phase between channels (pure side energy, silent in
+    # mono) over a 1 kHz mid-channel tone that must survive untouched.
+    sub = 0.4 * np.sin(2 * np.pi * 50.0 * t)
+    lead = 0.2 * np.sin(2 * np.pi * 1000.0 * t)
+    source = np.stack([lead + sub, lead - sub], axis=1)
+
+    cfg = replace(PRESETS["streaming"], bass_mono_hz=120.0, stereo_width=1.0)
+    processed = _apply_stereo_stage(source, sr=sr, cfg=cfg)
+
+    def side_energy(audio: np.ndarray) -> float:
+        side = 0.5 * (audio[:, 0] - audio[:, 1])
+        return float(np.sqrt(np.mean(side**2)))
+
+    def mono_energy(audio: np.ndarray) -> float:
+        mono = 0.5 * (audio[:, 0] + audio[:, 1])
+        return float(np.sqrt(np.mean(mono**2)))
+
+    # The out-of-phase sub is gone from the sides...
+    assert side_energy(processed) < 0.1 * side_energy(source)
+    # ...while the mono sum, which never carried it, is unchanged.
+    assert abs(mono_energy(processed) - mono_energy(source)) < 1e-6
+
+
+def test_stereo_stage_is_a_no_op_when_disabled_and_at_unity_width() -> None:
+    sr = 48_000
+    t = np.linspace(0, 0.5, sr // 2, endpoint=False, dtype=np.float64)
+    source = np.stack([
+        0.3 * np.sin(2 * np.pi * 80.0 * t),
+        0.3 * np.sin(2 * np.pi * 80.0 * t + 0.9),
+    ], axis=1)
+
+    cfg = replace(PRESETS["streaming"], bass_mono_hz=0.0, stereo_width=1.0)
+
+    assert np.array_equal(_apply_stereo_stage(source, sr=sr, cfg=cfg), source)
+
+
+def test_stereo_width_scales_side_energy_only() -> None:
+    sr = 48_000
+    t = np.linspace(0, 0.5, sr // 2, endpoint=False, dtype=np.float64)
+    source = np.stack([
+        0.25 * np.sin(2 * np.pi * 900.0 * t) + 0.1 * np.sin(2 * np.pi * 1500.0 * t),
+        0.25 * np.sin(2 * np.pi * 900.0 * t) - 0.1 * np.sin(2 * np.pi * 1500.0 * t),
+    ], axis=1)
+
+    cfg = replace(PRESETS["streaming"], bass_mono_hz=0.0, stereo_width=0.5)
+    processed = _apply_stereo_stage(source, sr=sr, cfg=cfg)
+
+    source_side = 0.5 * (source[:, 0] - source[:, 1])
+    processed_side = 0.5 * (processed[:, 0] - processed[:, 1])
+    source_mid = 0.5 * (source[:, 0] + source[:, 1])
+    processed_mid = 0.5 * (processed[:, 0] + processed[:, 1])
+
+    assert np.allclose(processed_side, source_side * 0.5)
+    assert np.allclose(processed_mid, source_mid)
+
+
+def test_mono_markers_tighten_the_stereo_stage() -> None:
+    """The adaptive preflight used to answer mono-compatibility markers with a
+    limiter-drive trim only, which does nothing for phase. It must now reach the
+    stage that actually fixes fold-down."""
+    base_cfg = PRESETS["streaming"]
+    adapted_cfg, adaptation = _build_source_adaptive_config(
+        cfg=base_cfg,
+        source_profile=_profile(mono_incompatibility=4),
+        source_metrics={"crest_factor_db": 9.0, "spectral_balance": {}},
+    )
+
+    changed_fields = {
+        str(item.get("field", ""))
+        for item in adaptation.get("adjustments", [])
+        if isinstance(item, dict)
+    }
+    assert {"bass_mono_hz", "stereo_width"} <= changed_fields
+    assert adapted_cfg.bass_mono_hz > base_cfg.bass_mono_hz
+    assert adapted_cfg.stereo_width < base_cfg.stereo_width
+    # Adaptation may only tighten the stage, never widen it.
+    assert adapted_cfg.stereo_width >= 0.82
+    assert adapted_cfg.bass_mono_hz <= 160.0
+
+
+def test_explicit_stereo_settings_are_not_overridden_by_the_preflight() -> None:
+    """A user who turns bass mono off must get it off, markers or not."""
+    base_cfg = replace(PRESETS["streaming"], bass_mono_hz=0.0, stereo_width=1.0)
+    adapted_cfg, adaptation = _build_source_adaptive_config(
+        cfg=base_cfg,
+        source_profile=_profile(mono_incompatibility=4),
+        source_metrics={"crest_factor_db": 9.0, "spectral_balance": {}},
+        locked_fields=frozenset({"bass_mono_hz", "stereo_width"}),
+    )
+
+    assert adapted_cfg.bass_mono_hz == 0.0
+    assert adapted_cfg.stereo_width == 1.0
+    # The preflight still reports what it wanted to change but could not.
+    assert set(adaptation.get("locked_skipped", [])) == {"bass_mono_hz", "stereo_width"}
+    # Unlocked parameters still adapt normally.
+    assert adapted_cfg.limiter_drive < base_cfg.limiter_drive
+
+
+def test_clean_stereo_source_keeps_the_preset_stereo_stage() -> None:
+    base_cfg = PRESETS["streaming"]
+    adapted_cfg, _ = _build_source_adaptive_config(
+        cfg=base_cfg,
+        source_profile=_profile(),
+        source_metrics={"crest_factor_db": 9.5, "spectral_balance": {}},
+    )
+
+    assert adapted_cfg.bass_mono_hz == base_cfg.bass_mono_hz
+    assert adapted_cfg.stereo_width == base_cfg.stereo_width
 
 
 def test_auto_backend_prefers_internal_over_ffmpeg(monkeypatch) -> None:

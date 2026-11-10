@@ -327,6 +327,92 @@ def test_mastering_modes_v1_v2_v3(tmp_path: Path) -> None:
             assert len(dl_resp.content) > 0
 
 
+def test_mastering_input_gain_is_applied_and_range_checked(tmp_path: Path) -> None:
+    fixture = write_synthetic_fixture(tmp_path / "synthetic.wav")
+    with TestClient(api_main.app) as client:
+        _hard_reset_test_state(client)
+        with fixture.open("rb") as f:
+            upload_resp = client.post(
+                "/runs/upload?hide_from_history=true",
+                files={"file": ("synthetic.wav", f, "audio/wav")},
+            )
+        assert upload_resp.status_code == 200
+        run_id = upload_resp.json()["run"]["id"]
+
+        out_of_range = client.post(
+            f"/runs/{run_id}/master?mode=v1&preset=streaming&input_gain_db=40"
+        )
+        assert out_of_range.status_code == 422
+
+        master_resp = client.post(
+            f"/runs/{run_id}/master?mode=v1&preset=streaming&input_gain_db=-6"
+        )
+        assert master_resp.status_code == 200
+
+        deadline = time.time() + 120
+        master_status = ""
+        while time.time() < deadline:
+            payload = client.get(f"/runs/{run_id}/mastering")
+            assert payload.status_code == 200
+            master_status = payload.json().get("status", "")
+            if master_status in {"completed", "failed"}:
+                break
+            time.sleep(0.2)
+        assert master_status == "completed"
+
+        manifest = client.get(f"/runs/{run_id}/mastering").json().get("manifest", {})
+        assert manifest.get("request_settings", {}).get("input_gain_db") == -6.0
+        assert manifest.get("applied_settings", {}).get("input_gain_db") == -6.0
+        input_gain = manifest.get("input_gain")
+        assert isinstance(input_gain, dict)
+        assert input_gain.get("applied_db") == -6.0
+        peak_before = float(input_gain["source_peak_dbfs_before"])
+        peak_after = float(input_gain["source_peak_dbfs_after"])
+        assert abs((peak_before - 6.0) - peak_after) < 0.01
+
+
+def test_mastering_stereo_stage_settings_reach_the_manifest(tmp_path: Path) -> None:
+    fixture = write_synthetic_fixture(tmp_path / "synthetic.wav")
+    with TestClient(api_main.app) as client:
+        _hard_reset_test_state(client)
+        with fixture.open("rb") as f:
+            upload_resp = client.post(
+                "/runs/upload?hide_from_history=true",
+                files={"file": ("synthetic.wav", f, "audio/wav")},
+            )
+        assert upload_resp.status_code == 200
+        run_id = upload_resp.json()["run"]["id"]
+
+        for bad_query in ("bass_mono_hz=400", "stereo_width=3"):
+            rejected = client.post(f"/runs/{run_id}/master?mode=v1&preset=streaming&{bad_query}")
+            assert rejected.status_code == 422
+
+        master_resp = client.post(
+            f"/runs/{run_id}/master?mode=v1&preset=streaming&bass_mono_hz=150&stereo_width=0.9"
+        )
+        assert master_resp.status_code == 200
+
+        deadline = time.time() + 120
+        master_status = ""
+        while time.time() < deadline:
+            payload = client.get(f"/runs/{run_id}/mastering")
+            assert payload.status_code == 200
+            master_status = payload.json().get("status", "")
+            if master_status in {"completed", "failed"}:
+                break
+            time.sleep(0.2)
+        assert master_status == "completed"
+
+        manifest = client.get(f"/runs/{run_id}/mastering").json().get("manifest", {})
+        assert manifest.get("request_settings", {}).get("bass_mono_hz") == 150.0
+        assert manifest.get("request_settings", {}).get("stereo_width") == 0.9
+        applied = manifest.get("applied_settings", {})
+        # The preflight may only tighten these, so the applied values stay at or
+        # inside the requested ones.
+        assert float(applied.get("bass_mono_hz")) >= 150.0
+        assert float(applied.get("stereo_width")) <= 0.9
+
+
 def test_mastering_backend_and_reference_validation(tmp_path: Path) -> None:
     fixture = write_synthetic_fixture(tmp_path / "synthetic.wav")
     with TestClient(api_main.app) as client:

@@ -136,14 +136,21 @@ export async function runMastering(
     | null = null,
   backend: "auto" | "internal" | "ffmpeg" | "pedalboard" | "matchering" = "internal",
   referenceRunId: string | null = null,
-  maxRefinePasses = 3
+  maxRefinePasses = 3,
+  inputGainDb = 0,
+  bassMonoHz: number | null = null,
+  stereoWidth: number | null = null
 ): Promise<MasteringState> {
+  const safeInputGainDb = Number.isFinite(inputGainDb)
+    ? Math.max(-12, Math.min(12, inputGainDb))
+    : 0;
   const params = new URLSearchParams({
     mode,
     preset,
     optimizer_variants: `${Math.max(2, Math.min(8, Math.round(optimizerVariants)))}`,
     backend,
-    max_refine_passes: `${Math.max(1, Math.min(5, Math.round(maxRefinePasses)))}`
+    max_refine_passes: `${Math.max(1, Math.min(5, Math.round(maxRefinePasses)))}`,
+    input_gain_db: `${safeInputGainDb}`
   });
   if (targetLufs !== null && Number.isFinite(targetLufs)) {
     params.set("target_lufs", `${targetLufs}`);
@@ -156,6 +163,13 @@ export async function runMastering(
   }
   if (referenceRunId) {
     params.set("reference_run_id", referenceRunId);
+  }
+  // Omitting these keeps the preset default; 0 Hz explicitly disables bass mono.
+  if (bassMonoHz !== null && Number.isFinite(bassMonoHz)) {
+    params.set("bass_mono_hz", `${Math.max(0, Math.min(250, bassMonoHz))}`);
+  }
+  if (stereoWidth !== null && Number.isFinite(stereoWidth)) {
+    params.set("stereo_width", `${Math.max(0.5, Math.min(1.5, stereoWidth))}`);
   }
   return request<MasteringState>(`/runs/${runId}/master?${params.toString()}`, {
     method: "POST"
