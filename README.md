@@ -167,9 +167,13 @@ Every engine control is available under *Advanced* (planner sampling, diffusion 
 
 **AI edits in the Studio Editor:** select a clip and use *AI edit* to regenerate a highlighted section, extend it, restyle it, extract an instrument, add a part, or build a full song around it. The last three need the editing model (2.4 GB), offered by the installer and in *Settings*.
 
+**Albums:** the *Album* tab turns a concept and a list of song ideas (up to 20) into an album, written and generated one song after another in the background. It waits for memory instead of failing, carries on after a restart, and opens in the Studio Editor with every song on its own track.
+
+**Higher quality:** *Settings* can download the larger XL music model (4.9 GB). Measured here: a 2-minute song in 80 s instead of 63 s, using 5.0 GB instead of 4.4 GB.
+
 **More engines (optional, off by default):** ACE-Step's own Python server (for NVIDIA machines that already run it) and YuE2 (NVIDIA, 24 GB, non-commercial licence). Switch them on under *Settings ▸ Generators*.
 
-**Online services (optional):** add your own ElevenLabs Music or fal.ai (MiniMax Music, Lyria) key under *Settings ▸ Online services* to use them as generators. Only the style text, lyrics and settings are sent; a clip's audio is uploaded only when you tick *Allow uploading* to edit it with ElevenLabs. A cost estimate is shown before every online request. ElevenLabs songs can be planned section by section (*Song plan*, drafted for free), and in the Studio Editor any clip can have a section regenerated or be extended with ElevenLabs. Keys stay in your computer's keychain.
+**Online services (optional):** add your own ElevenLabs Music, fal.ai (MiniMax Music, Lyria) or Google Gemini (Lyria 3.5) key under *Settings ▸ Online services* to use them as generators. Only the style text, lyrics and settings are sent; a clip's audio is uploaded only when you tick *Allow uploading* to edit it with ElevenLabs. A cost estimate is shown before every online request. ElevenLabs songs can be planned section by section (*Song plan*, drafted for free), and in the Studio Editor any clip can have a section regenerated or be extended with ElevenLabs. Keys stay in your computer's keychain.
 
 Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (about 8 GB); without Ollama the music engine's own planner writes a simpler draft. Measured on an Apple M5 with 24 GB: the engine peaks at 2.3 GB of memory, or 4.5 GB with its planner. Windows and Linux builds of the engine are untested. Plan and benchmarks: [docs/GENERATION_ROADMAP.md](docs/GENERATION_ROADMAP.md).
 

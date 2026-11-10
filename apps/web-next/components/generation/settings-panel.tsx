@@ -248,6 +248,17 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
               {setup.error ? "Try the install again" : "Install local engine"}
             </button>
           ) : null}
+          {engine.installed && !engine.quality_ready && !setup.running ? (
+            <button
+              type="button"
+              className={quiet}
+              disabled={working}
+              onClick={() => void run(() => generationApi.startSetup(false, false, true))}
+              title="A larger music model for new songs: about 25% slower and 0.6 GB more memory"
+            >
+              <Download className="h-4 w-4" aria-hidden /> Download high-quality model ({setup.quality_download_gb ?? 4.9} GB)
+            </button>
+          ) : null}
           {engine.installed && !engine.editing_ready && !setup.running ? (
             <button
               type="button"
@@ -265,6 +276,24 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
             </button>
           ) : null}
         </div>
+        {engine.quality_ready ? (
+          <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-200">
+            <input
+              type="checkbox"
+              checked={settings.use_quality_model}
+              disabled={working}
+              onChange={(event) => save({ use_quality_model: event.target.checked })}
+              className="mt-0.5 h-5 w-5 cursor-pointer accent-cyan-400"
+            />
+            <span>
+              Use the high-quality (XL) model for new songs
+              <span className="mt-0.5 block text-xs text-slate-400">
+                Measured here: a 2-minute song in 80 s instead of 63 s, using 5.0 GB instead of 4.4 GB. AI edits keep the
+                standard model.
+              </span>
+            </span>
+          </label>
+        ) : null}
         <p className="text-xs text-slate-400">
           Installing fetches the engine&apos;s source code from GitHub (one fixed version) and its models from Hugging Face, and
           checks each model file against a known fingerprint. After that it works offline.

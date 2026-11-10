@@ -15,6 +15,7 @@ from fastapi import APIRouter, Body, Header, HTTPException
 from audioqi.editor import projects
 from audioqi.editor.projects import EditorError
 from audioqi.generation import (
+    albums,
     engine,
     records,
     resources,
@@ -52,9 +53,11 @@ def providers() -> dict[str, Any]:
             **engine.install_status(),
             "running": engine.SUPERVISOR.running(),
             "editing_ready": setup.editing_ready(),
+            "quality_ready": setup.quality_ready(),
         },
         "setup": {
             **setup.state(),
+            "quality_download_gb": round(setup.QUALITY_DOWNLOAD_BYTES / 1024**3, 1),
             "download_gb": round(setup.DOWNLOAD_BYTES / 1024**3, 1),
             "editing_download_gb": round(setup.EDIT_DOWNLOAD_BYTES / 1024**3, 1),
         },
@@ -82,13 +85,10 @@ def setup_state() -> dict[str, Any]:
 @router.post("/setup")
 def start_setup(payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
     """Build the local engine and fetch its models in the background."""
-    if set(payload) - {"writer", "editing"} or any(
-        not isinstance(payload.get(key, False), bool) for key in ("writer", "editing")
-    ):
+    keys = ("writer", "editing", "quality")
+    if set(payload) - set(keys) or any(not isinstance(payload.get(k, False), bool) for k in keys):
         raise HTTPException(status_code=422, detail="Unknown field(s) in the setup request.")
-    return setup.start_background(
-        writer=bool(payload.get("writer", False)), editing=bool(payload.get("editing", False))
-    )
+    return setup.start_background(**{k: bool(payload.get(k, False)) for k in keys})
 
 
 @router.post("/engine/stop")
@@ -160,6 +160,42 @@ def draft_plan(provider_id: str, payload: dict[str, Any] = Body(...)) -> dict[st
     if set(payload) - {"fields"}:
         raise HTTPException(status_code=422, detail="Only 'fields' may be sent.")
     return {"plan": _guard(lambda: service.draft_plan(provider_id, payload.get("fields")))}
+
+
+@router.post("/albums")
+def create_album(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """Queue an album: its tracks are written and generated one by one in the background."""
+    return _guard(lambda: albums.create(payload))
+
+
+@router.get("/albums")
+def list_albums() -> list[dict[str, Any]]:
+    return albums.list_albums()
+
+
+@router.get("/albums/{album_id}")
+def get_album(album_id: str) -> dict[str, Any]:
+    return _guard(lambda: albums.get(album_id))
+
+
+@router.post("/albums/{album_id}/cancel")
+def cancel_album(album_id: str) -> dict[str, Any]:
+    return _guard(lambda: albums.cancel(album_id))
+
+
+@router.post("/albums/{album_id}/placed")
+def album_placed(album_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """The editor placed these finished tracks on the timeline."""
+    if set(payload) - {"indexes"}:
+        raise HTTPException(status_code=422, detail="Only 'indexes' may be sent.")
+    return _guard(lambda: albums.mark_placed(album_id, payload.get("indexes")))
+
+
+@router.delete("/albums/{album_id}")
+def delete_album(album_id: str) -> dict[str, Any]:
+    """Remove the album from the list. Its project and songs are kept."""
+    _guard(lambda: albums.delete(album_id))
+    return {"deleted": True}
 
 
 @router.get("/history")

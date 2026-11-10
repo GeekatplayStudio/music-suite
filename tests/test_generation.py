@@ -5,6 +5,7 @@ No real engine, Ollama or network is used: the provider and HTTP calls are faked
 
 from __future__ import annotations
 
+import base64
 import io
 import os
 import stat
@@ -218,6 +219,7 @@ def test_settings_round_trip_and_reject_bad_values(client: TestClient) -> None:
         "yue2": False,
         "elevenlabs": False,
         "fal": False,
+        "lyria": False,
     }
     for bad in (
         {"idle_minutes": 0},
@@ -249,10 +251,11 @@ def test_overview_reports_missing_engine_without_starting_anything(client: TestC
         "installed": False,
         "running": False,
         "editing_ready": False,
+        "quality_ready": False,
     }
     assert {item["id"] for item in body["planned"]} == {"suno"}
     online = {p["id"]: p for p in body["providers"] if p["kind"] == "external"}
-    assert set(online) == {"elevenlabs", "fal"}
+    assert set(online) == {"elevenlabs", "fal", "lyria"}
     assert all(not p["enabled"] and not p["status"]["ready"] for p in online.values())
     assert not engine.SUPERVISOR.running()
 
@@ -597,7 +600,9 @@ def test_setup_route_rejects_unknown_fields(
     monkeypatch.setattr(
         setup,
         "start_background",
-        lambda writer=False, editing=False: started.append((writer, editing)) or setup.state(),
+        lambda writer=False, editing=False, quality=False: (
+            started.append((writer, editing)) or setup.state()
+        ),
     )
     assert client.post("/generation/setup", json={"writer": "yes"}).status_code == 422
     assert client.post("/generation/setup", json={"url": "http://x"}).status_code == 422
@@ -1833,3 +1838,310 @@ def test_cost_estimates(client: TestClient) -> None:
         ).status_code
         == 422
     )
+
+
+# --------------------------------------------------------------------------- phase G4: albums
+
+from audioqi.generation import albums  # noqa: E402
+
+
+@pytest.fixture
+def album_env(
+    client: TestClient, fake: FakeProvider, monkeypatch: pytest.MonkeyPatch
+) -> list[float]:
+    """Albums run in the test's own thread, and waiting is instant."""
+    waits: list[float] = []
+    monkeypatch.setattr(albums, "start_runner", lambda: None)
+    monkeypatch.setattr(albums, "sleep", waits.append)
+    return waits
+
+
+def _album(client: TestClient, **extra: Any) -> Any:
+    body = {
+        "title": "Night Drives",
+        "provider": "acestep_local",
+        "concept": "A synth-pop album about driving at night",
+        "fields": {"caption": "synth-pop, airy vocal", "duration": 60},
+        "tracks": [
+            {"idea": "leaving the city"},
+            {"idea": "coastal road"},
+            {"title": "Dawn", "idea": "sunrise"},
+        ],
+        **extra,
+    }
+    return client.post("/generation/albums", json=body)
+
+
+def test_an_album_generates_every_track_into_one_project(
+    client: TestClient, album_env, fake: FakeProvider
+) -> None:
+    created = _album(client)
+    assert created.status_code == 200, created.text
+    album = created.json()
+    assert album["status"] == "queued" and album["total"] == 3 and album["done"] == 0
+    assert [t["title"] for t in album["tracks"]] == ["leaving the city", "coastal road", "Dawn"]
+    albums.run_pending()
+    finished = client.get(f"/generation/albums/{album['id']}").json()
+    assert finished["status"] == "done" and finished["done"] == 3
+    assert all(len(t["asset_ids"]) == 1 for t in finished["tracks"])
+    # Without the writer, each idea is added to the album's style.
+    assert [call["caption"] for call in fake.calls] == [
+        "synth-pop, airy vocal, leaving the city",
+        "synth-pop, airy vocal, coastal road",
+        "synth-pop, airy vocal, sunrise",
+    ]
+    project = client.get(f"/editor/projects/{finished['project_id']}").json()
+    assert len(project["assets"]) == 3
+    assert len(client.get("/generation/history").json()) == 3
+    assert client.get("/generation/albums").json()[0]["id"] == album["id"]
+
+
+def test_the_writer_fills_each_track_but_user_settings_win(
+    client: TestClient, album_env, fake, monkeypatch
+) -> None:
+    ideas: list[str] = []
+
+    def write(payload: dict[str, Any]) -> dict[str, Any]:
+        ideas.append(payload["idea"])
+        return {
+            "brief": {
+                "title": "x",
+                "caption": "written style",
+                "lyrics": "[Verse]\nla",
+                "bpm": 120,
+                "duration": 150.0,
+            },
+            "engine": "ollama",
+        }
+
+    monkeypatch.setattr(albums.writer, "write", write)
+    album = _album(client, write_lyrics=True, fields={"duration": 90}).json()
+    albums.run_pending()
+    assert client.get(f"/generation/albums/{album['id']}").json()["status"] == "done"
+    assert fake.calls[0] == {
+        "caption": "written style",
+        "lyrics": "[Verse]\nla",
+        "bpm": 120,
+        "duration": 90,
+    }
+    assert "Track 2 of 3: coastal road" in ideas[1] and "Night Drives" in ideas[1]
+
+
+def test_an_album_waits_for_memory_instead_of_failing(
+    client: TestClient, album_env, fake, monkeypatch
+) -> None:
+    readings = iter([5.0] * 30 + [80.0] * 1000)
+    monkeypatch.setattr(resources, "free_memory_percent", lambda: next(readings))
+    ticks = iter(range(0, 10**7, 30))
+    monkeypatch.setattr(resources.time, "monotonic", lambda: float(next(ticks)))
+    monkeypatch.setattr(resources.time, "sleep", lambda _s: None)
+    album = _album(client, tracks=[{"idea": "one"}]).json()
+    albums.run_pending()
+    finished = client.get(f"/generation/albums/{album['id']}").json()
+    assert finished["status"] == "done", finished["tracks"][0]
+    assert album_env  # It waited at least once.
+
+
+def test_a_failed_track_does_not_stop_the_album(
+    client: TestClient, album_env, fake, monkeypatch
+) -> None:
+    original = fake.generate
+
+    def flaky(task: str, values: dict[str, Any], ctx: Any) -> list[Output]:
+        if "coastal" in values["caption"]:
+            raise EditorError("The engine could not generate this request.", 502)
+        return original(task, values, ctx)
+
+    monkeypatch.setattr(fake, "generate", flaky)
+    album = _album(client).json()
+    albums.run_pending()
+    finished = client.get(f"/generation/albums/{album['id']}").json()
+    assert finished["status"] == "partial"
+    assert [t["status"] for t in finished["tracks"]] == ["done", "failed", "done"]
+    assert "could not generate" in finished["tracks"][1]["error"]
+
+
+def test_albums_can_be_cancelled_resumed_placed_and_removed(
+    client: TestClient, album_env, monkeypatch
+) -> None:
+    album = _album(client).json()
+    assert client.delete(f"/generation/albums/{album['id']}").status_code == 409  # Still active.
+    # A restart in the middle of track 1:
+    record = albums._load(album["id"])
+    record["status"] = "running"
+    record["tracks"][0]["status"] = "generating"
+    albums._save(record)
+    started: list[bool] = []
+    monkeypatch.setattr(albums, "start_runner", lambda: started.append(True))
+    albums.resume_on_startup()
+    resumed = client.get(f"/generation/albums/{album['id']}").json()
+    assert started and resumed["status"] == "queued" and resumed["tracks"][0]["status"] == "queued"
+    cancelled = client.post(f"/generation/albums/{album['id']}/cancel").json()
+    assert cancelled["status"] == "cancelled" and {t["status"] for t in cancelled["tracks"]} == {
+        "cancelled"
+    }
+    assert (
+        client.post(f"/generation/albums/{album['id']}/placed", json={"indexes": [1]}).json()[
+            "tracks"
+        ][0]["placed"]
+        is False
+    )
+    assert client.delete(f"/generation/albums/{album['id']}").json() == {"deleted": True}
+    assert client.get(f"/generation/albums/{album['id']}").status_code == 404
+    assert client.get("/generation/albums/not-a-uuid").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"tracks": []},
+        {"tracks": [{"idea": "x"}] * 21},
+        {"tracks": [{"idea": "x", "surprise": 1}]},
+        {"title": ""},
+        {"provider": "suno"},
+        {"fields": {"caption": "ok song", "bpm": 999}},
+        {"write_lyrics": "yes"},
+        {"surprise": True},
+    ],
+)
+def test_bad_albums_are_refused(client: TestClient, album_env, change: dict[str, Any]) -> None:
+    assert _album(client, **change).status_code in (404, 422)
+
+
+def test_a_switched_off_provider_cannot_take_an_album(client: TestClient, album_env) -> None:
+    assert _album(client, provider="elevenlabs").status_code == 403
+
+
+def test_the_quality_model_is_pinned() -> None:
+    ((name, (size, digest)),) = setup.QUALITY_MODELS.items()
+    assert "xl-turbo" in name and size > 5_000_000_000 and len(digest) == 64
+
+
+# --------------------------------------------------------------------------- phase G4: Lyria
+
+from audioqi.generation.providers import lyria  # noqa: E402
+
+
+def test_lyria_folds_everything_into_one_prompt() -> None:
+    body = lyria.LyriaProvider().payload(
+        {
+            "caption": "jazz trio",
+            "bpm": 96,
+            "keyscale": "F major",
+            "duration": 150,
+            "lyrics": "[Verse]\nhi",
+            "wav": True,
+        }
+    )
+    assert body == {
+        "model": "lyria-3.5",
+        "input": "jazz trio\n\nTempo and key: 96 BPM, in F major.\n\nLength: about 150 seconds.\n\nLyrics:\n[Verse]\nhi",
+        "response_format": {"type": "audio"},
+    }
+    clip = lyria.LyriaProvider().payload(
+        {"caption": "drone", "instrumental": True, "model": "lyria-3-clip-preview", "duration": 90}
+    )
+    assert clip == {
+        "model": "lyria-3-clip-preview",
+        "input": "drone\n\nInstrumental only, no vocals.",
+    }
+
+
+def test_lyria_audio_is_found_in_the_documented_response_shape() -> None:
+    wav = _wav_bytes()
+    body = {
+        "id": "abc",
+        "steps": [
+            {"type": "thought", "content": [{"type": "text", "text": "planning"}]},
+            {
+                "type": "model_output",
+                "content": [
+                    {"type": "text", "text": "[Verse] la la"},
+                    {"type": "audio", "data": base64.b64encode(wav).decode()},
+                ],
+            },
+        ],
+    }
+    audio, text = lyria.find_audio(body)
+    assert audio == wav and "[Verse] la la" in text
+    with pytest.raises(EditorError, match="no audio"):
+        lyria.find_audio(
+            {
+                "steps": [
+                    {
+                        "type": "model_output",
+                        "content": [{"type": "audio", "data": "!!not base64!!"}],
+                    }
+                ]
+            }
+        )
+
+
+def test_lyria_generates_with_the_users_key(client: TestClient, monkeypatch) -> None:
+    client.post("/generation/providers/lyria/key", json={"key": KEY}, headers=_headers())
+    wav = _wav_bytes()
+    reply = {
+        "steps": [
+            {
+                "type": "model_output",
+                "content": [{"type": "audio", "data": base64.b64encode(wav).decode()}],
+            }
+        ]
+    }
+    sent: list[dict[str, Any]] = []
+
+    def post(url: str, **kwargs: Any) -> _Resp:
+        sent.append({"url": url, **kwargs})
+        return _Resp(
+            content=_json.dumps(reply).encode(), headers={"content-type": "application/json"}
+        )
+
+    monkeypatch.setattr(lyria.requests, "post", post)
+    project, response = _start(client, {"caption": "jazz trio"}, provider="lyria")
+    job = client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()
+    assert job["status"] == "completed", job["error"]
+    assert sent[0]["url"] == "https://generativelanguage.googleapis.com/v1beta/interactions"
+    assert (
+        sent[0]["headers"]["x-goog-api-key"] == KEY
+        and sent[0]["headers"]["Api-Revision"] == "2026-05-20"
+    )
+    assert sent[0]["allow_redirects"] is False
+    assert job["result"]["outputs"][0]["watermark"] == "SynthID"
+    estimate = client.post(
+        "/generation/estimate",
+        json={"params": {"provider": "lyria", "task": "text2music", "fields": {"caption": "jazz"}}},
+    )
+    assert estimate.json()["estimate"]["usd"] == 0.08
+
+
+def test_google_errors_are_explained_without_the_key(client: TestClient, monkeypatch) -> None:
+    client.post("/generation/providers/lyria/key", json={"key": KEY}, headers=_headers())
+    monkeypatch.setattr(
+        lyria.requests,
+        "post",
+        lambda *_a, **_k: _Resp(
+            status=400, payload={"error": {"message": "Prompt blocked by safety filters"}}
+        ),
+    )
+    project, response = _start(client, {"caption": "jazz trio"}, provider="lyria")
+    job = client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()
+    assert (
+        job["status"] == "failed" and "safety filters" in job["error"] and KEY not in job["error"]
+    )
+
+
+XL = "acestep-v15-xl-turbo-Q8_0.gguf"
+
+
+def test_new_songs_use_the_quality_model_when_downloaded(
+    client: TestClient, models: list[str]
+) -> None:
+    provider = acestep_provider.AceStepProvider()
+    assert provider._request({"caption": "folk"})["synth_model"] == TURBO  # Not downloaded yet.
+    models.append(XL)
+    assert provider._request({"caption": "folk"})["synth_model"] == XL
+    client.post("/generation/settings", json={"use_quality_model": False})
+    assert provider._request({"caption": "folk"})["synth_model"] == TURBO
+    # Edits keep the standard model.
+    assert _edit("cover", {"caption": "lofi"})["synth_model"] == TURBO
+    assert client.post("/generation/setup", json={"quality": "yes"}).status_code == 422

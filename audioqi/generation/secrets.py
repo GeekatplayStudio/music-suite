@@ -23,6 +23,7 @@ SERVICE = "Music Suite"
 PROVIDERS: dict[str, str] = {
     "elevenlabs": "MUSIC_SUITE_ELEVENLABS_API_KEY",
     "fal": "MUSIC_SUITE_FAL_KEY",
+    "lyria": "MUSIC_SUITE_GEMINI_API_KEY",
 }
 MIN_KEY_CHARS = 16
 MAX_KEY_CHARS = 256

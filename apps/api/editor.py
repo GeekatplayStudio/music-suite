@@ -180,9 +180,7 @@ def _probe(path: Path) -> dict[str, Any]:
     try:
         metadata = metadata_module.extract_metadata(path)
     except Exception as exc:
-        raise HTTPException(
-            status_code=415, detail="No valid audio stream was detected."
-        ) from exc
+        raise HTTPException(status_code=415, detail="No valid audio stream was detected.") from exc
     if not metadata.get("codec") and not metadata.get("format"):
         raise HTTPException(status_code=415, detail="No valid audio stream was detected.")
     return metadata
@@ -197,9 +195,7 @@ def _check_duration(duration: Any) -> None:
 
 
 @router.post("/projects/{project_id}/assets/from-run/{run_id}")
-def asset_from_run(
-    project_id: str, run_id: str, db: Session = Depends(get_db)
-) -> dict[str, Any]:
+def asset_from_run(project_id: str, run_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     _guard(lambda: projects.require_project(project_id))
     if not projects.is_canonical_uuid(run_id):
         raise HTTPException(status_code=404, detail="Run not found.")

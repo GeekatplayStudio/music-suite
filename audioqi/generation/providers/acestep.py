@@ -17,7 +17,7 @@ import soundfile as sf
 
 from audioqi.editor import processing, projects
 from audioqi.editor.projects import EditorError, ParamError
-from audioqi.generation import engine
+from audioqi.generation import engine, settings
 from audioqi.generation.providers.base import Output, RunContext
 from audioqi.generation.schema import field
 
@@ -477,8 +477,11 @@ class AceStepProvider:
     def _model_for(kind: str, dits: list[str]) -> str | None:
         """The DiT file for a task: "base" for layer tasks, otherwise turbo."""
         if kind == "base":
-            return next((name for name in dits if "-base" in name), None)
-        return next((name for name in dits if "turbo" in name), dits[0] if dits else None)
+            return next((name for name in dits if "-base" in name and "-xl-" not in name), None)
+        if kind == "quality":
+            return next((name for name in dits if "-xl-turbo" in name), None)
+        standard = [name for name in dits if "-xl-" not in name]
+        return next((name for name in standard if "turbo" in name), dits[0] if dits else None)
 
     def status(self) -> dict[str, Any]:
         installed = engine.install_status()
@@ -510,7 +513,11 @@ class AceStepProvider:
         if "synth_model" not in body:
             # The engine otherwise loads the first model alphabetically, which is the slow
             # base model once the editing model is installed.
-            chosen = self._model_for("turbo", engine.list_models()["dit"])
+            dits = engine.list_models()["dit"]
+            chosen = (
+                self._model_for("quality", dits) if settings.load()["use_quality_model"] else None
+            )
+            chosen = chosen or self._model_for("turbo", dits)
             if chosen:
                 body["synth_model"] = chosen
         return body

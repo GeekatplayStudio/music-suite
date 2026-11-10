@@ -87,10 +87,12 @@ export interface SetupState {
   error: string | null;
   download_gb?: number;
   editing_download_gb?: number;
+  quality_download_gb?: number;
   installed?: boolean;
 }
 
 export interface GenerationSettings {
+  use_quality_model: boolean;
   engine_dir: string;
   engine_dir_default: boolean;
   idle_minutes: number;
@@ -118,6 +120,7 @@ export interface Overview {
     running: boolean;
     missing_models: string[];
     editing_ready?: boolean;
+    quality_ready?: boolean;
   };
   setup: SetupState;
   memory_free_percent: number | null;
@@ -140,6 +143,31 @@ export interface CostEstimate {
   summary: string;
   as_of: string;
   url: string;
+}
+
+export interface AlbumTrack {
+  index: number;
+  title: string;
+  idea: string;
+  status: "queued" | "writing" | "generating" | "done" | "failed" | "cancelled";
+  progress: number;
+  detail: string;
+  error: string | null;
+  asset_ids: string[];
+  placed: boolean;
+}
+
+export interface Album {
+  id: string;
+  title: string;
+  concept: string;
+  provider: string;
+  project_id: string;
+  status: "queued" | "running" | "done" | "partial" | "failed" | "cancelled";
+  tracks: AlbumTrack[];
+  done: number;
+  total: number;
+  created_at: string;
 }
 
 export interface HistoryRecord {
@@ -183,8 +211,8 @@ export const generationApi = {
   overview: () => request<Overview>("/generation/providers"),
   saveSettings: (patch: Partial<GenerationSettings>) =>
     request<GenerationSettings>("/generation/settings", json(patch)),
-  startSetup: (writer: boolean, editing = false) =>
-    request<SetupState>("/generation/setup", json({ writer, editing })),
+  startSetup: (writer: boolean, editing = false, quality = false) =>
+    request<SetupState>("/generation/setup", json({ writer, editing, quality })),
   setupState: () => request<SetupState>("/generation/setup"),
   /** Saves the key in this computer's keychain and switches the service on. The key is never sent back. */
   saveKey: (providerId: string, key: string) =>
@@ -202,6 +230,18 @@ export const generationApi = {
   write: (body: { mode: "brief" | "lyrics"; idea: string; caption?: string; lyrics?: string; instrumental?: boolean }) =>
     request<{ brief: SongBrief; engine: string }>("/generation/lyrics", json(body)),
   history: () => request<HistoryRecord[]>("/generation/history"),
+  albums: () => request<Album[]>("/generation/albums"),
+  createAlbum: (body: {
+    title: string;
+    provider: string;
+    concept: string;
+    fields: FieldValues;
+    tracks: { idea: string }[];
+    write_lyrics: boolean;
+  }) => request<Album>("/generation/albums", json(body)),
+  cancelAlbum: (id: string) => request<Album>(`/generation/albums/${id}/cancel`, { method: "POST" }),
+  albumPlaced: (id: string, indexes: number[]) => request<Album>(`/generation/albums/${id}/placed`, json({ indexes })),
+  deleteAlbum: (id: string) => request<{ deleted: boolean }>(`/generation/albums/${id}`, { method: "DELETE" }),
   /** What a request would cost on an online service (null for local generators). */
   estimate: (body: {
     params: { provider: string; task: string; fields: FieldValues };

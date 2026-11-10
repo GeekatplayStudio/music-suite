@@ -115,6 +115,7 @@ Web Audio Modules (WAM) are effects that run in the browser. They are third-part
   - **ACE-Step's own Python server**, reached only at a plain-http loopback address (`MUSIC_SUITE_ACESTEP_URL`), with downloads accepted only through its `/v1/audio` route;
   - **YuE2**, run with the interpreter named in `MUSIC_SUITE_YUE2_PYTHON` as a separate process with `-I`, a time limit, and an output size cap. Each YuE2 request must confirm its non-commercial licence.
 - A switched-off provider is never probed.
+- Albums run their tracks one at a time through the same lock and memory guard as single songs, and wait (at most two hours per track) rather than push past low memory. Album records live in `data/generation/albums/`, and an album resumes after a restart only on this machine, with the settings it was created with.
 - AI edits send the selected clip's audio to the local engine only, on loopback, as a temporary 24-bit WAV that is deleted afterwards. A clip longer than 600 s is refused rather than truncated.
 
 ### Installing the engine: a deliberate, one-time download
@@ -135,7 +136,7 @@ ElevenLabs Music and fal.ai (MiniMax Music, Google Lyria) run on the provider's 
 - **Audio is sent in one case only:** editing a clip with ElevenLabs (regenerate a section, extend) when the clip was not made with ElevenLabs. The clip is uploaded as MP3 to `https://api.elevenlabs.io/v1/music/upload` only if the user ticked **Allow uploading this clip** for that edit; otherwise the edit stops before anything is sent. The returned song id is stored per project so the same clip is never uploaded twice. Songs generated with ElevenLabs are kept by ElevenLabs for editing (`store_for_inpainting`) unless the user turns off *Keep the song for editing*.
 - **Cost is shown first.** Before an online request, the app shows an estimate from the provider's published prices (dated, with a link), including any upload.
 - **Fixed hosts:**
-  - requests go to `https://api.elevenlabs.io` or `https://queue.fal.run` only;
+  - requests go to `https://api.elevenlabs.io`, `https://queue.fal.run` or `https://generativelanguage.googleapis.com` (Google Lyria, with the user's Gemini key) only;
   - fal.ai audio is downloaded only from `*.fal.media`, over HTTPS on port 443 with no credentials in the address;
   - redirects are followed only inside that allowlist, and the download is capped at the upload size limit.
 - **Keys are write-only:**

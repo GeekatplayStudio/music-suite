@@ -296,8 +296,22 @@ Open **AI Song Studio** from the workspace. It has three tabs.
 - *Lyrics and style writer*: which Ollama model writes lyrics, and a button to download it.
 - *Keeping your computer responsive*: generation will not start when free memory is below the limit you set, and the engine unloads after the idle time you set.
 - *Loudness of new songs*: each new song is levelled towards −14 LUFS, never above −1 dBTP. Change the target or switch it off.
+- *High-quality model*: **Download high-quality model** adds the larger XL music model (4.9 GB). With it installed, new songs use it unless you untick *Use the high-quality (XL) model*. It is a little slower and uses a little more memory; AI edits keep the standard model.
+- *Google Lyria*: paste a Gemini API key under *Online services* to use Lyria 3.5 (full songs) or Lyria 3 Clip (30 seconds). Every Lyria song carries Google's inaudible SynthID watermark.
 - *Generators*: switch engines on or off. *ACE-Step 1.5 (your own Python server)* is for computers that already run ACE-Step's server (start it with `uv run acestep-api`). *YuE2* needs an NVIDIA GPU with about 24 GB and the `MUSIC_SUITE_YUE2_PYTHON` setting, and every song asks you to confirm its non-commercial licence.
 - *Online services*: paste your own ElevenLabs or fal.ai API key and press **Save key** to switch that service on. It then appears in the *Generator* list. Your style text and lyrics are sent to it and it bills your account. A clip's audio is uploaded only when you tick *Allow uploading this clip* in an AI edit. A cost estimate appears next to **Generate** before anything is sent. **Remove key** switches it off again. Keys are stored in your computer's keychain and are never shown again.
+
+### Albums
+
+The **Album** tab makes several songs in one go.
+
+1. Give the album a title, say what it is about, and set a shared style.
+2. Write one song idea per line (up to 20).
+3. Choose a length per song, and whether it is instrumental.
+4. Keep **Write lyrics and style for each song** on to have the lyrics model write each song from the album concept and its idea. Anything you set yourself wins over what it writes.
+5. Press **Make N songs**.
+
+The songs are made one after another in the background, so you can leave the page or the computer. If memory runs low, the album waits instead of failing; if Music Suite restarts, the album carries on. A song that fails is marked and the rest continue. **Stop** ends an album early. **Open in Studio Editor** puts the finished songs one after another, each on its own track, in the album's project. For online generators, the estimated cost of the whole album is shown before you start.
 
 ### Song plans (ElevenLabs)
 

@@ -59,6 +59,14 @@ EDIT_MODELS: dict[str, tuple[int, str]] = {
     ),
 }
 EDIT_DOWNLOAD_BYTES = sum(size for size, _ in EDIT_MODELS.values())
+#: The larger XL turbo music model: an optional quality upgrade for new songs.
+QUALITY_MODELS: dict[str, tuple[int, str]] = {
+    "acestep-v15-xl-turbo-Q8_0.gguf": (
+        5305828736,
+        "4f1044fb646374fb5730e10f64325766883eb2fc02a643c1b403f2d61f39dc19",
+    ),
+}
+QUALITY_DOWNLOAD_BYTES = sum(size for size, _ in QUALITY_MODELS.values())
 BUILD_TIMEOUT_SECONDS = 3600
 
 
@@ -293,12 +301,28 @@ def pull_writer_model(report: Report) -> bool:
     return True
 
 
-def editing_ready() -> bool:
+def _present(models: dict[str, tuple[int, str]]) -> bool:
     folder = settings.engine_dir() / "models"
     return all(
         (folder / name).is_file() and (folder / name).stat().st_size == size
-        for name, (size, _) in EDIT_MODELS.items()
+        for name, (size, _) in models.items()
     )
+
+
+def editing_ready() -> bool:
+    return _present(EDIT_MODELS)
+
+
+def quality_ready() -> bool:
+    return _present(QUALITY_MODELS)
+
+
+def install_quality(report: Report) -> None:
+    """Download the XL music model (the engine must be installed)."""
+    if not engine.install_status()["installed"]:
+        raise SetupError("Install the local engine first.")
+    _download_models(settings.engine_dir(), report, QUALITY_MODELS, (2.0, 99.0))
+    report("done", 100, "The high-quality model is ready.")
 
 
 def install_editing(report: Report) -> None:
@@ -326,7 +350,9 @@ def install(report: Report, *, writer: bool = False) -> None:
 # --------------------------------------------------------------------------- background use
 
 
-def start_background(*, writer: bool = False, editing: bool = False) -> dict[str, Any]:
+def start_background(
+    *, writer: bool = False, editing: bool = False, quality: bool = False
+) -> dict[str, Any]:
     with _LOCK:
         if _STATE["running"]:
             return dict(_STATE)
@@ -337,7 +363,9 @@ def start_background(*, writer: bool = False, editing: bool = False) -> dict[str
             _set(step=step, percent=round(percent, 1), detail=detail)
 
         try:
-            if editing:
+            if quality:
+                install_quality(report)
+            elif editing:
                 install_editing(report)
             else:
                 install(report, writer=writer)

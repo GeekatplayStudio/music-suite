@@ -156,6 +156,8 @@ def _error_detail(response: requests.Response) -> str:
     except ValueError:
         return ""
     detail = body.get("detail") if isinstance(body, dict) else None
+    if detail is None and isinstance(body, dict) and isinstance(body.get("error"), dict):
+        detail = body["error"].get("message")
     if isinstance(detail, dict):
         detail = detail.get("message") or detail.get("status")
     if isinstance(detail, list) and detail and isinstance(detail[0], dict):

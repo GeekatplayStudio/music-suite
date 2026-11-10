@@ -30,9 +30,12 @@ DEFAULTS: dict[str, Any] = {
         "yue2": False,
         "elevenlabs": False,
         "fal": False,
+        "lyria": False,
     },
     "setup_declined": False,
     "editing_declined": False,
+    # New songs use the XL model when it has been downloaded.
+    "use_quality_model": True,
 }
 _RANGES: dict[str, tuple[float, float]] = {
     "idle_minutes": (1, 240),
@@ -76,7 +79,7 @@ def _clean(key: str, value: Any) -> Any:
         if not low <= value <= high:
             raise ParamError(f"'{key}' must be between {low:g} and {high:g}.")
         return int(value) if key != "target_lufs" else float(value)
-    if key in ("normalize", "setup_declined", "editing_declined"):
+    if key in ("normalize", "setup_declined", "editing_declined", "use_quality_model"):
         if not isinstance(value, bool):
             raise ParamError(f"'{key}' must be true or false.")
         return value

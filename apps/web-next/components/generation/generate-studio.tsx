@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AudioWaveform, Cpu, Download, History, Loader2, Settings2, Sparkles, Square, Trash2, Wand2 } from "lucide-react";
+import { AudioWaveform, Cpu, Disc3, Download, History, Loader2, Settings2, Sparkles, Square, Trash2, Wand2 } from "lucide-react";
 
+import { AlbumPanel } from "@/components/generation/album-panel";
 import { PlanEditor } from "@/components/generation/plan-editor";
 import { SchemaForm } from "@/components/generation/schema-form";
 import { SettingsPanel } from "@/components/generation/settings-panel";
@@ -25,7 +26,7 @@ import {
 } from "@/lib/generation/api";
 import { cn } from "@/lib/utils";
 
-type Tab = "create" | "history" | "settings";
+type Tab = "create" | "album" | "history" | "settings";
 
 interface Result {
   projectId: string;
@@ -374,6 +375,7 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
 
   const tabs: { id: Tab; label: string; icon: typeof Sparkles }[] = [
     { id: "create", label: "Create", icon: Sparkles },
+    { id: "album", label: "Album", icon: Disc3 },
     { id: "history", label: "History", icon: History },
     { id: "settings", label: "Settings", icon: Settings2 }
   ];
@@ -434,6 +436,7 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
       ) : null}
 
       {overview && tab === "settings" ? <SettingsPanel overview={overview} onChanged={refresh} /> : null}
+      {overview && tab === "album" ? <AlbumPanel overview={overview} /> : null}
 
       {overview && tab === "history" ? (
         <section className="space-y-3" aria-label="Generation history">

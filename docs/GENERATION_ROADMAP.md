@@ -350,7 +350,33 @@ Its duplicate modules (`audioqi/editor/songs/`, the `song` job and the `/editor/
   - inpainting of a selection *(endpoint details to confirm against the inpainting guide)*.
 - Cost hints shown before generating, wherever the provider publishes prices.
 
-### Phase G4 — More providers and polish
+### Phase G4 — More providers and polish *(shipped 2026-11-10)*
+
+**Shipped**
+
+- **Albums** (`audioqi/generation/albums.py`, AI Song Studio ▸ *Album*):
+  - up to 20 song ideas generated one after another into one project, with an optional lyrics-and-style brief written per track from the album concept (your own settings win over the writer's);
+  - low memory or a busy generator makes a track wait (up to 2 hours) instead of failing;
+  - a failed track does not stop the album;
+  - albums interrupted by a shutdown resume when the API starts again;
+  - Stop and Remove (the project is kept);
+  - **Open in Studio Editor** places finished songs one after another, 2 s apart, each on its own track, and marks them placed so they never duplicate.
+- **Google Lyria through the Gemini API** (`providers/lyria.py`):
+  - your own Gemini key, off until saved;
+  - Interactions API (`POST /v1beta/interactions`, `Api-Revision: 2026-05-20`, `x-goog-api-key`);
+  - models `lyria-3.5` ($0.08 per song, WAV available) and `lyria-3-clip-preview` (30 s, $0.04), prices from Google's pricing page;
+  - style, lyrics, instrumental, tempo, key and a length request are folded into the prompt, because Lyria takes them that way;
+  - the audio is found in the response's content blocks, which is defensive because Google shows no full raw response;
+  - Google's error messages are passed on without the key;
+  - SynthID watermark noted.
+- **XL music model** (optional, 4.9 GB, SHA-256 pinned):
+  - downloaded from Settings;
+  - used for new songs when present unless switched off; AI edits keep the standard model.
+- **Not added:**
+  - **Suno:** still no public API on 2026-11-10 (partner programme only); its card explains why.
+  - **LeVo 2:** non-commercial licence, PyTorch-only, and memory-heavy on this class of machine.
+
+**Original G4 plan**
 
 - Google Lyria, once out of preview, with fields confirmed against the live docs.
 - **Suno:** implemented if and when an official API is documented or partner access is granted. Until then the card explains why it is unavailable.
@@ -386,6 +412,25 @@ Phase G1 went ahead with the recommended defaults (2026-11-10):
 6. **Still open:** the benchmark copies at `~/Projects/ACE-Step-1.5` (about 10 GB) and `~/Projects/acestep.cpp` (about 5.6 GB) are no longer used and can be deleted by the user.
 
 ## 7.1 Verification log
+
+### Phase G4 (2026-11-10, Apple M5, 24 GB)
+
+- **Automated:** 21 new tests:
+  - albums: a whole album into one project, the writer filling tracks with user settings winning, waiting out low memory, a failed track not stopping the rest, resume after a restart, cancel, placed and remove, eight kinds of bad request, a switched-off provider refused;
+  - Lyria: the prompt built from every setting, both models, audio found in the documented response shape, bad base64 refused, a full job with the right host and headers, and Google errors explained without the key;
+  - the XL model pinned and preferred only when present and allowed.
+
+  Full suite: 406 passed, 1 skipped.
+- **Real XL benchmark** (2-minute song with the planner):
+
+  | Model | Time | Engine memory peak | Lowest free memory |
+  |---|---|---|---|
+  | Standard | 63 s | 4.4 GB | 45% |
+  | XL | 80 s | 5.0 GB | 41% |
+
+  The download took 211 s, checksum verified.
+- **Real album in the browser:** "Harbour Lights", 2 songs of 30 s, lyrics written by `gemma4:12b`, local engine: about 2 minutes in all. Opening it placed both songs one after another (1:03 session); the placed flags prevent duplicates.
+- **Not tested:** any real Lyria request (no Gemini key here); an album across an actual API restart (covered by a test only); an overnight-length album; listening quality, including XL compared with standard.
 
 ### Phase G2 (2026-11-10, Apple M5, 24 GB)
 

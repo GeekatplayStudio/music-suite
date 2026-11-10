@@ -21,6 +21,7 @@ from audioqi.generation.providers.acestep_server import AceStepServerProvider
 from audioqi.generation.providers.base import Output, Provider, RunContext
 from audioqi.generation.providers.cloud import ElevenLabsProvider, FalProvider
 from audioqi.generation.providers.comfyui import ComfyUiProvider
+from audioqi.generation.providers.lyria import LyriaProvider
 from audioqi.generation.providers.yue2_engine import YuE2Provider
 
 PROVIDERS: dict[str, Provider] = {
@@ -32,6 +33,7 @@ PROVIDERS: dict[str, Provider] = {
         ComfyUiProvider(),
         ElevenLabsProvider(),
         FalProvider(),
+        LyriaProvider(),
     )
 }
 #: Shown in settings so the user can see what is coming and why it is not there yet.
