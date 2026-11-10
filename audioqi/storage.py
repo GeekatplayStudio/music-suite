@@ -31,7 +31,8 @@ def upload_path_for(run_id: str, filename: str) -> Path:
 
 def sanitize_filename(filename: str) -> str:
     # Prevent path traversal and normalize hostile filename input.
-    base = Path(filename).name.strip()
+    # Backslashes are separators only on Windows, so split on both everywhere.
+    base = Path(filename.replace("\\", "/")).name.strip()
     if not base:
         return "upload.bin"
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", base)
