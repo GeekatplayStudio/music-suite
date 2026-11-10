@@ -42,7 +42,14 @@ export type JobOp =
   | "warp"
   | "quantize"
   | "to_midi"
-  | "structure";
+  | "structure"
+  | "generate";
+
+export interface GenerationStatus {
+  available: boolean;
+  node_installed: boolean;
+  models: string[];
+}
 
 export interface Job {
   id: string;
@@ -131,6 +138,8 @@ export interface Track {
   sends: Record<string, number>;
   /** Instrument that plays this track's MIDI clips. */
   synth: Synth;
+  /** An in-browser plugin (Web Audio Module) inserted after the track's own effects. */
+  wam?: { url: string; name: string; state?: unknown };
   fx: TrackFx;
 }
 
@@ -239,6 +248,8 @@ export interface Note {
 }
 
 export interface Synth {
+  /** "drums" plays the built-in drum kit instead of the pitched synth. */
+  kind: "synth" | "drums";
   wave: "sawtooth" | "square" | "triangle" | "sine";
   attack: number;
   release: number;
@@ -247,7 +258,7 @@ export interface Synth {
 }
 
 export function defaultSynth(): Synth {
-  return { wave: "sawtooth", attack: 0.01, release: 0.2, cutoff: 3200 };
+  return { kind: "synth", wave: "sawtooth", attack: 0.01, release: 0.2, cutoff: 3200 };
 }
 
 export interface Clip {

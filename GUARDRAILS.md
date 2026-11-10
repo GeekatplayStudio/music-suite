@@ -84,6 +84,25 @@ These boundaries are enforced in code and covered by automated tests. Defaults a
 - Song Geometry Mapper caps its backing canvas at 1.5× pixel density, measures actual draw cost, and adapts node, edge, star, and frame budgets while preserving every visual control.
 - Mapper Voice / Deep uploads use the suite upload size and duration limits; client-provided cache paths are ignored and cache writes remain under `data/song-mapper`.
 
+## Studio Editor boundary
+
+- Editor projects, audio, waveform overviews and jobs live under `data/editor/`; every identifier is a canonical UUID checked before any filesystem access.
+- Editor uploads use the same extension, size, duration and streaming limits as analysis uploads.
+- VST3 and Audio Unit plugins are listed by filename only and are loaded in a separate worker process, so a crashing plugin cannot take the API down. Clients refer to them by an opaque id, never a path.
+- ComfyUI generation contacts a loopback ComfyUI only; a non-loopback `MUSIC_SUITE_COMFYUI_URL` is refused.
+- MP3 and FLAC export encodes a rendered mix and deletes both the upload and the result once the response has been sent.
+
+### In-browser plugins: the one deliberate exception to "local only"
+
+Web Audio Modules (WAM) are effects that run in the browser. They are third-party JavaScript downloaded from the internet, and this is the only feature of the suite that contacts a remote host.
+
+- **Off by default.** Nothing is fetched until the user chooses "Allow internet plugins in this browser". The choice is stored in that browser only and can be switched off again from the same panel.
+- **What is fetched:** the community catalogue (`https://www.webaudiomodules.com/community/plugins.json`) and the code of each plugin the user loads. A custom address must be `https://` (or loopback).
+- **What is not sent:** audio. Plugins process it inside the browser on this machine. The suite itself sends nothing to the plugin host beyond the ordinary download request.
+- **Residual risk, stated plainly:** a loaded plugin runs with the same privileges as the editor page. It can read the open session and call the local Music Suite API, and nothing technically stops a malicious plugin from sending data elsewhere. Only load plugins from sources you trust.
+- A session that contains such a plugin still opens with internet plugins switched off; the track simply plays without it and the editor says so.
+- The WAM host files under `apps/web-next/public/wam-host/` are a pinned local copy (MIT); only plugins come from the network.
+
 ## Verification
 
 `verify_pipeline.ps1` stops on the first failure and checks dependency consistency, Python lint, ComfyUI syntax, backend tests, TypeScript, ESLint, the production frontend build, and the production npm dependency audit.

@@ -10,5 +10,7 @@ export default defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Unmodified copy of the MIT-licensed Web Audio Modules host (see NOTICE.txt there).
+    "public/wam-host/**",
   ]),
 ]);

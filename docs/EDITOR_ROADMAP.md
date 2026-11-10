@@ -191,14 +191,23 @@ Shipped:
 
 Library note: `basic-pitch` 0.4 is the best open-source polyphonic transcriber, but it pins an old NumPy and cannot be installed on Python 3.13+, including this machine. The code uses it when present; that path has not been run here.
 
-Still to do in Phase 4:
+Second pass (2026-11-09):
 
-- Real-time time-stretch engine with warp markers dragged on the waveform.
-- Web Audio Modules 2 (WAM2) instruments and effects in the browser, which also gives live plugin preview.
-- Generate a new stem against existing tracks through the ComfyUI integration.
-- Drum sampler and sample-based instruments; MIDI recording from a keyboard (Web MIDI).
-- Multi-note selection, copy and paste, and zoom in the piano roll.
-- Lasso and brush selections in the spectral view, mid/side EQ, bus automation, automation of the remaining effect parameters.
+- **Piano roll**: shift-drag to select several notes, move them together, copy and paste at the playhead, delete, shared velocity, zoom (buttons or Ctrl/Cmd+wheel) and sideways scrolling. Rows no longer shift while notes are added.
+- **Drum kit**: an instrument track can be switched from the synth to a built-in kit (kick, snare, clap, hats, toms, cymbal on their General MIDI pitches). The piano roll becomes a labelled drum grid.
+- **Note input**: with "Note input" on, the keys A W S E D F T G Y H U J K (or a connected MIDI keyboard) add notes at the playhead and step it forward.
+- **Warp markers on the waveform**: Alt-click a selected clip to pin a moment, then drag its dashed line to where it should land. Applying still renders through Rubber Band.
+- **Generate a part**: describe a new part for the selected clip; a local ComfyUI running the suite's Sonic Holodeck nodes (MusicGen) generates it at the project tempo and it lands on a new track. Only a loopback ComfyUI is ever contacted.
+
+Third pass (2026-11-09) — in-browser plugins:
+
+- **Web Audio Modules 2.** Each track has one insert slot, after its own effects, for a WAM effect. Plugins come from the community catalogue (53 effects at the time of writing) or any `https://` address, show their own control panel, run live, are re-created on the export context so they are included in exports, and have their settings saved with the session.
+- This is opt-in per browser and is the suite's one deliberate exception to "local only"; see the Studio Editor section of `GUARDRAILS.md` for exactly what is fetched and the risk a plugin carries.
+
+Not done, and why:
+
+- **Live (real-time) warp audio.** Markers can now be dragged on the waveform, but you hear the result only after applying. `signalsmith-stretch` (MIT) can do it; wiring a second playback path through it is the remaining work.
+- **Sample-based instruments**, lasso and brush selections in the spectral view, mid/side EQ, bus automation, and automation of the remaining effect parameters.
 
 ---
 
@@ -431,3 +440,55 @@ Tested on 2026-11-09.
 - Dragging and resizing notes, velocity, right-click delete, transpose, quantise and the synth controls were not each exercised; adding a note was.
 - Importing a MIDI file made by another program (only the editor's own export was read back; the parser's tempo-map and running-status paths are untested).
 - How the synth sounds was not judged by ear.
+
+### Phase 4 (second pass)
+
+Tested on 2026-11-09.
+
+**Automated**
+
+- Backend: 260 tests pass. New: generation against a stand-in ComfyUI (workflow contents, model fallback, import of the result), clean failures when ComfyUI or its nodes are missing, request validation, loopback-only address.
+- Frontend: TypeScript, ESLint and the production build are clean.
+
+**Exercised in the browser**
+
+| Check | Result |
+|---|---|
+| Alt-click a selected clip, drag the dashed line | Marker pinned at 2.19 s, target moved to 2.90 s |
+| Switch an instrument track to the drum kit | Grid shows drum names; hits render in the export (−13.8 dB during a hit, silence between) |
+| Shift-drag selection, Delete | Four notes selected and removed |
+| Copy and Paste | Three notes duplicated at the playhead |
+| Note input with A, S, D | C, D, E added at 0, 0.25 and 0.5 s; playhead advanced; editor shortcuts on those keys did not fire |
+| Generation panel with no ComfyUI running | Explains what to start and offers "Check again" |
+
+**Found and fixed**: the piano roll re-centred its rows after every new note, so later clicks landed on the wrong pitch.
+
+**Not yet verified**
+
+- **Real generation.** No ComfyUI is installed on this machine, so "Generate a part" has only run against a stand-in server that mimics ComfyUI's replies. The request format is built from the Sonic node's declared inputs but has never been accepted by a real ComfyUI.
+- **A MIDI keyboard.** Only computer-keyboard input was tested.
+- Moving a group of notes by dragging, piano-roll scrolling and Ctrl/Cmd+wheel zoom were not exercised (the zoom button was).
+- How the drum kit sounds was not judged by ear.
+
+### Phase 4 (third pass: in-browser plugins)
+
+Tested on 2026-11-09 with "Simple Distortion" from the community catalogue.
+
+| Check | Result |
+|---|---|
+| Consent gate | Nothing fetched until "Allow internet plugins" was clicked; the warning is shown first |
+| Catalogue | Loaded; 53 effects listed |
+| Load a plugin on a track | Loaded with no errors |
+| Plugin's own control panel | Opens in a floating window (drive, level, symmetry, clipping) |
+| Live playback through the plugin | Meters move, no errors |
+| Export | Plugin included: the 5th harmonic of a 220 Hz note rose from −171 dB to −73 dB |
+| Save settings | The plugin's state is stored in the session |
+| Reload | The plugin is restored and plays |
+
+**Not yet verified**
+
+- Only one plugin was tried. Others in the catalogue may fail to load, may not support export (the editor then exports without them and says which), or may not restore their settings.
+- Instrument plugins are filtered out of the list; only effects are offered.
+- Opening a session that contains a plugin while internet plugins are switched off (it should play without the plugin and show a notice).
+- A custom plugin address, removing a plugin, and one plugin on several tracks at once.
+- Other browsers. Firefox and Safari handle cross-origin module loading and AudioWorklets differently.

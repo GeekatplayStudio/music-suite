@@ -1,0 +1,6 @@
+# Web Audio Modules host
+
+These five files are copied unchanged from `@webaudiomodules/sdk` 0.0.12 (MIT licence,
+https://github.com/webaudiomodules/sdk). They set up the host side of the Web Audio
+Modules 2 API. They are served as-is rather than bundled because they turn their own
+functions into AudioWorklet code, which a bundler would break.

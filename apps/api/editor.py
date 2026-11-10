@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
 from audioqi.db import SessionLocal
-from audioqi.editor import assets, engines, plugins, projects
+from audioqi.editor import assets, engines, generation, plugins, projects
 from audioqi.editor import jobs as editor_jobs
 from audioqi.editor.projects import EditorError
 from audioqi.io.decode import ffmpeg_available
@@ -78,6 +78,11 @@ def list_plugins() -> dict[str, Any]:
 @router.get("/plugins/{plugin_id}")
 def describe_plugin(plugin_id: str) -> dict[str, Any]:
     return _guard(lambda: plugins.describe_plugin(plugin_id))
+
+
+@router.get("/generation")
+def generation_status() -> dict[str, Any]:
+    return generation.status()
 
 
 @router.get("/projects")

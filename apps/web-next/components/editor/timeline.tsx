@@ -144,6 +144,7 @@ type Zone = "body" | "left" | "right" | "fadeIn" | "fadeOut";
 
 type Drag =
   | { kind: "seek" }
+  | { kind: "warp"; base: ProjectState; clip: Clip; index: number }
   | { kind: "marker"; base: ProjectState; id: string; time: number; moved: boolean }
   | { kind: "auto"; base: ProjectState; trackId: string; trackIndex: number; lane: Lane; points: AutoPoint[]; index: number; rest: number }
   | { kind: "loop"; anchor: number; moved: boolean }
@@ -730,6 +731,21 @@ export function Timeline(props: TimelineProps) {
     return null;
   };
 
+  /** A pending warp marker's target line on a selected clip. */
+  const hitWarp = (x: number, y: number): { clip: Clip; index: number } | null => {
+    const p = propsRef.current;
+    if (p.tool !== "select") return null;
+    const track = p.state.tracks[Math.floor(y / TRACK_HEIGHT)];
+    if (!track) return null;
+    for (const clip of p.state.clips) {
+      if (clip.trackId !== track.id || !clip.warp?.length || !p.selection.has(clip.id)) continue;
+      for (let i = 0; i < clip.warp.length; i++) {
+        if (Math.abs(timeToX(clip.start + clip.warp[i].t, p) - x) <= 5) return { clip, index: i };
+      }
+    }
+    return null;
+  };
+
   const hitMarker = (x: number, y: number): string | null => {
     if (y > MARKER_ZONE) return null;
     const p = propsRef.current;
@@ -858,6 +874,22 @@ export function Timeline(props: TimelineProps) {
       return;
     }
 
+    const warp = hitWarp(x, y);
+    if (warp) {
+      p.onGestureStart();
+      dragRef.current = { kind: "warp", base: p.state, clip: warp.clip, index: warp.index };
+      return;
+    }
+    if (event.altKey && hit && hit.zone === "body" && p.selection.has(hit.clip.id) && !hit.clip.notes && !hit.clip.reversed) {
+      // Alt-click on a selected clip pins that moment as a warp marker.
+      const local = time - hit.clip.start;
+      if (local > 0.1 && local < hit.clip.duration - 0.1) {
+        const next = [...(hit.clip.warp ?? []), { s: local, t: local }].sort((a, b) => a.s - b.s);
+        p.onCommit(updateClips(p.state, [hit.clip.id], (c) => ({ ...c, warp: next })));
+      }
+      return;
+    }
+
     const auto = hitAutomation(x, y);
     if (auto) {
       let points = lanePoints(auto.track, auto.lane).slice();
@@ -939,6 +971,10 @@ export function Timeline(props: TimelineProps) {
     const canvas = event.currentTarget;
 
     if (!drag) {
+      if (hitWarp(x, y)) {
+        canvas.style.cursor = "col-resize";
+        return;
+      }
       const auto = hitAutomation(x, y);
       if (auto) {
         canvas.style.cursor = auto.onLine ? "copy" : "move";
@@ -959,6 +995,20 @@ export function Timeline(props: TimelineProps) {
       const at = snapTime(time, null, event.altKey);
       p.onRange({ start: Math.min(drag.anchor, at), end: Math.max(drag.anchor, at) });
       drawOverlay();
+      return;
+    }
+    if (drag.kind === "warp") {
+      const markers = drag.clip.warp ?? [];
+      // A target may not cross its neighbours' targets, which would fold time back on itself.
+      const lower = (markers[drag.index - 1]?.t ?? 0) + 0.05;
+      const upper = (markers[drag.index + 1]?.t ?? Number.POSITIVE_INFINITY) - 0.05;
+      const t = clamp(snapTime(time, new Set([drag.clip.id]), event.altKey) - drag.clip.start, lower, upper);
+      p.onTransient(
+        updateClips(drag.base, [drag.clip.id], (c) => ({
+          ...c,
+          warp: (c.warp ?? []).map((marker, i) => (i === drag.index ? { ...marker, t } : marker))
+        }))
+      );
       return;
     }
     if (drag.kind === "auto") {
@@ -1031,7 +1081,7 @@ export function Timeline(props: TimelineProps) {
     snapLineRef.current = null;
     autoLabelRef.current = null;
     if (!drag) return;
-    if (drag.kind === "auto") {
+    if (drag.kind === "auto" || drag.kind === "warp") {
       p.onGestureEnd();
     } else if (drag.kind === "move") {
       p.onGestureEnd();

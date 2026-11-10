@@ -1,11 +1,12 @@
 "use client";
 
 import { Loader2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { ActionButton, PanelSection, Slider, fieldClass, formatDb } from "@/components/editor/controls";
 import { editorApi } from "@/lib/editor/api";
 import type { Favourite, ProcessStep } from "@/lib/editor/favourites";
+import { type WamCatalogueEntry, isAllowedWamUrl, loadWamCatalogue, wamConsent } from "@/lib/editor/wam";
 import {
   type Asset,
   type AssetMeta,
@@ -13,6 +14,7 @@ import {
   type Capabilities,
   type Clip,
   type FadeCurve,
+  type GenerationStatus,
   type Job,
   type JobOp,
   type PluginInfo,
@@ -47,6 +49,9 @@ interface InspectorProps {
   onPatchTrack: (patch: Partial<Track>, key: string) => void;
   onRunJob: (op: JobOp, params: Record<string, unknown>, title: string) => void;
   onAddMidiTrack: () => void;
+  onOpenWam: (trackId: string) => void;
+  generation: GenerationStatus | null;
+  onCheckGeneration: () => void;
   onOpenPianoRoll: () => void;
   onExportMidi: () => void;
   getPosition: () => number;
@@ -208,6 +213,9 @@ export function Inspector(props: InspectorProps) {
   >({ status: "idle" });
   const [restoreAmount, setRestoreAmount] = useState(0.5);
   const [favouriteName, setFavouriteName] = useState("");
+  const [genPrompt, setGenPrompt] = useState("");
+  const [genSeconds, setGenSeconds] = useState(15);
+  const [genModel, setGenModel] = useState("");
   const [favouriteCount, setFavouriteCount] = useState(1);
   const pluginRequest = useRef(0);
 
@@ -396,8 +404,25 @@ export function Inspector(props: InspectorProps) {
                 </ActionButton>
               </PanelSection>
               {track ? (
-                <PanelSection title="Instrument" hint="A built-in synth. It feeds the track's EQ, effects and sends like any audio.">
+                <PanelSection title="Instrument" hint="Built in. It feeds the track's EQ, effects and sends like any audio.">
                   <label className="flex items-center gap-2 text-[11px] text-slate-400">
+                    <span className="w-16 shrink-0">Type</span>
+                    <select
+                      className={fieldClass}
+                      value={track.synth.kind}
+                      aria-label="Instrument type"
+                      onChange={(event) => props.onPatchTrack({ synth: { ...track.synth, kind: event.target.value as typeof track.synth.kind } }, "")}
+                    >
+                      <option value="synth">Synth (pitched notes)</option>
+                      <option value="drums">Drum kit (kick 36, snare 38, hat 42…)</option>
+                    </select>
+                  </label>
+                  {track.synth.kind === "drums" ? (
+                    <p className="text-[11px] text-slate-400">
+                      Each row of the grid is a drum: kick, snare, clap, hats, toms and cymbal. Note length is ignored.
+                    </p>
+                  ) : null}
+                  <label className={`flex items-center gap-2 text-[11px] text-slate-400 ${track.synth.kind === "drums" ? "hidden" : ""}`}>
                     <span className="w-16 shrink-0">Wave</span>
                     <select
                       className={fieldClass}
@@ -861,6 +886,65 @@ export function Inspector(props: InspectorProps) {
           </PanelSection>
 
           <PanelSection
+            title="Generate a part"
+            hint="Describe a new part to go with this clip. It is generated on this machine by ComfyUI (MusicGen) at the project tempo and lands on a new track."
+          >
+            {props.generation?.available && props.generation.node_installed ? (
+              <>
+                <textarea
+                  className={`${fieldClass} h-16 resize-none py-1.5`}
+                  placeholder="e.g. warm upright bass, walking line, jazz trio"
+                  aria-label="Describe the part to generate"
+                  maxLength={300}
+                  value={genPrompt}
+                  onChange={(event) => setGenPrompt(event.target.value)}
+                />
+                <Slider label="Length" value={genSeconds} min={4} max={60} step={1} defaultValue={15} format={(v) => `${v} s`} onChange={setGenSeconds} />
+                {props.generation.models.length ? (
+                  <select
+                    className={fieldClass}
+                    aria-label="Generation model"
+                    value={genModel || props.generation.models[0]}
+                    onChange={(event) => setGenModel(event.target.value)}
+                  >
+                    {props.generation.models.map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                <ActionButton
+                  variant="primary"
+                  className="w-full"
+                  disabled={busy || genPrompt.trim().length < 3}
+                  onClick={() => {
+                    const context = [genPrompt.trim(), `${Math.round(state.bpm)} BPM`, state.keyLabel ? `in ${state.keyLabel}` : ""].filter(Boolean).join(", ");
+                    props.onRunJob(
+                      "generate",
+                      { prompt: context, seconds: genSeconds, bpm: Math.round(Math.min(200, Math.max(60, state.bpm))), model: genModel || props.generation?.models[0] || "facebook/musicgen-stereo-medium" },
+                      `Generating “${genPrompt.trim().slice(0, 30)}”`
+                    );
+                  }}
+                >
+                  Generate
+                </ActionButton>
+              </>
+            ) : (
+              <>
+                <p className="rounded-lg bg-slate-900 px-2 py-1.5 text-[11px] text-slate-300">
+                  {props.generation?.available
+                    ? "ComfyUI is running, but the Sonic Holodeck nodes are not installed in it. Run the installer with your ComfyUI path."
+                    : "ComfyUI is not running. Start it (with the Sonic Holodeck nodes installed) on this machine, then check again."}
+                </p>
+                <ActionButton className="w-full" onClick={props.onCheckGeneration}>
+                  Check again
+                </ActionButton>
+              </>
+            )}
+          </PanelSection>
+
+          <PanelSection
             title="Favourites"
             hint="Save the processing you just ran as a one-click chain. Favourites are kept in this browser and work in every session."
           >
@@ -1152,6 +1236,15 @@ export function Inspector(props: InspectorProps) {
       ) : null}
 
       {track ? <EffectRack fx={track.fx} onChange={(fx, key) => props.onPatchTrack({ fx }, key)} /> : null}
+
+      {track ? (
+        <WamSection
+          key={track.id}
+          current={track.wam}
+          onLoad={(wam) => props.onPatchTrack({ wam }, "")}
+          onOpen={() => props.onOpenWam(track.id)}
+        />
+      ) : null}
 
       {!clip ? (
         <PanelSection title="Phase scope" hint="A vertical shape is mono-safe; a wide or horizontal one will thin out in mono.">
@@ -1622,5 +1715,112 @@ function EqDisplay({
       role="img"
       aria-label="Track spectrum with the equaliser curve. The centre line is 0 dB; the curve spans plus and minus 15 dB."
     />
+  );
+}
+
+/** One in-browser plugin (Web Audio Module) per track, loaded from the internet once the user allows it. */
+function WamSection({
+  current,
+  onLoad,
+  onOpen
+}: {
+  current: Track["wam"];
+  onLoad: (wam: Track["wam"]) => void;
+  onOpen: () => void;
+}) {
+  const allowed = useSyncExternalStore(wamConsent.subscribe, wamConsent.getSnapshot, wamConsent.getServerSnapshot);
+  const [catalogue, setCatalogue] = useState<WamCatalogueEntry[] | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [choice, setChoice] = useState("");
+  const [custom, setCustom] = useState("");
+
+  useEffect(() => {
+    if (!allowed) return;
+    let cancelled = false;
+    loadWamCatalogue()
+      .then((items) => !cancelled && setCatalogue(items.filter((item) => !item.instrument)))
+      .catch((err: unknown) => !cancelled && setFailure(err instanceof Error ? err.message : "The plugin catalogue could not be loaded."));
+    return () => {
+      cancelled = true;
+    };
+  }, [allowed]);
+
+  if (!allowed) {
+    return (
+      <PanelSection title="In-browser plugin" hint="Web Audio Modules: effects that run live in the browser, loaded from the internet.">
+        <p className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-100">
+          This is the one part of Music Suite that reaches the internet. A plugin is someone else&apos;s code: it is downloaded
+          when you load it and runs inside this page, where it can read this session. Your audio is still processed on this
+          machine. Only load plugins you trust.
+        </p>
+        <ActionButton className="w-full" onClick={() => wamConsent.set(true)}>
+          Allow internet plugins in this browser
+        </ActionButton>
+      </PanelSection>
+    );
+  }
+
+  const picked = catalogue?.find((item) => item.url === choice);
+  return (
+    <PanelSection
+      title="In-browser plugin"
+      hint="Runs live after this track's effects and is included in exports when the plugin supports it."
+    >
+      {current ? (
+        <>
+          <p className="truncate rounded-lg bg-slate-900 px-2 py-1.5 text-[11px] text-slate-200" title={current.url}>
+            Loaded: <strong>{current.name}</strong>
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <ActionButton variant="primary" onClick={onOpen}>
+              Open controls
+            </ActionButton>
+            <ActionButton variant="danger" onClick={() => onLoad(undefined)}>
+              Remove
+            </ActionButton>
+          </div>
+        </>
+      ) : (
+        <>
+          {failure ? <p className="text-[11px] text-rose-300" role="alert">{failure}</p> : null}
+          <select className={fieldClass} aria-label="Community plugin" value={choice} onChange={(event) => setChoice(event.target.value)}>
+            <option value="">{catalogue ? "Choose a community plugin…" : failure ? "Catalogue unavailable" : "Loading the catalogue…"}</option>
+            {(catalogue ?? []).map((item) => (
+              <option key={item.url} value={item.url}>
+                {item.name}
+                {item.vendor ? ` — ${item.vendor}` : ""}
+              </option>
+            ))}
+          </select>
+          {picked?.description ? <p className="text-[11px] text-slate-400">{picked.description}</p> : null}
+          <ActionButton className="w-full" disabled={!picked} onClick={() => picked && onLoad({ url: picked.url, name: picked.name })}>
+            Load plugin
+          </ActionButton>
+          <input
+            className={fieldClass}
+            placeholder="…or paste a plugin address (https://…/index.js)"
+            aria-label="Plugin address"
+            value={custom}
+            onChange={(event) => setCustom(event.target.value.trim())}
+          />
+          {custom ? (
+            <ActionButton
+              className="w-full"
+              disabled={!isAllowedWamUrl(custom)}
+              onClick={() => onLoad({ url: custom, name: new URL(custom).pathname.split("/").filter(Boolean).slice(-2, -1)[0] ?? "Plugin" })}
+            >
+              {isAllowedWamUrl(custom) ? "Load from this address" : "The address must start with https://"}
+            </ActionButton>
+          ) : null}
+        </>
+      )}
+      <button
+        type="button"
+        className="h-6 text-left text-[11px] text-slate-400 underline-offset-2 hover:text-slate-200 hover:underline"
+        onClick={() => wamConsent.set(false)}
+      >
+        Switch internet plugins off again
+      </button>
+    </PanelSection>
   );
 }

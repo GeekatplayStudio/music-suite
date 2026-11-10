@@ -21,6 +21,7 @@ from audioqi.editor import (
     assets,
     composition,
     engines,
+    generation,
     plugins,
     processing,
     projects,
@@ -196,6 +197,25 @@ def _v_quantize(params: dict[str, Any]) -> dict[str, Any]:
     return {"bpm": _number(params, "bpm", 40.0, 240.0, None, required=True)}
 
 
+def _v_generate(params: dict[str, Any]) -> dict[str, Any]:
+    _reject_unknown(params, {"prompt", "seconds", "bpm", "model"})
+    prompt = params.get("prompt")
+    if not isinstance(prompt, str):
+        raise ParamError("'prompt' must describe the part to generate.")
+    prompt = " ".join("".join(ch for ch in prompt if ch.isprintable()).split())
+    if not 3 <= len(prompt) <= 400:
+        raise ParamError("'prompt' must be between 3 and 400 characters.")
+    model = params.get("model", generation.DEFAULT_MODEL)
+    if not isinstance(model, str) or not 0 < len(model) <= 80 or not model.isprintable():
+        raise ParamError("'model' must be a model name from the generator's list.")
+    return {
+        "prompt": prompt,
+        "seconds": int(_number(params, "seconds", 2, generation.MAX_SECONDS, 15) or 15),
+        "bpm": int(_number(params, "bpm", 60, 200, 120) or 120),
+        "model": model,
+    }
+
+
 def _v_plugin(params: dict[str, Any]) -> dict[str, Any]:
     preview_keys = {"preview_start", "preview_seconds"}
     preview = {key: params[key] for key in preview_keys if key in params}
@@ -284,6 +304,7 @@ _VALIDATORS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "declip": _v_declip,
     "dereverb": _v_dereverb,
     "spectral_repair": _v_spectral_repair,
+    "generate": _v_generate,
     "to_midi": _v_analyze,
     "structure": _v_analyze,
     "warp": _v_warp,
@@ -612,6 +633,21 @@ def _op_warp(ctx: _Context) -> _Outcome:
     return _warp_outcome(ctx, audio, sr, markers, "warped")
 
 
+def _op_generate(ctx: _Context) -> _Outcome:
+    params = ctx.params
+    ctx.progress("process", 5, "Contacting ComfyUI.")
+    outcome = generation.generate(
+        ctx.project_id,
+        prompt=params["prompt"],
+        bpm=params["bpm"],
+        seconds=params["seconds"],
+        model=params["model"],
+        parent_id=ctx.asset["id"],
+        progress=lambda percent, detail: ctx.progress("process", percent, detail),
+    )
+    return [outcome["asset"]], {"model": outcome["model"], "prompt": params["prompt"]}
+
+
 def _op_to_midi(ctx: _Context) -> _Outcome:
     audio, sr = ctx.load()
     engine = composition.transcription_engine()
@@ -741,6 +777,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "declip": _op_declip,
     "dereverb": _op_dereverb,
     "spectral_repair": _op_spectral_repair,
+    "generate": _op_generate,
     "to_midi": _op_to_midi,
     "structure": _op_structure,
     "warp": _op_warp,

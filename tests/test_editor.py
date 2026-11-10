@@ -1268,3 +1268,119 @@ def test_structure_on_a_shorter_song_still_finds_every_change(client: TestClient
     assert [section["label"] for section in sections] == ["A", "B", "A", "B"]
     for section, boundary in zip(sections[1:], (12.0, 24.0, 36.0), strict=True):
         assert abs(section["start"] - boundary) < 1.5
+
+
+# --- Generation through ComfyUI --------------------------------------------------------
+
+
+class _FakeResponse:
+    def __init__(self, status: int = 200, payload: Any = None, content: bytes = b"") -> None:
+        self.status_code = status
+        self._payload = payload
+        self.content = content
+
+    def json(self) -> Any:
+        return self._payload
+
+
+def _fake_comfy(monkeypatch: pytest.MonkeyPatch, audio_bytes: bytes, *, node: bool = True):
+    """Stand in for a local ComfyUI: answers the handful of routes the editor uses."""
+    from audioqi.editor import generation
+
+    seen: dict[str, Any] = {"polls": 0}
+    models = ["facebook/musicgen-small", "facebook/musicgen-stereo-medium"]
+
+    def fake_get(path: str, timeout: float, **params: Any) -> _FakeResponse:
+        if path == "/system_stats":
+            return _FakeResponse(payload={"system": {}})
+        if path.startswith("/object_info/"):
+            described = {"input": {"required": {"model_name": [models, {}]}}}
+            return _FakeResponse(payload={generation.SYNTH_NODE: described} if node else {})
+        if path.startswith("/history/"):
+            seen["polls"] += 1
+            if seen["polls"] < 2:
+                return _FakeResponse(payload={})
+            item = {"filename": "editor_00001_.flac", "subfolder": "music_suite", "type": "output"}
+            return _FakeResponse(payload={"abc": {"outputs": {"2": {"audio": [item]}}}})
+        if path == "/view":
+            seen["view"] = params
+            return _FakeResponse(content=audio_bytes)
+        return _FakeResponse(status=404)
+
+    def fake_post(path: str, payload: dict[str, Any], timeout: float) -> _FakeResponse:
+        seen["graph"] = payload["prompt"]
+        return _FakeResponse(payload={"prompt_id": "abc"})
+
+    monkeypatch.setattr(generation, "_get", fake_get)
+    monkeypatch.setattr(generation, "_post", fake_post)
+    monkeypatch.setattr(generation.time, "sleep", lambda _seconds: None)
+    return seen
+
+
+def test_generate_runs_the_workflow_and_imports_the_result(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    generated = tmp_path / "gen.flac"
+    sf.write(str(generated), _song(2.0), SR, format="FLAC")
+    seen = _fake_comfy(monkeypatch, generated.read_bytes())
+    status = client.get("/editor/generation").json()
+    assert status["available"] and status["node_installed"] and len(status["models"]) == 2
+
+    pid, asset, _ = _setup(client, tmp_path, _song(1.0))
+    params = {"prompt": "  warm   bass line\n", "seconds": 8, "bpm": 100, "model": "nope"}
+    job = _ok(client, pid, "generate", asset["id"], params)
+    (created,) = job["result_assets"]
+    assert created["name"] == "warm bass line (generated)" and created["sample_rate"] == SR
+    assert abs(created["duration_seconds"] - 2.0) < 0.01
+    inputs = seen["graph"]["1"]["inputs"]
+    assert (inputs["prompt"], inputs["bpm"], inputs["duration"]) == ("warm bass line", 100, 8)
+    # A model the server does not offer falls back to one it does.
+    assert inputs["model_name"] == "facebook/musicgen-small" == job["result"]["model"]
+    assert seen["graph"]["2"] == {
+        "class_type": "SaveAudio",
+        "inputs": {"audio": ["1", 0], "filename_prefix": "music_suite/editor"},
+    }
+    assert seen["view"]["filename"] == "editor_00001_.flac"
+
+
+def test_generate_fails_cleanly_without_comfyui_or_its_nodes(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from audioqi.editor import generation
+
+    def refuse(*_args: Any, **_kwargs: Any) -> Any:
+        raise generation.requests.ConnectionError("refused")
+
+    monkeypatch.setattr(generation, "_get", refuse)
+    assert client.get("/editor/generation").json() == {
+        "available": False,
+        "node_installed": False,
+        "models": [],
+    }
+    pid, asset, _ = _setup(client, tmp_path, _song(1.0))
+    job = _run(client, pid, "generate", asset["id"], {"prompt": "drums"})
+    assert job["status"] == "failed" and "ComfyUI is not running" in job["error"]
+
+    _fake_comfy(monkeypatch, b"", node=False)
+    job = _run(client, pid, "generate", asset["id"], {"prompt": "drums"})
+    assert job["status"] == "failed" and "not installed" in job["error"]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [{}, {"prompt": "x"}, {"prompt": "ok then", "seconds": 999}, {"prompt": "ok then", "url": "x"}],
+)
+def test_generate_requests_are_validated(client: TestClient, tmp_path: Path, params: Any) -> None:
+    pid, asset, _ = _setup(client, tmp_path, _song(0.5))
+    body = {"op": "generate", "asset_id": asset["id"], "params": params}
+    assert client.post(f"/editor/projects/{pid}/jobs", json=body).status_code == 422
+
+
+def test_comfyui_address_must_be_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from audioqi.editor import generation
+
+    monkeypatch.setenv("MUSIC_SUITE_COMFYUI_URL", "http://example.com:8188")
+    with pytest.raises(projects.EditorError):
+        generation.base_url()
+    monkeypatch.setenv("MUSIC_SUITE_COMFYUI_URL", "http://localhost:9000/")
+    assert generation.base_url() == "http://localhost:9000"

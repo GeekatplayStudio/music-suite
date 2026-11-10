@@ -1,16 +1,32 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { ActionButton, Slider } from "@/components/editor/controls";
 import type { Clip, Note } from "@/lib/editor/types";
 
 const HEIGHT = 264;
-const KEYS = 48;
+const KEYS = 56;
 const EDGE = 7;
 const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const BLACK = new Set([1, 3, 6, 8, 10]);
+/** General MIDI drum names for the pitches the built-in kit plays. */
+export const DRUM_NAMES: Record<number, string> = {
+  36: "Kick",
+  38: "Snare",
+  39: "Clap",
+  41: "Tom lo",
+  42: "Hat",
+  45: "Tom mid",
+  46: "Hat open",
+  48: "Tom hi",
+  49: "Cymbal"
+};
+/** Computer keys laid out like a piano octave, starting on C. */
+const TYPING: Record<string, number> = { a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11, k: 12 };
+
+let noteClipboard: Note[] = [];
 
 export type NotePhase = "start" | "move" | "end" | "commit";
 
@@ -20,48 +36,64 @@ interface PianoRollProps {
   bpm: number;
   beatsPerBar: number;
   snap: boolean;
+  drums: boolean;
   getPosition: () => number;
   onNotes: (notes: Note[], phase: NotePhase) => void;
   onPreview: (pitch: number) => void;
+  onSeek: (time: number) => void;
   onClose: () => void;
 }
 
 type Drag =
-  | { kind: "move"; index: number; grabT: number; grabP: number; base: Note[] }
-  | { kind: "resize"; index: number; base: Note[] };
+  | { kind: "move"; anchor: number; grabT: number; grabP: number; lastP: number; ids: Set<number>; base: Note[] }
+  | { kind: "resize"; index: number; base: Note[] }
+  | { kind: "marquee"; t: number; p: number };
 
-function pitchName(pitch: number): string {
+function pitchName(pitch: number, drums: boolean): string {
+  if (drums && DRUM_NAMES[pitch]) return DRUM_NAMES[pitch];
   return `${NAMES[pitch % 12]}${Math.floor(pitch / 12) - 1}`;
 }
 
-export function PianoRoll({ clip, color, bpm, beatsPerBar, snap, getPosition, onNotes, onPreview, onClose }: PianoRollProps) {
+export function PianoRoll(props: PianoRollProps) {
+  const { clip, color, bpm, beatsPerBar, snap, drums, getPosition, onNotes, onPreview, onSeek, onClose } = props;
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [width, setWidth] = useState(600);
-  const [selected, setSelected] = useState<number | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [zoom, setZoom] = useState(1);
+  const [scroll, setScroll] = useState(0);
+  const [typing, setTyping] = useState(false);
+  const [marquee, setMarquee] = useState<{ t0: number; t1: number; p0: number; p1: number } | null>(null);
   const dragRef = useRef<Drag | null>(null);
   const lengthRef = useRef(0);
   const notes = clip.notes ?? [];
 
-  // The visible pitch range follows the notes, with room to add more above and below.
+  // The rows are fixed when the editor opens, so they never shift under the pointer while
+  // notes are added; they only widen if a note ends up outside them.
+  const [base] = useState(() => {
+    const found = (clip.notes ?? []).map((note) => note.p);
+    if (drums) return { low: Math.min(35, ...found), high: Math.max(50, ...found) };
+    let bottom = found.length ? Math.min(...found) - 7 : 48;
+    let top = found.length ? Math.max(...found) + 7 : 84;
+    if (top - bottom < 30) {
+      const middle = Math.round((top + bottom) / 2);
+      bottom = middle - 15;
+      top = middle + 15;
+    }
+    return { low: bottom, high: top };
+  });
   const pitches = notes.map((note) => note.p);
-  let low = pitches.length ? Math.min(...pitches) - 7 : 48;
-  let high = pitches.length ? Math.max(...pitches) + 7 : 84;
-  if (high - low < 30) {
-    const middle = Math.round((high + low) / 2);
-    low = middle - 15;
-    high = middle + 15;
-  }
-  low = Math.max(0, low);
-  high = Math.min(127, high);
-  const rows = high - low + 1;
-  const rowH = HEIGHT / rows;
+  const low = Math.max(0, Math.min(base.low, ...pitches));
+  const high = Math.min(127, Math.max(base.high, ...pitches));
+  const rowH = HEIGHT / (high - low + 1);
   const step = 60 / bpm / 4;
-  const pxPerSec = width / Math.max(0.1, clip.duration);
+  const pxPerSec = (width / Math.max(0.1, clip.duration)) * zoom;
+  const visible = width / pxPerSec;
+  const viewStart = clip.offset + Math.min(scroll, Math.max(0, clip.duration - visible));
 
-  const view = useRef({ notes, low, high, rowH, pxPerSec, selected, clip, step, beatsPerBar, color, getPosition });
+  const view = useRef({ notes, low, high, rowH, pxPerSec, selected, clip, step, beatsPerBar, color, getPosition, viewStart, drums, marquee });
   useEffect(() => {
-    view.current = { notes, low, high, rowH, pxPerSec, selected, clip, step, beatsPerBar, color, getPosition };
+    view.current = { notes, low, high, rowH, pxPerSec, selected, clip, step, beatsPerBar, color, getPosition, viewStart, drums, marquee };
   });
 
   useEffect(() => {
@@ -82,80 +114,160 @@ export function PianoRoll({ clip, color, bpm, beatsPerBar, snap, getPosition, on
     let frame = 0;
     const draw = () => {
       const v = view.current;
+      const xOf = (time: number) => KEYS + (time - v.viewStart) * v.pxPerSec;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = "#0b1220";
       ctx.fillRect(0, 0, width + KEYS, HEIGHT);
-      ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, monospace";
       ctx.textBaseline = "middle";
       for (let pitch = v.low; pitch <= v.high; pitch++) {
         const y = (v.high - pitch) * v.rowH;
-        const black = BLACK.has(pitch % 12);
+        const black = !v.drums && BLACK.has(pitch % 12);
         ctx.fillStyle = black ? "#0b1220" : "#111a2e";
         ctx.fillRect(KEYS, y, width, v.rowH);
-        ctx.fillStyle = black ? "#1e293b" : "#e2e8f0";
+        ctx.fillStyle = v.drums ? (pitch % 2 ? "#1e293b" : "#273449") : black ? "#1e293b" : "#e2e8f0";
         ctx.fillRect(0, y, KEYS - 2, Math.max(1, v.rowH - 0.5));
-        if (pitch % 12 === 0) {
-          ctx.fillStyle = "#0f172a";
-          ctx.fillText(pitchName(pitch), 4, y + v.rowH / 2 + 0.5);
-          ctx.fillStyle = "rgba(148, 163, 184, 0.3)";
+        const labelled = v.drums ? DRUM_NAMES[pitch] !== undefined : pitch % 12 === 0;
+        if (labelled) {
+          ctx.font = `${v.drums ? 10 : 9}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+          ctx.fillStyle = v.drums ? "#e2e8f0" : "#0f172a";
+          ctx.fillText(pitchName(pitch, v.drums), 4, y + v.rowH / 2 + 0.5);
+        }
+        if (v.drums || pitch % 12 === 0) {
+          ctx.fillStyle = "rgba(148, 163, 184, 0.22)";
           ctx.fillRect(KEYS, y + v.rowH - 0.5, width, 1);
         }
       }
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(KEYS, 0, width, HEIGHT);
+      ctx.clip();
       // Grid: sixteenths when there is room, always beats and bars.
-      const beat = v.step * 4;
       const fine = v.step * v.pxPerSec >= 7;
-      const gridStep = fine ? v.step : beat;
-      const first = Math.ceil(v.clip.offset / gridStep - 1e-6);
-      for (let i = first; i * gridStep < v.clip.offset + v.clip.duration; i++) {
+      const gridStep = fine ? v.step : v.step * 4;
+      for (let i = Math.ceil(v.viewStart / gridStep - 1e-6); i * gridStep < v.viewStart + width / v.pxPerSec; i++) {
         const sixteenths = fine ? i : i * 4;
-        const x = KEYS + (i * gridStep - v.clip.offset) * v.pxPerSec;
         const isBar = sixteenths % (4 * v.beatsPerBar) === 0;
         const isBeat = sixteenths % 4 === 0;
         ctx.fillStyle = isBar ? "rgba(226, 232, 240, 0.4)" : isBeat ? "rgba(148, 163, 184, 0.22)" : "rgba(148, 163, 184, 0.09)";
-        ctx.fillRect(Math.round(x), 0, 1, HEIGHT);
+        ctx.fillRect(Math.round(xOf(i * gridStep)), 0, 1, HEIGHT);
       }
       v.notes.forEach((note, index) => {
         if (note.p < v.low || note.p > v.high) return;
-        const x = KEYS + (note.t - v.clip.offset) * v.pxPerSec;
+        const x = xOf(note.t);
         const w = Math.max(3, note.d * v.pxPerSec);
         if (x + w < KEYS || x > KEYS + width) return;
         const y = (v.high - note.p) * v.rowH;
+        const chosen = v.selected.has(index);
         // Velocity shows as opacity, so soft notes look lighter.
         ctx.globalAlpha = 0.45 + 0.55 * note.v;
         ctx.fillStyle = v.color;
-        ctx.fillRect(Math.max(KEYS, x), y + 0.5, w - Math.max(0, KEYS - x), Math.max(2, v.rowH - 1));
+        ctx.fillRect(x, y + 0.5, w, Math.max(2, v.rowH - 1));
         ctx.globalAlpha = 1;
-        ctx.lineWidth = index === v.selected ? 2 : 1;
-        ctx.strokeStyle = index === v.selected ? "#ffffff" : "rgba(2, 6, 23, 0.9)";
-        ctx.strokeRect(Math.max(KEYS, x) + 0.5, y + 0.5, w - Math.max(0, KEYS - x) - 1, Math.max(2, v.rowH - 1));
+        ctx.lineWidth = chosen ? 2 : 1;
+        ctx.strokeStyle = chosen ? "#ffffff" : "rgba(2, 6, 23, 0.9)";
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, Math.max(2, v.rowH - 1));
       });
-      const local = v.getPosition() - v.clip.start;
-      if (local >= 0 && local <= v.clip.duration) {
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(Math.round(KEYS + local * v.pxPerSec), 0, 1, HEIGHT);
+      if (v.marquee) {
+        const x0 = xOf(v.marquee.t0);
+        const y0 = (v.high - v.marquee.p1) * v.rowH;
+        const boxW = xOf(v.marquee.t1) - x0;
+        const boxH = (v.marquee.p1 - v.marquee.p0 + 1) * v.rowH;
+        ctx.fillStyle = "rgba(255, 255, 255, 0.12)";
+        ctx.fillRect(x0, y0, boxW, boxH);
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x0 + 0.5, y0 + 0.5, boxW, boxH);
       }
+      const playhead = v.getPosition() - v.clip.start + v.clip.offset;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(Math.round(xOf(playhead)), 0, 1, HEIGHT);
+      ctx.restore();
       frame = requestAnimationFrame(draw);
     };
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
   }, [width]);
 
+  // Wheel: Ctrl/Cmd zooms, anything else scrolls sideways when zoomed in.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (event: WheelEvent) => {
+      const v = view.current;
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        setZoom((z) => Math.min(32, Math.max(1, z * Math.exp(-event.deltaY * 0.004))));
+      } else if (v.pxPerSec * v.clip.duration > width + 1) {
+        event.preventDefault();
+        const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+        setScroll((s) => Math.max(0, Math.min(v.clip.duration - width / v.pxPerSec, s + delta / v.pxPerSec)));
+      }
+    };
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, [width]);
+
+  const snapTime = (time: number, bypass: boolean) => (snap && !bypass ? Math.round(time / step) * step : time);
+
+  /** Step input: put a note at the playhead and move the playhead on by its length. */
+  const stepInput = useEffectEvent((pitch: number, velocity: number) => {
+    const length = lengthRef.current || step * 2;
+    const local = snapTime(getPosition() - clip.start + clip.offset, false);
+    onPreview(pitch);
+    if (local < clip.offset - 1e-6 || local >= clip.offset + clip.duration - 0.01) return;
+    onNotes([...notes, { t: local, d: length, p: pitch, v: velocity }], "commit");
+    onSeek(clip.start + local - clip.offset + length);
+  });
+
+  useEffect(() => {
+    if (!typing) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (event.metaKey || event.ctrlKey || event.altKey || target?.closest("input, textarea, select")) return;
+      const offset = TYPING[event.key.toLowerCase()];
+      if (offset === undefined) return;
+      // These letters are editor shortcuts too; while typing notes they belong to the keyboard.
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!event.repeat) stepInput(60 + offset, 0.8);
+    };
+    window.addEventListener("keydown", onKey, true);
+    let access: MIDIAccess | null = null;
+    const onMidi = (event: MIDIMessageEvent) => {
+      const data = event.data;
+      if (data && (data[0] & 0xf0) === 0x90 && data[2] > 0) stepInput(data[1], data[2] / 127);
+    };
+    // A connected MIDI keyboard enters notes the same way; the browser asks for permission once.
+    if (navigator.requestMIDIAccess) {
+      navigator
+        .requestMIDIAccess()
+        .then((granted) => {
+          access = granted;
+          for (const input of granted.inputs.values()) input.addEventListener("midimessage", onMidi);
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      if (access) for (const input of access.inputs.values()) input.removeEventListener("midimessage", onMidi);
+    };
+  }, [typing]);
+
   const locate = (event: React.PointerEvent | React.MouseEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect();
     const x = event.clientX - rect.left - KEYS;
     const y = Math.min(HEIGHT - 1, Math.max(0, event.clientY - rect.top));
-    return { x, time: clip.offset + x / pxPerSec, pitch: Math.min(high, Math.max(low, high - Math.floor(y / rowH))) };
+    return { x, time: viewStart + x / pxPerSec, pitch: Math.min(high, Math.max(low, high - Math.floor(y / rowH))) };
   };
 
-  const snapTime = (time: number, bypass: boolean) => (snap && !bypass ? Math.round(time / step) * step : time);
-
-  const hit = (x: number, pitch: number): { index: number; edge: boolean } | null => {
+  const hit = (time: number, pitch: number): { index: number; edge: boolean } | null => {
     for (let i = notes.length - 1; i >= 0; i--) {
       const note = notes[i];
       if (note.p !== pitch) continue;
-      const x0 = (note.t - clip.offset) * pxPerSec;
-      const x1 = x0 + Math.max(3, note.d * pxPerSec);
-      if (x >= x0 - 1 && x <= x1 + 1) return { index: i, edge: x1 - x <= Math.min(EDGE, (x1 - x0) / 2) };
+      const length = Math.max(3 / pxPerSec, note.d);
+      if (time >= note.t - 1 / pxPerSec && time <= note.t + length + 1 / pxPerSec) {
+        return { index: i, edge: (note.t + length - time) * pxPerSec <= Math.min(EDGE, (length * pxPerSec) / 2) };
+      }
     }
     return null;
   };
@@ -168,15 +280,28 @@ export function PianoRoll({ clip, color, bpm, beatsPerBar, snap, getPosition, on
       return;
     }
     event.currentTarget.setPointerCapture(event.pointerId);
-    const found = hit(point.x, point.pitch);
+    const found = hit(point.time, point.pitch);
+    if (!found && event.shiftKey) {
+      dragRef.current = { kind: "marquee", t: point.time, p: point.pitch };
+      setMarquee({ t0: point.time, t1: point.time, p0: point.pitch, p1: point.pitch });
+      return;
+    }
     onNotes(notes, "start");
     if (found) {
-      setSelected(found.index);
       const note = notes[found.index];
+      let ids = selected;
+      if (event.shiftKey) {
+        ids = new Set(selected);
+        if (ids.has(found.index)) ids.delete(found.index);
+        else ids.add(found.index);
+      } else if (!selected.has(found.index)) {
+        ids = new Set([found.index]);
+      }
+      setSelected(ids);
       lengthRef.current = note.d;
       dragRef.current = found.edge
         ? { kind: "resize", index: found.index, base: notes }
-        : { kind: "move", index: found.index, grabT: point.time - note.t, grabP: note.p, base: notes };
+        : { kind: "move", anchor: found.index, grabT: point.time - note.t, grabP: point.pitch, lastP: point.pitch, ids, base: notes };
       onPreview(note.p);
       return;
     }
@@ -184,7 +309,7 @@ export function PianoRoll({ clip, color, bpm, beatsPerBar, snap, getPosition, on
     const start = Math.max(clip.offset, Math.min(snapTime(point.time, event.altKey), clip.offset + clip.duration - step / 2));
     const created: Note = { t: start, d: lengthRef.current || step * 2, p: point.pitch, v: 0.8 };
     const next = [...notes, created];
-    setSelected(next.length - 1);
+    setSelected(new Set([next.length - 1]));
     dragRef.current = { kind: "resize", index: next.length - 1, base: next };
     onNotes(next, "move");
     onPreview(point.pitch);
@@ -194,69 +319,130 @@ export function PianoRoll({ clip, color, bpm, beatsPerBar, snap, getPosition, on
     const drag = dragRef.current;
     const point = locate(event);
     if (!drag) {
-      const found = point.x >= 0 ? hit(point.x, point.pitch) : null;
+      const found = point.x >= 0 ? hit(point.time, point.pitch) : null;
       event.currentTarget.style.cursor = found ? (found.edge ? "ew-resize" : "grab") : point.x < 0 ? "pointer" : "crosshair";
       return;
     }
-    const original = drag.base[drag.index];
-    let changed: Note;
-    if (drag.kind === "move") {
-      const t = Math.max(clip.offset, Math.min(snapTime(point.time - drag.grabT, event.altKey), clip.offset + clip.duration - 0.02));
-      changed = { ...original, t, p: point.pitch };
-      if (point.pitch !== drag.grabP) {
-        drag.grabP = point.pitch;
-        onPreview(point.pitch);
-      }
-    } else {
-      const end = Math.max(original.t + step / 2, snapTime(point.time, event.altKey));
-      changed = { ...original, d: Math.max(0.02, end - original.t) };
-      lengthRef.current = changed.d;
+    if (drag.kind === "marquee") {
+      const box = {
+        t0: Math.min(drag.t, point.time),
+        t1: Math.max(drag.t, point.time),
+        p0: Math.min(drag.p, point.pitch),
+        p1: Math.max(drag.p, point.pitch)
+      };
+      setMarquee(box);
+      const inside = new Set<number>();
+      notes.forEach((note, index) => {
+        if (note.p >= box.p0 && note.p <= box.p1 && note.t < box.t1 && note.t + note.d > box.t0) inside.add(index);
+      });
+      setSelected(inside);
+      return;
     }
-    onNotes(drag.base.map((note, index) => (index === drag.index ? changed : note)), "move");
+    if (drag.kind === "move") {
+      const anchor = drag.base[drag.anchor];
+      const wantedT = snapTime(point.time - drag.grabT, event.altKey);
+      // The whole group moves together and stops when its first note reaches the clip start.
+      const earliest = Math.min(...[...drag.ids].map((i) => drag.base[i].t));
+      const dt = Math.max(clip.offset - earliest, wantedT - anchor.t);
+      const dp = point.pitch - drag.grabP;
+      if (point.pitch !== drag.lastP) {
+        drag.lastP = point.pitch;
+        onPreview(Math.min(127, Math.max(0, anchor.p + dp)));
+      }
+      onNotes(
+        drag.base.map((note, index) =>
+          drag.ids.has(index) ? { ...note, t: note.t + dt, p: Math.min(127, Math.max(0, note.p + dp)) } : note
+        ),
+        "move"
+      );
+      return;
+    }
+    const original = drag.base[drag.index];
+    const end = Math.max(original.t + step / 2, snapTime(point.time, event.altKey));
+    lengthRef.current = Math.max(0.02, end - original.t);
+    onNotes(drag.base.map((note, index) => (index === drag.index ? { ...note, d: lengthRef.current } : note)), "move");
   };
 
   const onPointerUp = () => {
-    if (!dragRef.current) return;
+    const drag = dragRef.current;
     dragRef.current = null;
-    onNotes(notes, "end");
+    if (!drag) return;
+    if (drag.kind === "marquee") setMarquee(null);
+    else onNotes(notes, "end");
   };
 
-  const current = selected !== null ? notes[selected] : undefined;
+  const chosen = [...selected].filter((index) => index < notes.length);
+  const first = chosen.length ? notes[chosen[0]] : undefined;
+  const removeSelected = () => {
+    onNotes(notes.filter((_, index) => !selected.has(index)), "commit");
+    setSelected(new Set());
+  };
+  const paste = () => {
+    if (!noteClipboard.length) return;
+    const at = snapTime(getPosition() - clip.start + clip.offset, false);
+    const origin = Math.min(...noteClipboard.map((note) => note.t));
+    const added = noteClipboard.map((note) => ({ ...note, t: Math.max(clip.offset, at + note.t - origin) }));
+    onNotes([...notes, ...added], "commit");
+    setSelected(new Set(added.map((_, index) => notes.length + index)));
+  };
+
+  let status = drums
+    ? "Click a row to add a hit. Shift-drag to select several."
+    : "Click to add a note, drag to move, drag the right edge to resize. Shift-drag to select several; right-click deletes.";
+  if (chosen.length > 1) status = `${chosen.length} notes selected`;
+  else if (first) status = `${pitchName(first.p, drums)} · starts ${(first.t - clip.offset).toFixed(2)} s · ${first.d.toFixed(2)} s long`;
+  if (typing) status = "Note input is on: A W S E D F T G Y H U J K (or a MIDI keyboard) add notes at the playhead.";
 
   return (
     <section className="shrink-0 border-t border-white/10 bg-slate-950" aria-label="Piano roll">
-      <div className="flex h-9 items-center gap-3 px-3 text-[11px] text-slate-300">
-        <h3 className="display-font shrink-0 whitespace-nowrap font-semibold uppercase tracking-wider">Piano roll</h3>
-        <span className="min-w-0 flex-1 truncate text-slate-400">
-          {current
-            ? `${pitchName(current.p)} · starts ${(current.t - clip.offset).toFixed(2)} s · ${current.d.toFixed(2)} s long`
-            : "Click to add a note, drag to move, drag the right edge to resize, right-click to delete."}
+      <div className="flex h-9 items-center gap-2 px-3 text-[11px] text-slate-300">
+        <h3 className="display-font shrink-0 whitespace-nowrap font-semibold uppercase tracking-wider">{drums ? "Drum grid" : "Piano roll"}</h3>
+        <span className="min-w-0 flex-1 truncate text-slate-400" aria-live="polite">
+          {status}
         </span>
-        {current ? (
-          <>
-            <div className="w-52 shrink-0">
-              <Slider
-                label="Velocity"
-                value={current.v}
-                min={0.05}
-                max={1}
-                step={0.01}
-                defaultValue={0.8}
-                format={(v) => `${Math.round(v * 127)}`}
-                onChange={(v) => onNotes(notes.map((note, index) => (index === selected ? { ...note, v } : note)), "commit")}
-              />
-            </div>
-            <ActionButton
-              variant="danger"
-              onClick={() => {
-                onNotes(notes.filter((_, index) => index !== selected), "commit");
-                setSelected(null);
-              }}
-            >
-              Delete note
-            </ActionButton>
-          </>
+        {first ? (
+          <div className="w-48 shrink-0">
+            <Slider
+              label="Velocity"
+              value={first.v}
+              min={0.05}
+              max={1}
+              step={0.01}
+              defaultValue={0.8}
+              format={(v) => `${Math.round(v * 127)}`}
+              onChange={(v) => onNotes(notes.map((note, index) => (selected.has(index) ? { ...note, v } : note)), "commit")}
+            />
+          </div>
         ) : null}
+        <ActionButton
+          disabled={!chosen.length}
+          title="Copy the selected notes"
+          onClick={() => {
+            noteClipboard = chosen.map((index) => ({ ...notes[index] }));
+          }}
+        >
+          Copy
+        </ActionButton>
+        <ActionButton title="Paste the copied notes at the playhead" onClick={paste}>
+          Paste
+        </ActionButton>
+        <ActionButton variant="danger" disabled={!chosen.length} onClick={removeSelected}>
+          Delete
+        </ActionButton>
+        <ActionButton
+          aria-pressed={typing}
+          className={typing ? "bg-cyan-400 text-slate-950 hover:bg-cyan-300" : undefined}
+          title="Enter notes from the computer keyboard or a MIDI keyboard"
+          onClick={() => setTyping((on) => !on)}
+        >
+          Note input
+        </ActionButton>
+        <ActionButton aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom((z) => Math.max(1, z / 2))}>
+          −
+        </ActionButton>
+        <ActionButton aria-label="Zoom in" disabled={zoom >= 32} onClick={() => setZoom((z) => Math.min(32, z * 2))}>
+          +
+        </ActionButton>
         <button
           type="button"
           aria-label="Close piano roll"
@@ -272,7 +458,7 @@ export function PianoRoll({ clip, color, bpm, beatsPerBar, snap, getPosition, on
           className="block touch-none"
           style={{ width: width + KEYS, height: HEIGHT }}
           role="application"
-          aria-label={`Piano roll with ${notes.length} notes. Click to add a note; right-click a note to delete it.`}
+          aria-label={`${drums ? "Drum grid" : "Piano roll"} with ${notes.length} notes. Click to add a note; right-click a note to delete it.`}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -280,10 +466,10 @@ export function PianoRoll({ clip, color, bpm, beatsPerBar, snap, getPosition, on
           onContextMenu={(event) => {
             event.preventDefault();
             const point = locate(event);
-            const found = point.x >= 0 ? hit(point.x, point.pitch) : null;
+            const found = point.x >= 0 ? hit(point.time, point.pitch) : null;
             if (!found) return;
             onNotes(notes.filter((_, index) => index !== found.index), "commit");
-            setSelected(null);
+            setSelected(new Set());
           }}
         />
       </div>

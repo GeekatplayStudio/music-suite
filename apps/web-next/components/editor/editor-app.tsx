@@ -81,6 +81,7 @@ import {
   type AutomationView,
   type Capabilities,
   type Clip,
+  type GenerationStatus,
   type Job,
   type JobOp,
   type Note,
@@ -136,6 +137,7 @@ const SHORTCUTS: [string, string][] = [
   ["Shift+drag on ruler", "Draw a loop region"],
   ["Double-click a clip", "Highlight its range"],
   ["Shift+T", "Add a track"],
+  ["Alt+click a selected clip", "Pin a warp marker; drag its dashed line to where it should land"],
   ["W", "Show or hide the spectral view of the selected clip"],
   ["P", "Show or hide the piano roll for the selected MIDI clip"],
   ["A", "Show volume automation · pan automation · none"],
@@ -197,6 +199,14 @@ function applyJob(state: ProjectState, job: Job, clipId: string): ProjectState {
   const source = state.clips.find((c) => c.id === clipId);
   if (job.op === "analyze") {
     return { ...state, assetMeta: { ...state.assetMeta, [job.asset_id]: metaFromAnalysis(job.result as unknown as Analysis) } };
+  }
+  if (job.op === "generate" && source && job.result_assets.length) {
+    const asset = job.result_assets[0];
+    const index = state.tracks.findIndex((t) => t.id === source.trackId);
+    const track = makeTrack(state, "Generated");
+    const tracks = [...state.tracks.slice(0, index + 1), track, ...state.tracks.slice(index + 1)];
+    const clip = { ...makeClip(asset, track.id, source.start), name: stripExtension(asset.name) };
+    return { ...state, tracks, clips: [...state.clips, clip] };
   }
   if (job.op === "to_midi" && source) {
     const notes = (job.result.notes as Note[] | undefined) ?? [];
@@ -304,6 +314,13 @@ export function EditorApp({ projectId }: { projectId: string }) {
   const [assets, setAssets] = useState<Map<string, Asset>>(new Map());
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
+  const [generation, setGeneration] = useState<GenerationStatus | null>(null);
+  const checkGeneration = useCallback(() => {
+    editorApi
+      .generation()
+      .then(setGeneration)
+      .catch(() => setGeneration({ available: false, node_installed: false, models: [] }));
+  }, []);
   const [savedState, setSavedState] = useState<ProjectState | null>(null);
   const [saveError, setSaveError] = useState(false);
 
@@ -325,6 +342,7 @@ export function EditorApp({ projectId }: { projectId: string }) {
   const [exportOpen, setExportOpen] = useState(false);
   const [working, setWorking] = useState<string | null>(null);
   const [showSpectral, setShowSpectral] = useState(false);
+  const [wamWindow, setWamWindow] = useState<string | null>(null);
   const [showPiano, setShowPiano] = useState(true);
   const [recording, setRecording] = useState(false);
   const [recentSteps, setRecentSteps] = useState<ProcessStep[]>([]);
@@ -384,6 +402,7 @@ export function EditorApp({ projectId }: { projectId: string }) {
         const duration = projectDuration(loaded);
         if (duration > 0) setPxPerSec(clamp((viewWidthRef.current - 48) / duration, MIN_ZOOM, MAX_ZOOM));
         setReady(true);
+        checkGeneration();
         if (caps?.plugins.available) {
           editorApi
             .plugins()
@@ -398,7 +417,7 @@ export function EditorApp({ projectId }: { projectId: string }) {
       cancelled = true;
       aliveRef.current = false;
     };
-  }, [projectId]);
+  }, [projectId, checkGeneration]);
 
   useEffect(() => {
     for (const clip of state.clips) if (!clip.notes) media.ensure(clip.assetId);
@@ -422,6 +441,49 @@ export function EditorApp({ projectId }: { projectId: string }) {
     observer.observe(element);
     return () => observer.disconnect();
   }, [ready]);
+
+  /* ---------- In-browser plugins ---------- */
+
+  const wamSignature = state.tracks.map((t) => `${t.id}=${t.wam?.url ?? ""}`).join("|");
+  useEffect(() => {
+    if (!ready) return;
+    for (const track of stateRef.current.tracks) {
+      engine.syncWam(track.id, track.wam?.url ?? null, track.wam?.state).catch((err: unknown) => {
+        setNotice(`${track.wam?.name ?? "The plugin"} could not be loaded: ${errorMessage(err, "unknown error")}`);
+      });
+    }
+  }, [engine, ready, wamSignature]);
+
+  /** Copy every loaded plugin's current settings into the session so they are saved with it. */
+  const captureWamStates = async () => {
+    let next = stateRef.current;
+    for (const track of next.tracks) {
+      if (!track.wam || !engine.hasWam(track.id)) continue;
+      const settings = await engine.wamState(track.id).catch(() => null);
+      if (settings !== null) next = updateTrack(next, track.id, { wam: { ...track.wam, state: settings } });
+    }
+    if (next !== stateRef.current) commit(next);
+  };
+
+  const wamHostRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const host = wamHostRef.current;
+    if (!wamWindow || !host) return;
+    let cancelled = false;
+    // The plugin may still be loading when its window is opened, so wait for it briefly.
+    const show = async () => {
+      for (let attempt = 0; attempt < 40 && !cancelled && !engine.hasWam(wamWindow); attempt++) await delay(250);
+      const element = cancelled ? null : await engine.wamGui(wamWindow).catch(() => null);
+      if (cancelled) return;
+      if (element) host.replaceChildren(element);
+      else host.textContent = "This plugin has no controls of its own, or it is not loaded.";
+    };
+    void show();
+    return () => {
+      cancelled = true;
+      host.replaceChildren();
+    };
+  }, [engine, wamWindow, wamSignature]);
 
   /* ---------- Autosave ---------- */
 
@@ -671,13 +733,13 @@ export function EditorApp({ projectId }: { projectId: string }) {
 
   /** Run a processing job on every selected clip (one-clip tools: the first only). */
   const runJobs = (op: JobOp, params: Record<string, unknown>, title: string) => {
-    const single = op === "spectral_repair" || op === "warp" || op === "match";
+    const single = op === "spectral_repair" || op === "warp" || op === "match" || op === "generate";
     const groups = targetGroups(single);
     const many = selectedClips.length > 1 && !single;
     // A noise print is measured in one clip's audio, so it cannot be shared across a batch.
     const shared = many && op === "denoise" ? { ...params, noise_start: null, noise_end: null } : params;
     const verb = title.split(" ").slice(0, 2).join(" ");
-    if (!["spectral_repair", "warp", "match", "analyze", "separate", "to_midi", "structure"].includes(op)) {
+    if (!["spectral_repair", "warp", "match", "analyze", "separate", "to_midi", "structure", "generate"].includes(op)) {
       setRecentSteps((prev) => [...prev, { op, params: shared, label: verb }].slice(-6));
     }
     for (const ids of groups) void runJob(op, shared, many ? `${verb} (${ids.length} clip${ids.length > 1 ? "s" : ""})` : title, ids);
@@ -900,6 +962,7 @@ export function EditorApp({ projectId }: { projectId: string }) {
     const clean = (value: string) => value.replace(/[^\w .-]+/g, "_");
     const safeName = clean(name || "mix");
     try {
+      await captureWamStates();
       if (kind === "tracks") {
         const used = state.tracks.filter((t) => state.clips.some((c) => c.trackId === t.id));
         for (const [index, track] of used.entries()) {
@@ -922,6 +985,9 @@ export function EditorApp({ projectId }: { projectId: string }) {
         } else {
           downloadBlob(wav, kind === "range" ? `${safeName} (range).wav` : `${safeName}.wav`);
         }
+      }
+      if (engine.renderWarnings.length) {
+        setNotice(`Exported without these in-browser plugins, which could not run offline: ${engine.renderWarnings.join(", ")}.`);
       }
     } catch (err) {
       setNotice(errorMessage(err, "Export failed."));
@@ -1484,12 +1550,14 @@ export function EditorApp({ projectId }: { projectId: string }) {
 
           {showPiano && primaryClip?.notes ? (
             <PianoRoll
-              key={primaryClip.id}
+              key={`${primaryClip.id}:${state.tracks.find((t) => t.id === primaryClip.trackId)?.synth.kind}`}
               clip={primaryClip}
               color={state.tracks.find((t) => t.id === primaryClip.trackId)?.color ?? "#22d3ee"}
               bpm={state.bpm}
               beatsPerBar={state.beatsPerBar}
               snap={state.snap}
+              drums={state.tracks.find((t) => t.id === primaryClip.trackId)?.synth.kind === "drums"}
+              onSeek={seek}
               getPosition={getPosition}
               onNotes={(notes, phase) => {
                 if (phase === "start") dispatch({ type: "gestureStart" });
@@ -1556,6 +1624,9 @@ export function EditorApp({ projectId }: { projectId: string }) {
           onPatchClip={patchClips}
           onPatchTrack={(patch, key) => selectedTrack && patchTrack(selectedTrack.id, patch, key)}
           onRunJob={runJobs}
+          onOpenWam={(trackId) => setWamWindow(trackId)}
+          generation={generation}
+          onCheckGeneration={checkGeneration}
           onAddMidiTrack={() => {
             const added = addTrack(state, `Instrument ${state.tracks.length + 1}`);
             const bar = (60 / state.bpm) * state.beatsPerBar;
@@ -1641,6 +1712,34 @@ export function EditorApp({ projectId }: { projectId: string }) {
               {item.hint ? <span className="font-mono text-[10px] text-slate-400">{item.hint}</span> : null}
             </button>
           ))}
+        </div>
+      ) : null}
+
+      {wamWindow ? (
+        <div
+          className="fixed bottom-10 left-4 z-40 max-h-[70vh] max-w-[min(90vw,900px)] overflow-auto rounded-2xl border border-white/15 bg-slate-900 shadow-2xl"
+          role="dialog"
+          aria-label="Plugin controls"
+        >
+          <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-white/10 bg-slate-900 px-3 py-2">
+            <p className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-100">
+              {state.tracks.find((t) => t.id === wamWindow)?.wam?.name ?? "Plugin"}
+              <span className="font-normal text-slate-400"> · {state.tracks.find((t) => t.id === wamWindow)?.name}</span>
+            </p>
+            <ActionButton onClick={() => void captureWamStates()} title="Store the plugin's current settings in the session">
+              Save settings
+            </ActionButton>
+            <ActionButton
+              onClick={() => {
+                void captureWamStates();
+                setWamWindow(null);
+              }}
+            >
+              Close
+            </ActionButton>
+          </div>
+          {/* The plugin draws its own interface here; it is third-party content. */}
+          <div ref={wamHostRef} className="min-h-24 min-w-64 bg-white p-2 text-xs text-slate-700" />
         </div>
       ) : null}
 

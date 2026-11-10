@@ -17,6 +17,8 @@ import {
   projectDuration
 } from "@/lib/editor/types";
 
+import { type WamInstance, createWam } from "@/lib/editor/wam";
+
 export const ENGINE_SAMPLE_RATE = 48_000;
 const SMOOTHING = 0.015;
 const CURVE_POINTS = 33;
@@ -50,6 +52,9 @@ interface TrackNodes extends FxNodes {
   fader: GainNode;
   mute: GainNode;
   sends: Map<string, GainNode>;
+  /** Where an in-browser plugin is patched in; joined directly when there is none. */
+  insertIn: GainNode;
+  insertOut: GainNode;
   analyser: AnalyserNode | null;
 }
 
@@ -505,7 +510,9 @@ function buildMixer(
     const fader = ctx.createGain();
     const mute = ctx.createGain();
 
-    tail.connect(splitter);
+    const insertIn = ctx.createGain();
+    const insertOut = ctx.createGain();
+    tail.connect(insertIn).connect(insertOut).connect(splitter);
     splitter.connect(direct[0], 0).connect(merger, 0, 0);
     splitter.connect(direct[1], 1).connect(merger, 0, 1);
     splitter.connect(cross[0], 1).connect(merger, 0, 0);
@@ -530,7 +537,7 @@ function buildMixer(
       analyser.smoothingTimeConstant = 0.75;
       mute.connect(analyser);
     }
-    const nodes: TrackNodes = { ...fx, input, low, mid, high, direct, cross, panner, fader, mute, sends, analyser };
+    const nodes: TrackNodes = { ...fx, input, low, mid, high, direct, cross, panner, fader, mute, sends, insertIn, insertOut, analyser };
     applyTrackSettings(nodes, track, busIds, 0, true);
     applyMute(nodes, onlyTrackId ? { ...track, mute: false, solo: false } : track, anySolo, 0, true);
     tracks.set(track.id, nodes);
@@ -623,6 +630,76 @@ function scheduleClips(
   return sources;
 }
 
+const noiseCache = new WeakMap<BaseAudioContext, AudioBuffer>();
+
+function noiseBuffer(ctx: BaseAudioContext): AudioBuffer {
+  let buffer = noiseCache.get(ctx);
+  if (!buffer) {
+    buffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    // Seeded so a drum pattern exports the same every time.
+    let seed = 0x9e3779b1;
+    for (let i = 0; i < data.length; i++) {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      data[i] = seed / 0x80000000 - 1;
+    }
+    noiseCache.set(ctx, buffer);
+  }
+  return buffer;
+}
+
+/** One hit of the built-in drum kit, synthesised from tones and filtered noise (General MIDI pitches). */
+function playDrum(
+  ctx: BaseAudioContext,
+  output: AudioNode,
+  pitch: number,
+  level: number,
+  when: number,
+  sources: AudioScheduledSourceNode[]
+): void {
+  const tone = (from: number, to: number, sweep: number, decay: number, gain: number, type: OscillatorType = "sine") => {
+    const oscillator = ctx.createOscillator();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(from, when);
+    oscillator.frequency.exponentialRampToValueAtTime(to, when + sweep);
+    const envelope = ctx.createGain();
+    envelope.gain.setValueAtTime(level * gain, when);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, when + decay);
+    oscillator.connect(envelope).connect(output);
+    oscillator.start(when);
+    oscillator.stop(when + decay + 0.02);
+    sources.push(oscillator);
+  };
+  const noise = (type: BiquadFilterType, frequency: number, decay: number, gain: number) => {
+    const source = ctx.createBufferSource();
+    source.buffer = noiseBuffer(ctx);
+    source.loop = true;
+    const filter = ctx.createBiquadFilter();
+    filter.type = type;
+    filter.frequency.value = frequency;
+    const envelope = ctx.createGain();
+    envelope.gain.setValueAtTime(level * gain, when);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, when + decay);
+    source.connect(filter).connect(envelope).connect(output);
+    source.start(when, (pitch * 0.137) % 0.9);
+    source.stop(when + decay + 0.02);
+    sources.push(source);
+  };
+  if (pitch <= 36) tone(150, 45, 0.12, 0.4, 3.2);
+  else if (pitch === 38 || pitch === 40 || pitch === 37) {
+    tone(220, 170, 0.05, 0.12, 1.4, "triangle");
+    noise("bandpass", 1900, 0.2, 2.2);
+  } else if (pitch === 39) noise("bandpass", 1200, 0.14, 2.6);
+  else if (pitch === 42 || pitch === 44) noise("highpass", 7500, 0.05, 1.3);
+  else if (pitch === 46) noise("highpass", 7000, 0.32, 1.2);
+  else if (pitch === 49 || pitch >= 51) noise("highpass", 5200, 0.9, 1.1);
+  else {
+    // Toms: higher notes are higher drums.
+    const frequency = 90 + (pitch - 41) * 14;
+    tone(frequency * 1.5, frequency, 0.08, 0.3, 2.4);
+  }
+}
+
 /** One synth voice: detuned oscillators through a low-pass filter and an attack/release envelope. */
 function playVoice(
   ctx: BaseAudioContext,
@@ -678,6 +755,11 @@ function scheduleNotes(
     if (end <= fromPosition + 0.005) continue;
     const when = contextStart + Math.max(0, start - fromPosition);
     const until = contextStart + (end - fromPosition);
+    if (synth.kind === "drums") {
+      // A drum hit is not resumed part-way through.
+      if (start >= fromPosition - 0.005) playDrum(ctx, output, note.p, note.v * 0.22 * gain, when, sources);
+      continue;
+    }
     playVoice(ctx, synth, output, note.p, note.v * 0.22 * gain, when, until, sources);
   }
 }
@@ -755,7 +837,68 @@ export class EditorEngine {
         this.loudness = event.data;
       };
     }
+    this.attachInserts(mixer, this.wams);
     return mixer;
+  }
+
+  /* ---------- In-browser plugins ---------- */
+
+  private wams = new Map<string, { url: string; instance: WamInstance }>();
+  private wamRequests = new Map<string, number>();
+  /** Names of plugins the last export could not include. */
+  renderWarnings: string[] = [];
+
+  private attachInserts(mixer: Mixer, plugins: Map<string, { instance: WamInstance }>): void {
+    for (const [trackId, nodes] of mixer.tracks) {
+      const node = plugins.get(trackId)?.instance.audioNode;
+      nodes.insertIn.disconnect();
+      if (node) {
+        node.disconnect();
+        nodes.insertIn.connect(node);
+        node.connect(nodes.insertOut);
+      } else {
+        nodes.insertIn.connect(nodes.insertOut);
+      }
+    }
+  }
+
+  /** Make a track's loaded plugin match the session. Rejects if the plugin cannot be loaded. */
+  async syncWam(trackId: string, url: string | null, state?: unknown): Promise<void> {
+    const current = this.wams.get(trackId);
+    if ((current?.url ?? null) === url) return;
+    const request = (this.wamRequests.get(trackId) ?? 0) + 1;
+    this.wamRequests.set(trackId, request);
+    if (current) {
+      this.wams.delete(trackId);
+      current.instance.audioNode.disconnect();
+      current.instance.audioNode.destroy?.();
+    }
+    try {
+      if (url) {
+        const instance = await createWam(this.context(), url, state);
+        // A newer change for this track may have arrived while the plugin was loading.
+        if (this.wamRequests.get(trackId) !== request) {
+          instance.audioNode.destroy?.();
+          return;
+        }
+        this.wams.set(trackId, { url, instance });
+      }
+    } finally {
+      if (this.mixer) this.attachInserts(this.mixer, this.wams);
+    }
+  }
+
+  hasWam(trackId: string): boolean {
+    return this.wams.has(trackId);
+  }
+
+  async wamGui(trackId: string): Promise<HTMLElement | null> {
+    return (await this.wams.get(trackId)?.instance.createGui()) ?? null;
+  }
+
+  /** The plugin's current settings, so they can be saved with the session. */
+  async wamState(trackId: string): Promise<unknown> {
+    return (await this.wams.get(trackId)?.instance.audioNode.getState?.()) ?? null;
   }
 
   async decode(assetId: string, data: ArrayBuffer): Promise<AudioBuffer> {
@@ -997,7 +1140,8 @@ export class EditorEngine {
     const synth = this.state.tracks.find((track) => track.id === trackId)?.synth;
     if (!input || !synth) return;
     const voices: AudioScheduledSourceNode[] = [];
-    playVoice(ctx, synth, input, pitch, 0.18, ctx.currentTime + 0.005, ctx.currentTime + 0.22, voices);
+    if (synth.kind === "drums") playDrum(ctx, input, pitch, 0.18, ctx.currentTime + 0.005, voices);
+    else playVoice(ctx, synth, input, pitch, 0.18, ctx.currentTime + 0.005, ctx.currentTime + 0.22, voices);
   }
 
   /* ---------- Recording ---------- */
@@ -1143,6 +1287,19 @@ export class EditorEngine {
     const frames = Math.max(1, Math.ceil(length * ENGINE_SAMPLE_RATE));
     const offline = new OfflineAudioContext(2, frames, ENGINE_SAMPLE_RATE);
     const mixer = buildMixer(offline, this.state, false, await this.loadWorklets(offline), options.trackId);
+    // In-browser plugins are re-created on the export context with their current settings.
+    this.renderWarnings = [];
+    const offlinePlugins = new Map<string, { instance: WamInstance }>();
+    for (const track of this.state.tracks) {
+      if (!track.wam || !mixer.tracks.has(track.id)) continue;
+      try {
+        const settings = (await this.wamState(track.id)) ?? track.wam.state;
+        offlinePlugins.set(track.id, { instance: await createWam(offline, track.wam.url, settings) });
+      } catch {
+        this.renderWarnings.push(track.wam.name);
+      }
+    }
+    this.attachInserts(mixer, offlinePlugins);
     for (const track of this.state.tracks) {
       const nodes = mixer.tracks.get(track.id);
       if (nodes) scheduleTrackAutomation(nodes, track, start, 0, true);

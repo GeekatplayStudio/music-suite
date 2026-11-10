@@ -1,6 +1,7 @@
 import type {
   Asset,
   Capabilities,
+  GenerationStatus,
   Job,
   JobOp,
   PluginInfo,
@@ -37,6 +38,8 @@ function json(body: unknown): RequestInit {
 
 export const editorApi = {
   capabilities: () => request<Capabilities>("/capabilities"),
+  /** Whether a local ComfyUI with the generator nodes is reachable. */
+  generation: () => request<GenerationStatus>("/generation"),
   plugins: () => request<{ available: boolean; plugins: PluginInfo[] }>("/plugins"),
   /** Loads the plugin on the server (in an isolated process) to read its parameters. */
   describePlugin: (pluginId: string) => request<PluginInfo>(`/plugins/${pluginId}`),
