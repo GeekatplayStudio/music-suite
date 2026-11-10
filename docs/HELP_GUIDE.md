@@ -296,6 +296,7 @@ Open **AI Song Studio** from the workspace. It has three tabs.
 - *Lyrics and style writer*: which Ollama model writes lyrics, and a button to download it.
 - *Keeping your computer responsive*: generation will not start when free memory is below the limit you set, and the engine unloads after the idle time you set.
 - *Loudness of new songs*: each new song is levelled towards −14 LUFS, never above −1 dBTP. Change the target or switch it off.
+- *Generators*: switch engines on or off. *ACE-Step 1.5 (your own Python server)* is for computers that already run ACE-Step's server (start it with `uv run acestep-api`). *YuE2* needs an NVIDIA GPU with about 24 GB and the `MUSIC_SUITE_YUE2_PYTHON` setting, and every song asks you to confirm its non-commercial licence.
 - *Online services*: paste your own ElevenLabs or fal.ai API key and press **Save key** to switch that service on. It then appears in the *Generator* list. Your style text and lyrics are sent to it and it bills your account; audio is never uploaded. **Remove key** switches it off again. Keys are stored in your computer's keychain and are never shown again.
 
 ## 9) Troubleshooting

@@ -111,6 +111,11 @@ Web Audio Modules (WAM) are effects that run in the browser. They are third-part
 - The lyrics writer talks to Ollama on loopback with a time limit and an output-token limit, and its answer is bounded and normalised before use.
 - Generated audio is levelled with one static gain towards the loudness target, never above −1 dBTP.
 
+- Two further local engines are off until switched on in Settings:
+  - **ACE-Step's own Python server**, reached only at a plain-http loopback address (`MUSIC_SUITE_ACESTEP_URL`), with downloads accepted only through its `/v1/audio` route;
+  - **YuE2**, run with the interpreter named in `MUSIC_SUITE_YUE2_PYTHON` as a separate process with `-I`, a time limit, and an output size cap. Each YuE2 request must confirm its non-commercial licence.
+- A switched-off provider is never probed.
+
 ### Installing the engine: a deliberate, one-time download
 
 Installing the local engine contacts two fixed hosts, only when the user answers yes in the installer or presses **Install local engine**:

@@ -83,10 +83,14 @@ def validate(fields: list[dict[str, Any]], task: str, values: Any) -> dict[str, 
             continue
         value = values.get(key)
         if value is None or (value == "" and spec["type"] not in ("text", "lyrics")):
+            if spec.get("required") and spec["type"] == "bool":
+                raise ParamError(f"Please confirm: {spec['label']}")
             if spec.get("required"):
                 raise ParamError(f"'{spec['label']}' is required.")
             continue
         result = _one(spec, value)
+        if spec["type"] == "bool" and spec.get("required") and result is not True:
+            raise ParamError(f"Please confirm: {spec['label']}")
         if result == "" and spec.get("required"):
             raise ParamError(f"'{spec['label']}' is required.")
         if result != "":

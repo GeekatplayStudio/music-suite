@@ -25,6 +25,9 @@ DEFAULTS: dict[str, Any] = {
     "providers": {
         "acestep_local": True,
         "comfyui_musicgen": True,
+        # Opt-in: these need software or hardware most machines do not have.
+        "acestep_server": False,
+        "yue2": False,
         "elevenlabs": False,
         "fal": False,
     },

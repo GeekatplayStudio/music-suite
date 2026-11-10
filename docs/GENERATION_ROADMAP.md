@@ -276,11 +276,13 @@ Field types are `text`, `lyrics`, `int`, `float`, `bool`, `enum`, `seed`, `durat
 - Online songs are levelled on import like local ones (MP3 included) and recorded in history.
 - The memory guard is skipped for online services, since they use no local memory.
 
-**Not ported from the branch:**
+**Merged afterwards (same day, at the user's request that nothing on GitHub be lost):** pull request #4 was merged into `main` with its commit kept in history. Its remaining engines became providers:
 
-- Its ACE-Step adapter for the Python REST server, which G1's acestep.cpp provider replaces.
-- YuE2: CC BY-NC weights, and it needs an NVIDIA GPU with 24 GB.
-- Its in-editor "Create a song" panel: AI Song Studio and the editor's ✨ button cover it.
+- **ACE-Step 1.5 through its own Python server** (`providers/acestep_server.py`): off by default, loopback only (`MUSIC_SUITE_ACESTEP_URL`), downloads only through the server's `/v1/audio` route, up to 4 versions. It suits NVIDIA machines that already run that server. On Apple Silicon the built-in acestep.cpp engine uses far less memory.
+- **YuE2** (`providers/yue2_engine.py` and `yue2_worker.py`): off by default. It needs `MUSIC_SUITE_YUE2_PYTHON` pointing at a YuE2 install (NVIDIA, about 24 GB), runs in a separate process, and every request must tick the non-commercial licence box (CC BY-NC 4.0).
+- The branch's in-editor panel became a **Create a song** section in the editor's side panel (shown when no clip is selected), which opens AI Song Studio for that project.
+
+Its duplicate modules (`audioqi/editor/songs/`, the `song` job and the `/editor/songs` routes) were not kept, because AI Song Studio covers each of them; they remain in the merge history.
 
 **Still open from the G3 plan:**
 
@@ -338,6 +340,14 @@ Phase G1 went ahead with the recommended defaults (2026-11-10):
 6. **Still open:** the benchmark copies at `~/Projects/ACE-Step-1.5` (about 10 GB) and `~/Projects/acestep.cpp` (about 5.6 GB) are no longer used and can be deleted by the user.
 
 ## 7.1 Verification log
+
+### Merge of pull requests #3 and #4 (2026-11-10)
+
+- **#3 (mastering input gain and stereo stage, by an outside contributor):** reviewed in full (signal processing only, no network or file access), merged with its commit kept. Its out-of-date `pnpm-lock.yaml` was not taken. Its 8 tests pass.
+- **#4:** merged as described under G3.
+  - 12 tests for the ported engines: ACE-Step server field mapping, versions, absolute-URL refusal, loopback-only addresses, a switched-off provider never touching the network; YuE2 off by default, the licence box, and a real separate-process run with a stand-in `yue2` package.
+  - **Real check:** a 20-second song through ACE-Step's own Python server on this Mac, with the requested tempo and key, imported and levelled, in 91 s. The server's model list is empty until its first song loads a model, so the model picker appears after that.
+- **Full suite:** 351 passed, 1 skipped.
 
 ### Phase G3 first pass (2026-11-10)
 

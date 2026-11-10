@@ -56,6 +56,8 @@ interface InspectorProps {
   onOpenWam: (trackId: string) => void;
   generation: GenerationStatus | null;
   onCheckGeneration: () => void;
+  /** Opens AI Song Studio set to generate into this project. */
+  onOpenSongStudio: () => void;
   onOpenPianoRoll: () => void;
   onExportMidi: () => void;
   getPosition: () => number;
@@ -1093,6 +1095,16 @@ export function Inspector(props: InspectorProps) {
           </ActionButton>
         </PanelSection>
       )}
+      {!clip ? (
+        <PanelSection
+          title="Create a song"
+          hint="Write a style and lyrics and generate a whole song with vocals, on this computer or with an online service you have set up. Each version lands on its own track in this project."
+        >
+          <ActionButton variant="primary" className="w-full" onClick={props.onOpenSongStudio}>
+            Open AI Song Studio
+          </ActionButton>
+        </PanelSection>
+      ) : null}
 
       {track ? (
         <PanelSection title={`Track: ${track.name}`} hint="Equaliser and stereo image, applied live.">

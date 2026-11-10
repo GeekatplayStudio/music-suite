@@ -214,6 +214,8 @@ def test_settings_round_trip_and_reject_bad_values(client: TestClient) -> None:
     assert body["providers"] == {
         "acestep_local": True,
         "comfyui_musicgen": False,
+        "acestep_server": False,
+        "yue2": False,
         "elevenlabs": False,
         "fal": False,
     }
@@ -893,3 +895,278 @@ def test_online_services_are_not_memory_checked(client: TestClient, monkeypatch)
         client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()["status"]
         == "completed"
     )
+
+
+# --------------------------------------------------------------------------- ported local engines
+
+import json as _json  # noqa: E402
+import sys  # noqa: E402
+
+from audioqi.generation.providers import acestep_server, yue2_engine  # noqa: E402
+
+
+def _flac_bytes() -> bytes:
+    buffer = io.BytesIO()
+    t = np.arange(SR) / SR
+    tone = (0.4 * np.sin(2 * np.pi * 330 * t)).astype(np.float32)
+    sf.write(buffer, np.stack([tone, tone], axis=1), SR, format="FLAC")
+    return buffer.getvalue()
+
+
+class _FakeServer:
+    """Stands in for ACE-Step's own REST server and records what it was sent."""
+
+    def __init__(self, file: str = "/v1/audio?path=%2Ftmp%2Fx.flac", files: int = 1) -> None:
+        self.sent: list[tuple[str, str, Any]] = []
+        self.polls = 0
+        self.file, self.files = file, files
+
+    def get(self, url: str, **kwargs: Any) -> _Resp:
+        self.sent.append(("GET", url, kwargs.get("params")))
+        assert kwargs.get("allow_redirects") is False
+        if url.endswith("/health"):
+            return _Resp(payload={"data": {"status": "ok"}})
+        if url.endswith("/v1/models"):
+            return _Resp(
+                payload={"data": {"models": [{"name": "acestep-v15-turbo"}, {"name": "../evil"}]}}
+            )
+        return _Resp(content=_flac_bytes(), headers={"content-type": "audio/flac"})
+
+    def post(self, url: str, json: Any = None, **kwargs: Any) -> _Resp:
+        self.sent.append(("POST", url, json))
+        if url.endswith("/release_task"):
+            return _Resp(payload={"code": 200, "data": {"task_id": "t1"}})
+        self.polls += 1
+        if self.polls < 2:
+            return _Resp(payload={"code": 200, "data": [{"task_id": "t1", "status": 0}]})
+        result = [
+            {
+                "file": self.file,
+                "metas": {"bpm": 96, "keyscale": "A minor"},
+                "seed_value": str(42 + i),
+            }
+            for i in range(self.files)
+        ]
+        return _Resp(
+            payload={
+                "code": 200,
+                "data": [{"task_id": "t1", "status": 1, "result": _json.dumps(result)}],
+            }
+        )
+
+
+def _fake_requests(**overrides: Any) -> Any:
+    """A stand-in ``requests`` module for one provider, so other modules keep the real one."""
+    import types
+
+    import requests as real
+
+    return types.SimpleNamespace(
+        RequestException=real.RequestException, ConnectionError=real.ConnectionError, **overrides
+    )
+
+
+def _use_server(monkeypatch: pytest.MonkeyPatch, server: _FakeServer) -> None:
+    monkeypatch.setattr(
+        acestep_server, "requests", _fake_requests(get=server.get, post=server.post)
+    )
+    monkeypatch.setattr(acestep_server.time, "sleep", lambda _s: None)
+    monkeypatch.delenv(acestep_server.URL_ENV, raising=False)
+
+
+def test_acestep_server_is_off_by_default_and_never_probed(client: TestClient, monkeypatch) -> None:
+    def refuse(*_a: Any, **_k: Any) -> None:
+        raise AssertionError("a switched-off provider must not touch the network")
+
+    monkeypatch.setattr(acestep_server, "requests", _fake_requests(get=refuse, post=refuse))
+    body = client.get("/generation/providers").json()
+    server = next(p for p in body["providers"] if p["id"] == "acestep_server")
+    assert server["enabled"] is False and server["status"]["ready"] is False
+
+
+def test_acestep_server_generates_versions_and_maps_every_field(
+    client: TestClient, monkeypatch
+) -> None:
+    server = _FakeServer(files=2)
+    _use_server(monkeypatch, server)
+    client.post("/generation/settings", json={"providers": {"acestep_server": True}})
+    listed = next(
+        p
+        for p in client.get("/generation/providers").json()["providers"]
+        if p["id"] == "acestep_server"
+    )
+    assert listed["status"]["ready"] is True
+    model_field = next(f for f in listed["schema"]["fields"] if f["key"] == "model")
+    assert [o["value"] for o in model_field["options"]] == [
+        "acestep-v15-turbo"
+    ]  # path-like names dropped
+    fields = {
+        "caption": "warm folk",
+        "lyrics": "[Verse]\nhello",
+        "duration": 30,
+        "bpm": 96,
+        "keyscale": "A minor",
+        "timesignature": "3",
+        "vocal_language": "en",
+        "variations": 2,
+        "seed": 9,
+        "inference_steps": 8,
+        "infer_method": "sde",
+        "model": "acestep-v15-turbo",
+        "thinking": False,
+    }
+    project, response = _start(client, fields, provider="acestep_server")
+    job = client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()
+    assert job["status"] == "completed", job["error"]
+    assert len(job["result_assets"]) == 2
+    release = next(body for method, url, body in server.sent if url.endswith("/release_task"))
+    assert release == {
+        "prompt": "warm folk",
+        "lyrics": "[Verse]\nhello",
+        "audio_format": "flac",
+        "batch_size": 2,
+        "thinking": False,
+        "use_cot_caption": False,
+        "audio_duration": 30.0,
+        "bpm": 96,
+        "key_scale": "A minor",
+        "time_signature": "3",
+        "vocal_language": "en",
+        "inference_steps": 8,
+        "infer_method": "sde",
+        "model": "acestep-v15-turbo",
+        "use_random_seed": False,
+        "seed": 9,
+    }
+    assert all(url.startswith("http://127.0.0.1:8001/") for _m, url, _b in server.sent)
+
+
+def test_acestep_server_instrumental_tag(client: TestClient) -> None:
+    body = acestep_server.AceStepServerProvider().payload(
+        {"caption": "drone", "instrumental": True}
+    )
+    assert body["lyrics"] == "[Instrumental]"
+
+
+def test_acestep_server_never_follows_an_absolute_download_url(
+    client: TestClient, monkeypatch
+) -> None:
+    _use_server(monkeypatch, _FakeServer(file="http://evil.example/x.flac"))
+    client.post("/generation/settings", json={"providers": {"acestep_server": True}})
+    project, response = _start(client, {"caption": "warm folk"}, provider="acestep_server")
+    job = client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()
+    assert job["status"] == "failed" and "outside its download route" in job["error"]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://example.com:8001",
+        "https://127.0.0.1:8001",
+        "http://user:pw@127.0.0.1:8001",
+        "http://127.0.0.1:8001/?x=1",
+    ],
+)
+def test_acestep_server_address_must_be_loopback(monkeypatch: pytest.MonkeyPatch, url: str) -> None:
+    monkeypatch.setenv(acestep_server.URL_ENV, url)
+    with pytest.raises(EditorError):
+        acestep_server.base_url()
+
+
+ConnectionError_ = __import__("requests").ConnectionError
+
+
+def test_acestep_server_offline_is_explained(client: TestClient, monkeypatch) -> None:
+    def down(*_a: Any, **_k: Any) -> None:
+        raise ConnectionError_
+
+    monkeypatch.setattr(acestep_server, "requests", _fake_requests(get=down, post=down))
+    client.post("/generation/settings", json={"providers": {"acestep_server": True}})
+    status = acestep_server.AceStepServerProvider().status()
+    assert status["ready"] is False and "uv run acestep-api" in status["message"]
+
+
+def test_yue2_needs_switching_on_setup_and_the_licence(client: TestClient, monkeypatch) -> None:
+    monkeypatch.delenv(yue2_engine.PYTHON_ENV, raising=False)
+    _, response = _start(
+        client, {"caption": "emo rock", "accept_noncommercial": True}, provider="yue2"
+    )
+    assert response.status_code == 403  # Off by default.
+    client.post("/generation/settings", json={"providers": {"yue2": True}})
+    _, refused = _start(client, {"caption": "emo rock"}, provider="yue2")
+    assert refused.status_code == 422 and "Please confirm" in refused.json()["detail"]
+    assert "commercially" in refused.json()["detail"]
+    _, unticked = _start(
+        client, {"caption": "emo rock", "accept_noncommercial": False}, provider="yue2"
+    )
+    assert unticked.status_code == 422
+    project, response = _start(
+        client, {"caption": "emo rock", "accept_noncommercial": True}, provider="yue2"
+    )
+    job = client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()
+    assert job["status"] == "failed" and yue2_engine.PYTHON_ENV in job["error"]
+
+
+FAKE_YUE2 = """
+import json
+from pathlib import Path
+import numpy as np
+import soundfile as sf
+
+class _Song:
+    truncated = False
+    def save_artifacts(self, out):
+        t = np.arange(48000) / 48000
+        tone = (0.2 * np.sin(2 * np.pi * 330 * t)).astype("float32")
+        sf.write(str(Path(out) / "audio.flac"), np.stack([tone, tone], 1), 48000)
+        (Path(out) / "seen.json").write_text(json.dumps(self.kwargs))
+
+class YuE2Pipeline:
+    @classmethod
+    def from_pretrained(cls, model, device):
+        return cls()
+    def __enter__(self):
+        return self
+    def __exit__(self, *exc):
+        return False
+    def __call__(self, **kwargs):
+        song = _Song()
+        song.kwargs = kwargs
+        return song
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="uses a POSIX shell wrapper")
+def test_yue2_runs_in_its_own_process(client: TestClient, tmp_path: Path, monkeypatch) -> None:
+    fake_pkg = tmp_path / "fakeyue"
+    (fake_pkg / "yue2").mkdir(parents=True)
+    (fake_pkg / "yue2" / "__init__.py").write_text(FAKE_YUE2)
+    wrapper = tmp_path / "python"
+    # Stands in for YuE2's interpreter: drops -I so the fake package is importable.
+    wrapper.write_text(f'#!/bin/sh\nshift\nPYTHONPATH="{fake_pkg}" exec "{sys.executable}" "$@"\n')
+    wrapper.chmod(0o755)
+    monkeypatch.setenv(yue2_engine.PYTHON_ENV, str(wrapper))
+    monkeypatch.setattr(yue2_engine, "_probe", {"at": 0.0, "python": None, "ok": False})
+    monkeypatch.setattr(yue2_engine.time, "sleep", lambda _s: None)
+    client.post("/generation/settings", json={"providers": {"yue2": True}})
+    assert yue2_engine.YuE2Provider().status()["ready"] is True
+    fields = {
+        "caption": "emo rock",
+        "lyrics": "[Verse]\nStatic on the radio",
+        "seed": 7,
+        "accept_noncommercial": True,
+    }
+    project, response = _start(client, fields, provider="yue2")
+    job = client.get(f"/editor/projects/{project}/jobs/{response.json()['id']}").json()
+    assert job["status"] == "completed", job["error"]
+    (created,) = job["result_assets"]
+    assert abs(created["duration_seconds"] - 1.0) < 0.01
+    assert "BY-NC" in job["result"]["outputs"][0]["license"]
+
+
+def test_yue2_worker_request_folds_the_settings_into_the_style() -> None:
+    body = yue2_engine.YuE2Provider().worker_request(
+        {"caption": "emo rock", "bpm": 140, "keyscale": "E minor", "instrumental": True, "seed": -1}
+    )
+    assert body["style"] == "emo rock, 140 BPM, in E minor, instrumental, no vocals"
+    assert body["lyrics"] == "[Instrumental]" and body["seed"] is None

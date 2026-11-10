@@ -17,13 +17,22 @@ from audioqi.editor import assets, processing, projects
 from audioqi.editor.projects import EditorError, NotFoundError, ParamError
 from audioqi.generation import records, resources, schema, settings
 from audioqi.generation.providers.acestep import AceStepProvider
+from audioqi.generation.providers.acestep_server import AceStepServerProvider
 from audioqi.generation.providers.base import Output, Provider, RunContext
 from audioqi.generation.providers.cloud import ElevenLabsProvider, FalProvider
 from audioqi.generation.providers.comfyui import ComfyUiProvider
+from audioqi.generation.providers.yue2_engine import YuE2Provider
 
 PROVIDERS: dict[str, Provider] = {
     provider.id: provider
-    for provider in (AceStepProvider(), ComfyUiProvider(), ElevenLabsProvider(), FalProvider())
+    for provider in (
+        AceStepProvider(),
+        AceStepServerProvider(),
+        YuE2Provider(),
+        ComfyUiProvider(),
+        ElevenLabsProvider(),
+        FalProvider(),
+    )
 }
 #: Shown in settings so the user can see what is coming and why it is not there yet.
 PLANNED = [
@@ -64,7 +73,7 @@ def describe_all() -> list[dict[str, Any]]:
                 "id": item.id,
                 "name": item.name,
                 "kind": item.kind,
-                "enabled": bool(enabled.get(item.id, item.kind == "local")),
+                "enabled": bool(enabled.get(item.id, False)),
                 "status": item.status(),
                 "schema": item.describe(),
             }
@@ -78,7 +87,7 @@ def validate_request(params: dict[str, Any]) -> dict[str, Any]:
     if unknown:
         raise ParamError("Unknown parameter(s) in the generation request.")
     chosen = provider(params.get("provider"))
-    if not settings.load()["providers"].get(chosen.id, chosen.kind == "local"):
+    if not settings.load()["providers"].get(chosen.id, False):
         raise EditorError("This provider is switched off in AI Song Studio > Settings.", 403)
     described = chosen.describe()
     task = params.get("task", described["tasks"][0]["id"])
