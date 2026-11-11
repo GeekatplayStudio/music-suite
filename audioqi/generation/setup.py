@@ -68,6 +68,7 @@ QUALITY_MODELS: dict[str, tuple[int, str]] = {
 }
 QUALITY_DOWNLOAD_BYTES = sum(size for size, _ in QUALITY_MODELS.values())
 BUILD_TIMEOUT_SECONDS = 3600
+WINDOWS_TARGET_CMAKE = Path(__file__).with_name("windows_target.cmake")
 
 
 class SetupError(Exception):
@@ -167,9 +168,17 @@ def _ensure_tools(report: Report) -> None:
 
 
 def _git(args: list[str], cwd: Path) -> str:
-    result = subprocess.run(
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=False
-    )
+    """Run a read-only git query; "" when it fails or ``cwd`` does not exist yet."""
+    # On a first install the engine folder is not there; Windows refuses to start a
+    # process in a missing folder (WinError 267), so treat that as "no checkout".
+    if not cwd.is_dir():
+        return ""
+    try:
+        result = subprocess.run(
+            ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=False
+        )
+    except OSError:
+        return ""
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
@@ -198,6 +207,10 @@ def _build(target: Path, report: Report, *, force: bool) -> None:
     configure = ["cmake", "-S", ".", "-B", "build", "-DCMAKE_BUILD_TYPE=Release"]
     if sys.platform == "darwin":
         configure.append("-DGGML_BLAS=ON")  # Metal and Accelerate are picked up automatically.
+    if sys.platform == "win32":
+        # MinGW only: target Windows 10 (its default hides CreateFile2, used by cpp-httplib)
+        # and link the runtime statically so the engine starts without MinGW on PATH.
+        configure.append(f"-DCMAKE_PROJECT_INCLUDE={WINDOWS_TARGET_CMAKE.as_posix()}")
     _run(configure, target)
 
     def on_line(line: str) -> None:

@@ -270,7 +270,7 @@ Select a track and press the microphone button. With a range highlighted it beco
 
 ### Export
 
-*Export* offers the mixdown as WAV 24-bit, WAV 32-bit float, FLAC or MP3, the highlighted range, every track separately, or *Send mix to Mastering*, which adds the mix to the workspace as a new run.
+*Export* offers the mixdown as WAV 24-bit, WAV 32-bit float, FLAC or MP3, the highlighted range, every track separately, *Send mix to the analyser and mastering* (adds the mix to the workspace as a new run, starts its analysis and opens it), or *Start an AI song from the mix* (opens AI Song Studio with the mix as the song to start from).
 
 ## 8d) AI Song Studio
 
@@ -278,6 +278,7 @@ Open **AI Song Studio** from the workspace. It has three tabs.
 
 **Create**
 
+- *Start from a song* (optional): see [Starting from a song](#starting-from-a-song) below.
 - *Start from an idea*: type what the song is about and press **Write style and lyrics**. A language model on this computer fills in the title, style description, lyrics, tempo, key and length. This takes about 30 seconds. Everything it writes can be edited.
 - *Style description* is the only required field. Say the genre, mood, instruments, kind of voice and production.
 - *Lyrics*: use the **+ Verse**, **+ Chorus** buttons to add section tags; the model follows them. Leave the lyrics empty to let the model write them, or tick **Instrumental**.
@@ -286,9 +287,9 @@ Open **AI Song Studio** from the workspace. It has three tabs.
 - *Seed*: −1 is random. **Keep this seed** on a result makes the next song start from the same point.
 - *Change the lyrics*: type an instruction such as "add a bridge" or "translate to Spanish" and press **Rewrite**.
 - **Generate** shows progress and a **Cancel** button. Only one song generates at a time.
-- Results play in the page. **Open in Studio Editor** opens the song's project with each version on its own track (extra versions start muted).
+- Results play in the page. **Open in Studio Editor** opens the song's project with each version on its own track (extra versions start muted). Under each version: **Add to a session**, **Split into stems**, **Analyse** and **Start a song from it** (see [Moving songs between the workspaces](#moving-songs-between-the-workspaces)).
 
-**History** lists every song with the settings that made it. **Use these settings** loads them back into the form.
+**History** lists every song with the settings that made it. **Use these settings** loads them back into the form; the same four buttons work on its first version.
 
 **Settings**
 
@@ -300,6 +301,33 @@ Open **AI Song Studio** from the workspace. It has three tabs.
 - *Google Lyria*: paste a Gemini API key under *Online services* to use Lyria 3.5 (full songs) or Lyria 3 Clip (30 seconds). Every Lyria song carries Google's inaudible SynthID watermark.
 - *Generators*: switch engines on or off. *ACE-Step 1.5 (your own Python server)* is for computers that already run ACE-Step's server (start it with `uv run acestep-api`). *YuE2* needs an NVIDIA GPU with about 24 GB and the `MUSIC_SUITE_YUE2_PYTHON` setting, and every song asks you to confirm its non-commercial licence.
 - *Online services*: paste your own ElevenLabs or fal.ai API key and press **Save key** to switch that service on. It then appears in the *Generator* list. Your style text and lyrics are sent to it and it bills your account. A clip's audio is uploaded only when you tick *Allow uploading this clip* in an AI edit. A cost estimate appears next to **Generate** before anything is sent. **Remove key** switches it off again. Keys are stored in your computer's keychain and are never shown again.
+
+### Starting from a song
+
+The **Start from a song** panel at the top of *Create* turns a song you already have into the starting point for a new one.
+
+1. **Bring the song in.** Press **Choose a song file**, or send one here: **Make a song from this** in the analyser, **Start a song from it** under a result or history entry, or *Export ▸ Start an AI song from the mix* in the editor. A file you upload is put on a track in a new session (or in the editor's session, when you came from there).
+2. **It is read.** Tempo, key, time signature and length are measured, and a style description is drafted from the sound (tempo feel, major or minor, dark or bright, percussive or smooth, bass weight, loudness). These fill the form. The description names no genre or instruments, because those are not measured: add them yourself.
+3. **Choose what to make from it:**
+   - **New song in its style**: a brand-new song with the same tempo, key, length and feel. The original stays untouched.
+   - **Restyle**: the same song in the style you describe. *How much of the original to keep* and *Stay close to the original* control how far it moves.
+   - **Extend**: new music before the start or after the end.
+   - **Extract an instrument**: one instrument recreated on its own track, for sampling or practice.
+   - **Add a part**: a new part (drums, bass, guitar…) written to fit over the song.
+   - **Build a full song around it**: a full arrangement around a single part, such as a vocal or a riff.
+
+   The last three need the editing model (2.4 GB) from *Settings*. Online generators offer only the tasks they support.
+4. **Generate.** Results go into the song's own session on new tracks. For *New song in its style* and *Restyle* the original's track is muted so you hear the new version first; nothing is deleted.
+
+**Split into stems in the editor** opens the session and separates the song into vocals, drums, bass and the rest. **Analyse it** sends a copy to the analyser.
+
+### Moving songs between the workspaces
+
+A song can go from any workspace to any other, and it is always added, never swapped in:
+
+- **To the Studio Editor:** **Add to a session** (creator), **Studio Editor** (analyser) and a session link all lead to *Where should this song go?*. Choose **New session**, or **Add here** on any existing session to put it on a new track there. Tick **Split it into stems when it opens** to have it separated as soon as the session opens; the stems go on tracks below the original, which is muted.
+- **To the analyser:** **Analyse** (creator) and *Export ▸ Send mix to the analyser and mastering* (editor) copy the audio into a new run, start the analysis and open it.
+- **To the AI Song Studio:** **Make a song from this** (analyser), **Start a song from it** (creator results and history) and *Export ▸ Start an AI song from the mix* (editor) open the studio with that song as the one to start from.
 
 ### Albums
 

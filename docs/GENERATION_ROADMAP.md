@@ -385,6 +385,22 @@ Its duplicate modules (`audioqi/editor/songs/`, the `song` job and the `/editor/
 
 ---
 
+### Phase G5 — One music centre: start from a song, send songs anywhere *(shipped 2026-11-10)*
+
+**Done**
+
+- `audioqi/generation/inspire.py` and `POST /generation/inspire`: reads a clip into form values: `bpm`, `keyscale` (spelled as the form spells keys, so A# becomes Bb), `timesignature` (3 or 4 from beats between downbeats), `duration`, and a `caption` of style tags. Every tag traces to a measured value (tempo, mode, spectral centroid, zero-crossing rate, RMS, flatness, low-band share); genre and instruments are not guessed.
+- AI Song Studio *Start from a song*: upload a file or receive one (`/generate?run=` from the analyser, `/generate?from=&asset=` from a session). Six things to make from it: a new song in its style (`text2music` with the measured values), and every source task the generator offers on a whole song (`cover`, `extend`, `extract`, `add_layer`, `complete`; `repaint` needs an editor selection so it stays in the editor). Results go into the song's session; for a new song and a restyle the original's track is muted, never removed.
+- `POST /editor/projects/{id}/assets/from-asset`: copies a clip between sessions, leaving the original as it was.
+- `POST /runs/from-asset`: turns a clip into an analysis run (the upload route and this one share `_register_run`).
+- The editor's start page asks *Where should this song go?* for anything sent to it (`?run=` or `?from=&asset=`): a new session, or a new track in any existing session, optionally split into stems as soon as it opens (`?split=<asset>`). Before this, the analyser's button always made a new session.
+- Send buttons on every creator result and history entry (add to a session, split into stems, analyse, start a song from it); *Make a song from this* in the analyser; *Send mix to the analyser and mastering* now starts the analysis and opens the run; *Start an AI song from the mix* in the editor.
+
+**Not done**
+
+- No genre, instrument or vocal detection: the drafted style description says how the song sounds, not what it is.
+- The engine's own reference-audio conditioning for *New song in its style* is not wired in; the song's influence is through the measured values only.
+
 ## 6. Verification plan
 
 - **Unit tests:**
@@ -412,6 +428,13 @@ Phase G1 went ahead with the recommended defaults (2026-11-10):
 6. **Still open:** the benchmark copies at `~/Projects/ACE-Step-1.5` (about 10 GB) and `~/Projects/acestep.cpp` (about 5.6 GB) are no longer used and can be deleted by the user.
 
 ## 7.1 Verification log
+
+### Phase G5 (2026-11-10, Windows 11)
+
+
+- Tests: inspire on a synthetic 120 BPM A-minor loop (tempo within 3 BPM, key A minor or its relative C major, length, caption), key spelling and metre helpers, unknown clips rejected; a clip copied between sessions is byte-identical and the source session is unchanged; a clip becomes an `uploaded` run with its metadata (with a temporary database). 283 tests pass across the generation, editor, upload-security and API-helper suites. `test_api_flow.py` was not run, because it clears the run history of the real data folder.
+- End to end in Chromium (headless) against a separate API and data folder: a 12 s test song read as 120 BPM, A minor, 4/4, 0:12 and filled the form; the session chooser listed both sessions and marked the song's own; an analyser run made from a clip analysed to completion (11/11 charts) and opened from `/?run=`; the creator made a session from that run with the song on a track; `?split=` separated it on opening and placed Vocals, Drums, Bass and Other tracks under the muted original.
+- Not verified: generating a song from a source in the browser (the job path is the one the editor's AI edits use), the upload button in the creator (only its parts), and online generators with a source.
 
 ### Phase G4 (2026-11-10, Apple M5, 24 GB)
 

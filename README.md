@@ -31,7 +31,8 @@ The former **AudioQI Analyzer** and **Sonic Visual AI** projects now share one c
 |---|---|
 | 🎚️ **Measure** | Loudness (LUFS), true peak, crest, LRA, stereo correlation, phase, spectrum, and four spectrogram types |
 | 🤖 **Master** | Internal, FFmpeg, Pedalboard, and Matchering paths with per-stage progress, marker-aware refinement, and a regression guard that refuses passes which add glare |
-| ✨ **Create** | AI Song Studio: write lyrics and a style with a local language model, then generate full songs with vocals on this computer (ACE-Step 1.5) |
+| ✨ **Create** | AI Song Studio: write lyrics and a style with a local language model, then generate full songs with vocals on this computer (ACE-Step 1.5). Or start from a song you have: match its tempo, key and feel, restyle it, extend it, add a part, or build a song around a vocal |
+| 🔁 **Move** | Send any song between the analyser, the AI Song Studio and the Studio Editor in one click. It is always added (to a new or existing session, on a new track) and never replaces your work, and can be split into stems on arrival |
 | ✂️ **Edit** | Multitrack Studio Editor: waveform clips, stem separation, repair tools, a spectral view, mixing with buses and automation, voice effects (vocoder, pitch shift, robot), recording, MIDI with a piano roll and a live MIDI keyboard, and AI tempo/key matching |
 | 🌈 **Visualize** | 60 FPS Spectrum, Orbit, and Waveform modes driven by the Web Audio analyser |
 | 🪐 **Map** | Full-song 3D geometry with tempo and key estimation, structural repeat detection, per-node inspection, presets, overlays, and exports |
@@ -161,7 +162,9 @@ Open it from the **AI Song Studio** button in the workspace or at `/generate`.
 1. **Install the engine once.** The installer offers it, or press **Install local engine** in the studio. It builds the open-source ACE-Step engine ([acestep.cpp](https://github.com/ServeurpersoCom/acestep.cpp), MIT) and downloads about 5.3 GB of models. After that it works offline.
 2. **Describe your song.** *Write style and lyrics* turns an idea into a style description, lyrics with section tags, tempo and key. Edit anything, or type it all yourself.
 3. **Generate.** A 2-minute song takes about a minute on an Apple Silicon Mac. Ask for up to four versions; each lands on its own track.
-4. **Open in Studio Editor** to cut, mix, separate stems or master the result.
+4. **Open in Studio Editor** to cut, mix, separate stems or master the result. Each version also has **Add to a session** (a new or existing one), **Split into stems**, **Analyse** and **Start a song from it**.
+
+**Start from a song:** upload a song (or send one from the analyser or the editor) and the studio measures its tempo, key, time signature and length and drafts a style description from its sound. Then make a new song in its style, restyle it, extend it, extract an instrument, add a part, or build a full song around it. Results land in the song's own session next to the original, which is never deleted.
 
 Every engine control is available under *Advanced* (planner sampling, diffusion steps, solver, models). *History* keeps the settings of each song so you can reuse them. *Settings* covers the lyrics model, the loudness of new songs, and the memory limits that keep the computer responsive: one song at a time, and the engine unloads when idle.
 
@@ -175,7 +178,7 @@ Every engine control is available under *Advanced* (planner sampling, diffusion 
 
 **Online services (optional):** add your own ElevenLabs Music, fal.ai (MiniMax Music, Lyria) or Google Gemini (Lyria 3.5) key under *Settings ▸ Online services* to use them as generators. Only the style text, lyrics and settings are sent; a clip's audio is uploaded only when you tick *Allow uploading* to edit it with ElevenLabs. A cost estimate is shown before every online request. ElevenLabs songs can be planned section by section (*Song plan*, drafted for free), and in the Studio Editor any clip can have a section regenerated or be extended with ElevenLabs. Keys stay in your computer's keychain.
 
-Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (about 8 GB); without Ollama the music engine's own planner writes a simpler draft. Measured on an Apple M5 with 24 GB: the engine peaks at 2.3 GB of memory, or 4.5 GB with its planner. Windows and Linux builds of the engine are untested. Plan and benchmarks: [docs/GENERATION_ROADMAP.md](docs/GENERATION_ROADMAP.md).
+Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (about 8 GB); without Ollama the music engine's own planner writes a simpler draft. Measured on an Apple M5 with 24 GB: the engine peaks at 2.3 GB of memory, or 4.5 GB with its planner. On Windows the engine builds with MinGW (for example WinLibs from winget) or Visual Studio; with MinGW it targets Windows 10 and links its runtime in, so it starts without the compiler on `PATH` (built and started on Windows 11; song quality there not yet compared). Linux builds are untested. Plan and benchmarks: [docs/GENERATION_ROADMAP.md](docs/GENERATION_ROADMAP.md).
 
 ---
 

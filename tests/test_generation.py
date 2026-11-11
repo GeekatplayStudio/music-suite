@@ -1469,6 +1469,29 @@ def installed_engine(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> lis
     return calls
 
 
+def test_fetch_source_starts_from_a_missing_folder(tmp_path: Path, monkeypatch) -> None:
+    """A first install has no engine folder; checking it must not crash (WinError 267)."""
+    target = tmp_path / "engine" / "acestep"
+    assert setup._git(["rev-parse", "HEAD"], target) == ""
+    commands: list[list[str]] = []
+    monkeypatch.setattr(setup, "_run", lambda command, cwd, *_a: commands.append(command))
+    assert setup._fetch_source(target, lambda *_a: None) is True
+    assert target.is_dir()
+    assert commands[0] == ["git", "init", "--quiet"]
+
+
+def test_windows_build_targets_windows_10(tmp_path: Path, monkeypatch) -> None:
+    """MinGW defaults to an old Windows version that hides CreateFile2 (cpp-httplib)."""
+    commands: list[list[str]] = []
+    monkeypatch.setattr(setup.sys, "platform", "win32")
+    monkeypatch.setattr(setup, "_run", lambda command, cwd, *_a: commands.append(command))
+    monkeypatch.setattr(engine, "binary_path", lambda _t: None if not commands else tmp_path)
+    setup._build(tmp_path, lambda *_a: None, force=True)
+    include = [arg for arg in commands[0] if arg.startswith("-DCMAKE_PROJECT_INCLUDE=")]
+    assert include and Path(include[0].split("=", 1)[1]) == setup.WINDOWS_TARGET_CMAKE
+    assert "_WIN32_WINNT=0x0A00" in setup.WINDOWS_TARGET_CMAKE.read_text()
+
+
 def test_installer_offers_the_editing_model_once(installed_engine, monkeypatch, capsys) -> None:
     monkeypatch.setattr(setup.sys, "stdin", _Tty())
     monkeypatch.setattr("builtins.input", lambda _prompt: "n")
@@ -2145,3 +2168,114 @@ def test_new_songs_use_the_quality_model_when_downloaded(
     # Edits keep the standard model.
     assert _edit("cover", {"caption": "lofi"})["synth_model"] == TURBO
     assert client.post("/generation/setup", json={"quality": "yes"}).status_code == 422
+
+
+# --- Moving songs between the creator, the editor and the analyser -------------------------
+
+
+def _beat(seconds: float = 12.0, bpm: float = 120.0) -> np.ndarray:
+    """Clicks on every beat over an A-minor drone: a tempo and a key to find."""
+    t = np.arange(int(SR * seconds)) / SR
+    drone = sum(0.12 * np.sin(2 * np.pi * f * t) for f in (220.0, 261.63, 329.63))
+    clicks = np.zeros_like(t)
+    for beat in np.arange(0.0, seconds, 60.0 / bpm):
+        start = int(beat * SR)
+        clicks[start : start + 400] = 0.8 * np.exp(-np.arange(min(400, clicks.size - start)) / 60.0)
+    mono = (drone + clicks).astype(np.float32)
+    return np.stack([mono, mono], axis=1)
+
+
+def test_inspire_reads_tempo_key_and_length(client: TestClient) -> None:
+    project = client.post("/editor/projects", json={"name": "source"}).json()["id"]
+    buffer = io.BytesIO()
+    sf.write(buffer, _beat(), SR, format="WAV", subtype="FLOAT")
+    asset = client.post(
+        f"/editor/projects/{project}/assets",
+        files={"file": ("loop.wav", buffer.getvalue(), "audio/wav")},
+    ).json()
+    reply = client.post("/generation/inspire", json={"project_id": project, "asset_id": asset["id"]})
+    assert reply.status_code == 200, reply.text
+    body = reply.json()
+    fields = body["fields"]
+    assert fields["duration"] == 12
+    assert fields["bpm"] == pytest.approx(120, abs=3)
+    assert fields["keyscale"] in {"A minor", "C major"}  # Relative keys share these notes.
+    assert fields["caption"]
+    assert body["name"] == "loop"
+
+
+def test_inspire_rejects_unknown_clips(client: TestClient) -> None:
+    project = client.post("/editor/projects", json={"name": "source"}).json()["id"]
+    missing = "00000000-0000-4000-8000-000000000000"
+    assert client.post("/generation/inspire", json={"project_id": project, "asset_id": missing}).status_code == 404
+    assert client.post("/generation/inspire", json={"project_id": "x", "asset_id": missing}).status_code == 422
+    assert client.post("/generation/inspire", json={"project_id": project, "extra": 1}).status_code == 422
+
+
+def test_keyscale_uses_the_generate_form_spelling() -> None:
+    from audioqi.generation import inspire
+
+    assert inspire.keyscale("A#", "minor") == "Bb minor"
+    assert inspire.keyscale("C#", "major") == "C# major"
+    assert inspire.keyscale(None, "major") is None
+    assert inspire.beats_per_bar([i * 0.5 for i in range(24)], [0.0, 1.5, 3.0, 4.5]) == 3
+    assert inspire.beats_per_bar([i * 0.5 for i in range(24)], [0.0, 2.0, 4.0, 6.0]) == 4
+
+
+def test_a_clip_is_copied_into_another_session(client: TestClient) -> None:
+    source_project, asset = _clip(client)
+    target = client.post("/editor/projects", json={"name": "mix"}).json()["id"]
+    copied = client.post(
+        f"/editor/projects/{target}/assets/from-asset",
+        json={"project_id": source_project, "asset_id": asset["id"]},
+    )
+    assert copied.status_code == 200, copied.text
+    assert copied.json()["id"] != asset["id"] and copied.json()["name"] == asset["name"]
+    original = client.get(f"/editor/projects/{source_project}/assets/{asset['id']}/audio").content
+    assert client.get(f"/editor/projects/{target}/assets/{copied.json()['id']}/audio").content == original
+    # The source session is unchanged.
+    assert len(client.get(f"/editor/projects/{source_project}").json()["assets"]) == 1
+    missing = client.post(
+        f"/editor/projects/{target}/assets/from-asset",
+        json={"project_id": source_project, "asset_id": "00000000-0000-4000-8000-000000000000"},
+    )
+    assert missing.status_code == 404
+
+
+def test_a_clip_becomes_an_analysis_run(client: TestClient, tmp_path: Path, monkeypatch) -> None:
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    import audioqi.storage as storage
+    from audioqi.db import Base
+
+    monkeypatch.setattr(
+        storage,
+        "SETTINGS",
+        replace(storage.SETTINGS, runs_dir=tmp_path / "runs", uploads_dir=tmp_path / "uploads"),
+    )
+    engine_db = create_engine(f"sqlite:///{tmp_path / 'runs.db'}", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=engine_db)
+    local = sessionmaker(bind=engine_db, autoflush=False, expire_on_commit=False)
+
+    def temp_db() -> Iterator[Any]:
+        db = local()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    api_main.app.dependency_overrides[api_main.get_db] = temp_db
+    try:
+        project, asset = _clip(client)
+        reply = client.post("/runs/from-asset", json={"project_id": project, "asset_id": asset["id"]})
+        assert reply.status_code == 200, reply.text
+        run = reply.json()["run"]
+        assert run["status"] == "uploaded" and run["filename"] == "song.wav"
+        stored = list((tmp_path / "uploads" / run["id"]).iterdir())
+        assert [p.name for p in stored] == ["song.wav"]
+        assert reply.json()["metadata"]["duration_seconds"] == pytest.approx(6.0, abs=0.05)
+        bad = client.post("/runs/from-asset", json={"project_id": project, "asset_id": "nope"})
+        assert bad.status_code == 404
+    finally:
+        api_main.app.dependency_overrides.pop(api_main.get_db, None)

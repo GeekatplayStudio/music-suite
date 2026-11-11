@@ -367,12 +367,26 @@ def upload_audio(
         _safe_delete_path(run_dir)
         raise
 
+    run = _register_run(db, run_id, safe_filename, input_path, run_dir, metadata)
+    if hide_from_history:
+        _mark_hidden_from_history(run_dir, "hidden upload (tests/internal)")
+    return UploadResponse(run=_to_summary(run), metadata=metadata)
+
+
+def _register_run(
+    db: Session,
+    run_id: str,
+    filename: str,
+    input_path: Path,
+    run_dir: Path,
+    metadata: dict[str, Any],
+) -> AnalysisRun:
+    """Record an uploaded file as a run that is ready to analyse."""
     metadata_path = run_dir / "metadata.json"
     write_json(metadata_path, metadata)
-
     run = AnalysisRun(
         id=run_id,
-        filename=safe_filename,
+        filename=filename,
         status="uploaded",
         progress=0.0,
         input_path=str(input_path),
@@ -382,8 +396,6 @@ def upload_audio(
     db.add(run)
     db.commit()
     db.refresh(run)
-    if hide_from_history:
-        _mark_hidden_from_history(run_dir, "hidden upload (tests/internal)")
     _write_analysis_status(
         run_dir,
         status="uploaded",
@@ -391,6 +403,43 @@ def upload_audio(
         stage="uploaded",
         detail=_analysis_stage_detail("uploaded"),
     )
+    return run
+
+
+@app.post("/runs/from-asset", response_model=UploadResponse)
+def run_from_asset(
+    payload: dict[str, Any] = Body(...), db: Session = Depends(get_db)
+) -> UploadResponse:
+    """Make an analysis run from a Studio Editor clip (a generated song, a stem, an upload)."""
+    from audioqi.editor import assets
+    from audioqi.editor.projects import EditorError, is_canonical_uuid
+    from audioqi.io.metadata import extract_metadata
+
+    if set(payload) - {"project_id", "asset_id"}:
+        raise HTTPException(status_code=422, detail="Only 'project_id' and 'asset_id' may be sent.")
+    project_id, asset_id = payload.get("project_id"), payload.get("asset_id")
+    if not is_canonical_uuid(project_id) or not is_canonical_uuid(asset_id):
+        raise HTTPException(status_code=404, detail="Clip not found.")
+    try:
+        record = assets.get_asset(project_id, asset_id)
+    except EditorError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    wav, _ = assets.asset_paths(project_id, asset_id)
+    if not wav.is_file():
+        raise HTTPException(status_code=404, detail="Audio file missing.")
+
+    run_id = new_run_id()
+    safe_filename = sanitize_filename(f"{record.get('name') or 'clip'}.wav")
+    input_path = upload_path_for(run_id, safe_filename)
+    run_dir = run_dir_for(run_id)
+    try:
+        shutil.copyfile(wav, input_path)
+        metadata = extract_metadata(input_path)
+    except Exception as exc:
+        _safe_delete_path(input_path.parent)
+        _safe_delete_path(run_dir)
+        raise HTTPException(status_code=500, detail="The clip could not be copied.") from exc
+    run = _register_run(db, run_id, safe_filename, input_path, run_dir, metadata)
     return UploadResponse(run=_to_summary(run), metadata=metadata)
 
 

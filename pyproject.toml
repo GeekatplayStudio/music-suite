@@ -84,6 +84,7 @@ include = ["audioqi*", "apps*"]
 
 [tool.setuptools.package-data]
 "audioqi.integrations.comfyui.sonic_holodeck" = ["web/*.js", "workflows/*.json"]
+"audioqi.generation" = ["*.cmake"]
 
 [tool.ruff]
 line-length = 100

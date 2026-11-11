@@ -1,13 +1,31 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AudioWaveform, Cpu, Disc3, Download, History, Loader2, Settings2, Sparkles, Square, Trash2, Wand2 } from "lucide-react";
+import {
+  AudioWaveform,
+  BarChart3,
+  Cpu,
+  Disc3,
+  Download,
+  FileAudio,
+  History,
+  Loader2,
+  Plus,
+  Scissors,
+  Settings2,
+  Sparkles,
+  Square,
+  Trash2,
+  Wand2
+} from "lucide-react";
 
 import { AlbumPanel } from "@/components/generation/album-panel";
 import { PlanEditor } from "@/components/generation/plan-editor";
 import { SchemaForm } from "@/components/generation/schema-form";
 import { SettingsPanel } from "@/components/generation/settings-panel";
+import { NEW_IN_ITS_STYLE, SourceSongPanel, type SourceSong } from "@/components/generation/source-song";
 import { editorApi } from "@/lib/editor/api";
 import { addAssetOnNewTrack } from "@/lib/editor/store";
 import { emptyProjectState, type Asset, type Job, type ProjectState } from "@/lib/editor/types";
@@ -22,8 +40,10 @@ import {
   type HistoryRecord,
   type Overview,
   type PlanSection,
-  type ProviderInfo
+  type ProviderInfo,
+  type ProviderSchema
 } from "@/lib/generation/api";
+import { analyseClip, type ClipRef, type Incoming, placeIncoming, placeInEditorUrl } from "@/lib/handoff";
 import { cn } from "@/lib/utils";
 
 type Tab = "create" | "album" | "history" | "settings";
@@ -65,8 +85,39 @@ function estimateSeconds(values: FieldValues): number {
   return plan + (10 + length * 0.3) * (1 + 0.9 * (versions - 1));
 }
 
-/** Add each generated version to the project on its own track; extra versions start muted. */
-async function placeInProject(projectId: string, assets: Asset[], meta: Record<string, unknown>): Promise<void> {
+/** Tasks whose result replaces listening to the original, so the original's track is muted. */
+const MUTES_ORIGINAL = new Set([NEW_IN_ITS_STYLE, "cover"]);
+
+/** Only the measured values the form can take: known fields, inside their ranges and options. */
+function fitToSchema(schema: ProviderSchema, patch: FieldValues): FieldValues {
+  const out: FieldValues = {};
+  for (const field of schema.fields) {
+    const value = patch[field.key];
+    if (value === undefined || value === null || field.editor) continue;
+    if (typeof value === "number" && (field.type === "int" || field.type === "float")) {
+      const low = typeof field.min === "number" ? field.min : -Infinity;
+      const high = typeof field.max === "number" ? field.max : Infinity;
+      out[field.key] = Math.min(high, Math.max(low, value));
+    } else if (field.type === "enum") {
+      const allowed = (field.options ?? []).map((o) => (typeof o === "string" ? o : String(o.value)));
+      if (allowed.includes(String(value))) out[field.key] = String(value);
+    } else if (typeof value === "string") {
+      out[field.key] = value;
+    }
+  }
+  return out;
+}
+
+/**
+ * Add each generated version to the project on its own track; extra versions start muted.
+ * ``muteAssetId`` mutes the original song's tracks, so the new version is what plays.
+ */
+async function placeInProject(
+  projectId: string,
+  assets: Asset[],
+  meta: Record<string, unknown>,
+  muteAssetId: string | null = null
+): Promise<void> {
   const project = await editorApi.getProject(projectId);
   let state: ProjectState = project.state ?? emptyProjectState();
   if (!project.state) {
@@ -74,6 +125,10 @@ async function placeInProject(projectId: string, assets: Asset[], meta: Record<s
     const bpm = typeof meta.bpm === "number" && meta.bpm >= 40 && meta.bpm <= 240 ? meta.bpm : state.bpm;
     const keyLabel = typeof meta.keyscale === "string" && meta.keyscale ? meta.keyscale : state.keyLabel;
     state = { ...state, bpm, keyLabel };
+  }
+  if (muteAssetId) {
+    const original = new Set(state.clips.filter((c) => c.assetId === muteAssetId).map((c) => c.trackId));
+    state = { ...state, tracks: state.tracks.map((t) => (original.has(t.id) ? { ...t, mute: true } : t)) };
   }
   assets.forEach((asset, index) => {
     const added = addAssetOnNewTrack(state, asset);
@@ -84,7 +139,62 @@ async function placeInProject(projectId: string, assets: Asset[], meta: Record<s
   await editorApi.saveState(projectId, state);
 }
 
-function ResultCard({ result, onReuseSeed }: { result: Result; onReuseSeed: (seed: number) => void }) {
+const linkButton =
+  "inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-cyan-300 hover:bg-slate-800 " +
+  "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:pointer-events-none disabled:opacity-40";
+
+/** Where a finished song can go next. Each one is a copy or a new track: nothing is replaced. */
+function SendActions({
+  clip,
+  onAnalyse,
+  onStartFrom
+}: {
+  clip: ClipRef;
+  onAnalyse: (clip: ClipRef) => void;
+  onStartFrom: (clip: ClipRef) => void;
+}) {
+  return (
+    <div className="mt-1 flex flex-wrap gap-1" role="group" aria-label={`Send ${clip.name}`}>
+      <Link href={placeInEditorUrl(clip)} className={linkButton} title="Add it on a new track in a new or existing editor session">
+        <Plus className="h-3.5 w-3.5" aria-hidden /> Add to a session
+      </Link>
+      <Link
+        href={placeInEditorUrl(clip, true)}
+        className={linkButton}
+        title="Add it to a session and split it into vocals, drums, bass and the rest"
+      >
+        <Scissors className="h-3.5 w-3.5" aria-hidden /> Split into stems
+      </Link>
+      <button type="button" className={linkButton} onClick={() => onAnalyse(clip)} title="Open a copy in the analyser and measure it">
+        <BarChart3 className="h-3.5 w-3.5" aria-hidden /> Analyse
+      </button>
+      <button
+        type="button"
+        className={linkButton}
+        onClick={() => onStartFrom(clip)}
+        title="Make another song from this one: restyle, extend, add a part…"
+      >
+        <FileAudio className="h-3.5 w-3.5" aria-hidden /> Start a song from it
+      </button>
+    </div>
+  );
+}
+
+function stripName(name: string): string {
+  return name.replace(/\.[a-z0-9]+$/i, "");
+}
+
+function ResultCard({
+  result,
+  onReuseSeed,
+  onAnalyse,
+  onStartFrom
+}: {
+  result: Result;
+  onReuseSeed: (seed: number) => void;
+  onAnalyse: (clip: ClipRef) => void;
+  onStartFrom: (clip: ClipRef) => void;
+}) {
   return (
     <section className="glass rounded-2xl border border-cyan-300/30 p-4" aria-label={`Result: ${result.title}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -122,12 +232,13 @@ function ResultCard({ result, onReuseSeed }: { result: Result; onReuseSeed: (see
                 className="mt-2 h-10 w-full"
                 aria-label={`Play ${asset.name}`}
               />
+              <SendActions
+                clip={{ projectId: result.projectId, assetId: asset.id, name: stripName(asset.name) }}
+                onAnalyse={onAnalyse}
+                onStartFrom={onStartFrom}
+              />
               {seed !== null ? (
-                <button
-                  type="button"
-                  className="mt-2 inline-flex h-9 items-center rounded-lg px-2 text-xs font-semibold text-cyan-300 hover:bg-slate-800 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
-                  onClick={() => onReuseSeed(seed)}
-                >
+                <button type="button" className={linkButton} onClick={() => onReuseSeed(seed)}>
                   Keep this seed for the next version
                 </button>
               ) : null}
@@ -139,8 +250,12 @@ function ResultCard({ result, onReuseSeed }: { result: Result; onReuseSeed: (see
   );
 }
 
-export function GenerateStudio({ projectId }: { projectId: string | null }) {
+export function GenerateStudio({ projectId, start = null }: { projectId: string | null; start?: Incoming | null }) {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("create");
+  const [source, setSource] = useState<SourceSong | null>(null);
+  const [sourceWorking, setSourceWorking] = useState<string | null>(null);
+  const [sourceTaskId, setSourceTaskId] = useState(NEW_IN_ITS_STYLE);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [providerId, setProviderId] = useState<string | null>(null);
@@ -150,7 +265,9 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
   const [revise, setRevise] = useState("");
   const [writing, setWriting] = useState(false);
   const [writerNote, setWriterNote] = useState<string | null>(null);
-  const [job, setJob] = useState<{ projectId: string; job: Job; startedAt: number } | null>(null);
+  const [job, setJob] = useState<{ projectId: string; job: Job; startedAt: number; muteAssetId: string | null } | null>(
+    null
+  );
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<Result[]>([]);
   const [history, setHistory] = useState<HistoryRecord[] | null>(null);
@@ -205,6 +322,20 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
     setValuesByProvider((all) => ({ ...all, [provider.id]: { ...values, ...clean } }));
   };
 
+  // Tasks the creator can run on a whole song (regenerating a section needs an editor selection).
+  const sourceTasks = useMemo(
+    () =>
+      (provider?.schema.tasks ?? []).filter(
+        (t) => t.source && !provider?.schema.fields.some((f) => f.editor && f.required_tasks?.includes(t.id))
+      ),
+    [provider]
+  );
+  const task =
+    source && sourceTasks.some((t) => t.id === sourceTaskId && t.available !== false) ? sourceTaskId : NEW_IN_ITS_STYLE;
+  const usesSource = source !== null && task !== NEW_IN_ITS_STYLE;
+  // Pulling out an instrument needs no description; everything else reads a style.
+  const needsStyle = task !== "extract";
+
   const busy = job !== null;
   const hasLyricsField = provider?.schema.fields.some((f) => f.key === "lyrics") ?? false;
   const instrumental = values.instrumental === true;
@@ -233,7 +364,10 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
     if (!online || !provider) return;
     const timer = setTimeout(() => {
       generationApi
-        .estimate({ params: { provider: provider.id, task: "text2music", fields: submitValues(provider.schema, values) } })
+        .estimate({
+          params: { provider: provider.id, task, fields: submitValues(provider.schema, values, task) },
+          ...(usesSource && source ? { project_id: source.projectId, asset_id: source.assetId } : {})
+        })
         .then((result) => {
           setEstimate(result.estimate);
           setEstimateError(null);
@@ -245,13 +379,13 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
         });
     }, 400);
     return () => clearTimeout(timer);
-  }, [online, provider, values]);
+  }, [online, provider, values, task, usesSource, source]);
 
   const hidden = (field: FieldSpec) =>
     field.type === "plan" ||
     (plan !== null && (field.key === "duration" || field.key === "lyrics" || field.key === "instrumental")) ||
     Boolean(field.editor) ||
-    (field.tasks !== undefined && !field.tasks.includes("text2music")) ||
+    (field.tasks !== undefined && !field.tasks.includes(task)) ||
     (instrumental && (field.key === "lyrics" || field.key === "vocal_language"));
 
   const write = async (mode: "brief" | "lyrics") => {
@@ -285,15 +419,20 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
     setError(null);
     const songTitle = title.trim() || "Generated song";
     try {
-      const target = projectId ?? (await editorApi.createProject(songTitle)).id;
-      const started = await generationApi.startSong(target, {
-        provider: provider.id,
-        task: provider.schema.tasks[0].id,
-        title: songTitle,
-        fields: submitValues(provider.schema, values)
-      });
+      // Starting from a song keeps everything in that song's session, next to the original.
+      const target = source?.projectId ?? projectId ?? (await editorApi.createProject(songTitle)).id;
+      const started = await generationApi.startSong(
+        target,
+        { provider: provider.id, task, title: songTitle, fields: submitValues(provider.schema, values, task) },
+        usesSource && source ? source.assetId : null
+      );
       setNow(Date.now());
-      setJob({ projectId: target, job: started, startedAt: Date.now() });
+      setJob({
+        projectId: target,
+        job: started,
+        startedAt: Date.now(),
+        muteAssetId: source && MUTES_ORIGINAL.has(task) ? source.assetId : null
+      });
     } catch (err) {
       setError(message(err, "Generation could not be started."));
     }
@@ -302,6 +441,7 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
   // Follow the running job.
   const jobId = job?.job.id;
   const jobProject = job?.projectId;
+  const jobMutes = job?.muteAssetId ?? null;
   useEffect(() => {
     if (!jobId || !jobProject) return;
     let stopped = false;
@@ -316,7 +456,7 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
             clearInterval(timer);
             const result = latest.result as { title?: string; outputs?: Record<string, unknown>[]; seconds_taken?: number };
             try {
-              await placeInProject(jobProject, latest.result_assets, result.outputs?.[0] ?? {});
+              await placeInProject(jobProject, latest.result_assets, result.outputs?.[0] ?? {}, jobMutes);
             } catch {
               setError("The song was generated, but could not be placed on the timeline. Add it from the editor's asset list.");
             }
@@ -347,7 +487,83 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
       stopped = true;
       clearInterval(timer);
     };
-  }, [jobId, jobProject]);
+  }, [jobId, jobProject, jobMutes]);
+
+  /* ---------- Starting from a song ---------- */
+
+  /** Read the song's tempo, key, metre, length and style into the form. */
+  const adoptSource = async (clip: ClipRef) => {
+    setSource({ ...clip, measured: null });
+    setSourceWorking("Reading tempo, key and style…");
+    setError(null);
+    try {
+      const found = await generationApi.inspire(clip.projectId, clip.assetId);
+      setSource({ ...clip, measured: found.measured });
+      if (provider) mergeValues(fitToSchema(provider.schema, found.fields));
+      if (!title.trim()) setTitle(`${clip.name} (new version)`.slice(0, 80));
+    } catch (err) {
+      setError(message(err, "The song could not be read. You can still use it; fill in the form yourself."));
+    } finally {
+      setSourceWorking(null);
+    }
+  };
+
+  /** Upload a song into this session (or a new one) on its own track and start from it. */
+  const uploadSource = async (file: File) => {
+    const name = file.name.replace(/\.[^.]+$/, "").slice(0, 120) || "Song";
+    setSourceWorking(`Uploading ${name}…`);
+    setError(null);
+    try {
+      const target = projectId ?? (await editorApi.createProject(name)).id;
+      const asset = await editorApi.uploadAsset(target, file);
+      const project = await editorApi.getProject(target);
+      await editorApi.saveState(target, addAssetOnNewTrack(project.state ?? emptyProjectState(), asset).state);
+      await adoptSource({ projectId: target, assetId: asset.id, name });
+    } catch (err) {
+      setError(message(err, "The song could not be uploaded."));
+      setSourceWorking(null);
+    }
+  };
+
+  const analyse = async (clip: ClipRef) => {
+    setError(null);
+    try {
+      router.push(`/?run=${await analyseClip(clip)}`);
+    } catch (err) {
+      setError(message(err, "The song could not be sent to the analyser."));
+    }
+  };
+
+  const startFrom = (clip: ClipRef) => {
+    setTab("create");
+    setSourceTaskId(NEW_IN_ITS_STYLE);
+    void adoptSource(clip);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // A song sent here (?run= from the analyser, ?from=&asset= from a session) is the starting song.
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (!start || !overview || startedRef.current) return;
+    startedRef.current = true;
+    window.history.replaceState(null, "", projectId ? `/generate?project=${projectId}` : "/generate");
+    void (async () => {
+      if (start.kind === "clip") {
+        await adoptSource(start);
+        return;
+      }
+      setSourceWorking(`Bringing in ${start.name || "the song"}…`);
+      try {
+        const placed = await placeIncoming(projectId, start);
+        await adoptSource({ projectId: placed.projectId, assetId: placed.asset.id, name: start.name || stripName(placed.asset.name) });
+      } catch (err) {
+        setError(message(err, "The song could not be brought in."));
+        setSourceWorking(null);
+      }
+    })();
+    // Runs once, when the generators are known (so the form can take the measured values).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [start, overview]);
 
   const cancel = () => {
     if (job) void generationApi.cancelJob(job.projectId, job.job.id).catch(() => undefined);
@@ -483,6 +699,13 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
                 {typeof record.fields.caption === "string" ? (
                   <p className="mt-2 line-clamp-2 text-xs text-slate-400">{record.fields.caption}</p>
                 ) : null}
+                {record.asset_ids[0] ? (
+                  <SendActions
+                    clip={{ projectId: record.project_id, assetId: record.asset_ids[0], name: record.title }}
+                    onAnalyse={(clip) => void analyse(clip)}
+                    onStartFrom={startFrom}
+                  />
+                ) : null}
                 {record.asset_ids.map((assetId) => (
                   <audio
                     key={assetId}
@@ -574,7 +797,24 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
             </label>
           ) : null}
 
-          {provider && hasLyricsField ? (
+          {provider ? (
+            <SourceSongPanel
+              source={source}
+              working={sourceWorking}
+              disabled={busy}
+              tasks={sourceTasks}
+              taskId={task}
+              onTask={setSourceTaskId}
+              onUpload={(file) => void uploadSource(file)}
+              onAnalyse={() => source && void analyse(source)}
+              onClear={() => {
+                setSource(null);
+                setSourceTaskId(NEW_IN_ITS_STYLE);
+              }}
+            />
+          ) : null}
+
+          {provider && hasLyricsField && !usesSource ? (
             <section className="glass rounded-2xl border border-white/10 p-4" aria-label="Start from an idea">
               <h2 className="display-font flex items-center gap-2 text-sm font-semibold text-slate-200">
                 <Wand2 className="h-4 w-4 text-cyan-300" aria-hidden /> Start from an idea
@@ -709,12 +949,14 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
                       disabled={
                         !provider.status.ready ||
                         writing ||
-                        (String(values.caption ?? values.prompt ?? "").trim().length < 3 && !plan?.length)
+                        (needsStyle && String(values.caption ?? values.prompt ?? "").trim().length < 3 && !plan?.length)
                       }
                       onClick={() => void generate()}
                     >
                       <Sparkles className="h-4 w-4" aria-hidden />
-                      Generate{projectId ? " into this project" : ""}
+                      {usesSource
+                        ? `${sourceTasks.find((t) => t.id === task)?.label ?? "Make it"} from “${source?.name}”`
+                        : `Generate${source ? " in its style" : projectId ? " into this project" : ""}`}
                     </button>
                   </div>
                 )}
@@ -727,7 +969,13 @@ export function GenerateStudio({ projectId }: { projectId: string | null }) {
           )}
 
           {results.map((result) => (
-            <ResultCard key={result.assets[0]?.id ?? result.title} result={result} onReuseSeed={(seed) => setValue("seed", seed)} />
+            <ResultCard
+              key={result.assets[0]?.id ?? result.title}
+              result={result}
+              onReuseSeed={(seed) => setValue("seed", seed)}
+              onAnalyse={(clip) => void analyse(clip)}
+              onStartFrom={startFrom}
+            />
           ))}
         </>
       ) : null}

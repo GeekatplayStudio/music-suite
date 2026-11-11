@@ -65,6 +65,7 @@ import {
   RunSummary,
   UpdateStatus
 } from "@/lib/types";
+import { startSongUrl } from "@/lib/handoff";
 
 const ALL_CHARTS: Array<{ key: string; title: string; height: number }> = [
   { key: "waveform", title: "Waveform + Envelope", height: 680 },
@@ -1218,7 +1219,11 @@ export default function HomePage() {
     try {
       const data = await listRuns();
       setRuns(data);
-      setSelectedRunId((current) => current ?? data[0]?.id ?? null);
+      // A song sent here from the editor or the AI Song Studio arrives as ?run=<id>.
+      const wanted = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("run");
+      const sent = wanted && data.some((run) => run.id === wanted) ? wanted : null;
+      if (sent) window.history.replaceState(null, "", "/");
+      setSelectedRunId((current) => sent ?? current ?? data[0]?.id ?? null);
     } catch (err) {
       setStatusMessage(
         `${toErrorMessage(err, "Failed to fetch runs.")} (API: ${getApiBase()})`
@@ -2320,17 +2325,25 @@ export default function HomePage() {
             </Button>
             <Button
               variant="secondary"
-              title="Write and generate a new song with AI on this computer"
-              onClick={() => router.push("/generate")}
+              title={
+                selectedRunId
+                  ? "Start a new AI song from the selected track: its tempo, key and style fill the form, and you can restyle, extend or add parts to it"
+                  : "Write and generate a new song with AI on this computer"
+              }
+              onClick={() =>
+                router.push(
+                  selectedRunId ? startSongUrl({ runId: selectedRunId, name: selectedRunFilename }) : "/generate"
+                )
+              }
             >
               <Sparkles className="mr-2 h-4 w-4" />
-              AI Song Studio
+              {selectedRunId ? "Make a song from this" : "AI Song Studio"}
             </Button>
             <Button
               variant="secondary"
               title={
                 selectedRunId
-                  ? "Open the selected song in the multitrack Studio Editor"
+                  ? "Add the selected song to a Studio Editor session (new or existing), optionally split into stems"
                   : "Open the multitrack Studio Editor"
               }
               onClick={() => {

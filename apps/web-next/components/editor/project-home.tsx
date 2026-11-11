@@ -1,48 +1,33 @@
 "use client";
 
-import { AudioWaveform, Plus, Trash2 } from "lucide-react";
+import { AudioWaveform, Loader2, Plus, Scissors, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ActionButton, fieldClass } from "@/components/editor/controls";
 import { editorApi } from "@/lib/editor/api";
-import { addAssetOnNewTrack } from "@/lib/editor/store";
-import { type ProjectSummary, emptyProjectState } from "@/lib/editor/types";
+import { type ProjectSummary } from "@/lib/editor/types";
+import { type Incoming, placeIncoming } from "@/lib/handoff";
 
 interface ProjectHomeProps {
-  /** When set, a new project is created from this analysis run and opened. */
-  runId: string | null;
-  runName: string;
+  /** A song sent here from the analyser or another session; the page asks where it goes. */
+  incoming: Incoming | null;
+  /** Start with "split into stems" ticked (the "Deconstruct" buttons send this). */
+  split: boolean;
 }
 
-export function ProjectHome({ runId, runName }: ProjectHomeProps) {
+export function ProjectHome({ incoming, split: splitInitially }: ProjectHomeProps) {
   const router = useRouter();
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [name, setName] = useState("");
-  const [busy, setBusy] = useState(Boolean(runId));
+  const [busy, setBusy] = useState(false);
+  const [placing, setPlacing] = useState<string | null>(null);
+  const [split, setSplit] = useState(splitInitially);
   const [error, setError] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
-  const startedRef = useRef(false);
 
   useEffect(() => {
-    if (runId) {
-      // Strict mode runs effects twice in development; create the project once.
-      if (startedRef.current) return;
-      startedRef.current = true;
-      void (async () => {
-        try {
-          const project = await editorApi.createProject((runName || "Imported song").slice(0, 120));
-          const asset = await editorApi.importRun(project.id, runId);
-          await editorApi.saveState(project.id, addAssetOnNewTrack(emptyProjectState(), asset).state);
-          router.replace(`/editor?project=${project.id}`);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "The song could not be opened in the editor.");
-          setBusy(false);
-        }
-      })();
-      return;
-    }
     let cancelled = false;
     editorApi
       .listProjects()
@@ -51,7 +36,7 @@ export function ProjectHome({ runId, runName }: ProjectHomeProps) {
     return () => {
       cancelled = true;
     };
-  }, [runId, runName, router]);
+  }, []);
 
   const create = async () => {
     setBusy(true);
@@ -65,6 +50,20 @@ export function ProjectHome({ runId, runName }: ProjectHomeProps) {
     }
   };
 
+  /** Add the incoming song to a session (null: a new one) on its own track, then open it. */
+  const place = async (targetId: string | null) => {
+    if (!incoming) return;
+    setPlacing(targetId ?? "new");
+    setError(null);
+    try {
+      const { projectId, asset } = await placeIncoming(targetId, incoming);
+      router.push(`/editor?project=${projectId}${split ? `&split=${asset.id}` : ""}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The song could not be added to the session.");
+      setPlacing(null);
+    }
+  };
+
   const remove = async (id: string) => {
     try {
       await editorApi.deleteProject(id);
@@ -74,6 +73,9 @@ export function ProjectHome({ runId, runName }: ProjectHomeProps) {
     }
     setConfirmId(null);
   };
+
+  const songName = incoming?.name || "this song";
+  const home = incoming && incoming.kind === "clip" ? incoming.projectId : null;
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col gap-6 px-4 py-10">
@@ -106,10 +108,68 @@ export function ProjectHome({ runId, runName }: ProjectHomeProps) {
         </p>
       ) : null}
 
-      {runId && busy ? (
-        <p className="rounded-xl bg-slate-900 px-4 py-6 text-center text-sm text-slate-300" aria-live="polite">
-          Opening “{runName || "song"}” in the editor…
-        </p>
+      {incoming ? (
+        <section className="glass space-y-4 rounded-2xl border border-cyan-300/30 p-4" aria-label="Where should the song go">
+          <div>
+            <h2 className="display-font text-lg font-semibold text-slate-100">Where should “{songName}” go?</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              It is added on a new track. Nothing already in a session is replaced.
+            </p>
+          </div>
+          <label className="flex items-start gap-3 rounded-xl bg-slate-900/70 p-3 text-sm text-slate-200">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-cyan-400"
+              checked={split}
+              disabled={placing !== null}
+              onChange={(event) => setSplit(event.target.checked)}
+            />
+            <span>
+              <span className="flex items-center gap-1.5 font-semibold">
+                <Scissors className="h-4 w-4 text-cyan-300" aria-hidden /> Split it into stems when it opens
+              </span>
+              <span className="mt-0.5 block text-xs text-slate-400">
+                Vocals, drums, bass and the rest, each on its own track, ready to sample, turn into MIDI or rebuild with AI.
+                The original stays, muted, above them.
+              </span>
+            </span>
+          </label>
+          <ActionButton
+            variant="primary"
+            className="h-11 w-full text-sm"
+            disabled={placing !== null}
+            onClick={() => void place(null)}
+          >
+            {placing === "new" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            New session “{songName}”
+          </ActionButton>
+          <div>
+            <h3 className="display-font text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Or add it to a session
+            </h3>
+            {projects === null && !error ? (
+              <p className="mt-2 text-sm text-slate-400">Loading…</p>
+            ) : projects && projects.length ? (
+              <ul className="mt-2 space-y-2">
+                {projects.map((project) => (
+                  <li key={project.id} className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-900/70 p-2">
+                    <AudioWaveform className="ml-1 h-5 w-5 shrink-0 text-cyan-300" aria-hidden />
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-100">{project.name}</span>
+                    <span className="hidden shrink-0 text-xs text-slate-400 sm:inline">
+                      {new Date(project.updated_at).toLocaleString()}
+                    </span>
+                    <ActionButton disabled={placing !== null} onClick={() => void place(project.id)}>
+                      {placing === project.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      {project.id === home ? "Open (it is here)" : "Add here"}
+                    </ActionButton>
+                  </li>
+                ))}
+              </ul>
+            ) : projects ? (
+              <p className="mt-2 text-sm text-slate-400">No other sessions yet.</p>
+            ) : null}
+          </div>
+        </section>
       ) : (
         <>
           <form

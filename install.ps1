@@ -131,6 +131,12 @@ try {
     & $venvPython -m pip install -e ".[${extraSpec}]"
 
     $webDir = Join-Path $root "apps\web-next"
+    # A running site keeps serving pages that point at the old build's files; rebuilding under
+    # it makes the open tab fail with 500s and ChunkLoadError. Stop it first (start.bat restarts it).
+    if (Test-Path -LiteralPath (Join-Path $root ".music-suite-processes.json")) {
+        Write-Host "Stopping the running Music Suite before rebuilding the web app..."
+        try { & (Join-Path $root "stop.ps1") } catch { Write-Warning "Could not stop the running Music Suite: $_" }
+    }
     Write-Host "Installing web dependencies..."
     Push-Location $webDir
     try {

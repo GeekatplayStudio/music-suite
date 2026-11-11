@@ -91,6 +91,15 @@ export async function uploadAudio(file: File): Promise<UploadResponse> {
   });
 }
 
+/** Make an analysis run from a Studio Editor clip (a generated song, a stem or an upload). */
+export async function runFromAsset(projectId: string, assetId: string): Promise<UploadResponse> {
+  return request<UploadResponse>("/runs/from-asset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: projectId, asset_id: assetId })
+  });
+}
+
 export async function analyzeRun(runId: string, useGpu: boolean): Promise<RunSummary> {
   return request<RunSummary>(`/runs/${runId}/analyze?use_gpu=${useGpu ? "true" : "false"}`, {
     method: "POST"

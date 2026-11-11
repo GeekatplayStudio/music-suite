@@ -220,6 +220,26 @@ def asset_from_run(project_id: str, run_id: str, db: Session = Depends(get_db)) 
     return assets.public(record)
 
 
+@router.post("/projects/{project_id}/assets/from-asset")
+def asset_from_asset(project_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """Copy a clip from another session into this one; the original is left as it is."""
+    if set(payload) - {"project_id", "asset_id"}:
+        raise HTTPException(status_code=422, detail="Only 'project_id' and 'asset_id' may be sent.")
+    source_project, source_asset = payload.get("project_id"), payload.get("asset_id")
+    if not projects.is_canonical_uuid(source_project) or not projects.is_canonical_uuid(
+        source_asset
+    ):
+        raise HTTPException(status_code=404, detail="Clip not found.")
+    _guard(lambda: projects.require_project(project_id))
+    original = _guard(lambda: assets.get_asset(source_project, source_asset))
+    wav, _ = assets.asset_paths(source_project, source_asset)
+    if not wav.is_file():
+        raise HTTPException(status_code=404, detail="Audio file missing.")
+    name = str(original.get("name") or "clip")
+    record = _guard(lambda: assets.import_audio_file(project_id, wav, name=name, source="copy"))
+    return assets.public(record)
+
+
 @router.get("/projects/{project_id}/assets/{asset_id}/audio")
 def get_asset_audio(project_id: str, asset_id: str) -> FileResponse:
     _guard(lambda: assets.get_asset(project_id, asset_id))

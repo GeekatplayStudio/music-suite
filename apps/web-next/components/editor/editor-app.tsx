@@ -36,9 +36,10 @@ import { PianoRoll } from "@/components/editor/piano-roll";
 import { SpectralPanel } from "@/components/editor/spectral-panel";
 import { RULER_HEIGHT, Timeline } from "@/components/editor/timeline";
 import { TrackHeader } from "@/components/editor/track-header";
-import { uploadAudio } from "@/lib/api";
+import { analyzeRun, uploadAudio } from "@/lib/api";
 import { editorApi } from "@/lib/editor/api";
 import { generationApi, type ProviderInfo } from "@/lib/generation/api";
+import { startSongUrl } from "@/lib/handoff";
 import { EditorEngine, playsCarrier } from "@/lib/editor/engine";
 import { type ProcessStep, favouriteStore } from "@/lib/editor/favourites";
 import { MediaStore } from "@/lib/editor/media";
@@ -374,7 +375,7 @@ function levelToMeter(peak: number): number {
   return clamp((20 * Math.log10(peak) + 60) / 60, 0, 1);
 }
 
-type ExportKind = "wav24" | "wav32" | "tracks" | "range" | "mp3" | "flac" | "mastering";
+type ExportKind = "wav24" | "wav32" | "tracks" | "range" | "mp3" | "flac" | "mastering" | "studio";
 
 const EXPORT_ITEMS: { kind: ExportKind; label: string; needsRange?: boolean }[] = [
   { kind: "wav24", label: "Mixdown · WAV 24-bit" },
@@ -383,10 +384,11 @@ const EXPORT_ITEMS: { kind: ExportKind; label: string; needsRange?: boolean }[] 
   { kind: "mp3", label: "Mixdown · MP3 320 kbps" },
   { kind: "range", label: "Highlighted range · WAV 24-bit", needsRange: true },
   { kind: "tracks", label: "Each track · WAV 24-bit" },
-  { kind: "mastering", label: "Send mix to Mastering →" }
+  { kind: "mastering", label: "Send mix to the analyser and mastering →" },
+  { kind: "studio", label: "Start an AI song from the mix →" }
 ];
 
-export function EditorApp({ projectId }: { projectId: string }) {
+export function EditorApp({ projectId, splitAssetId = null }: { projectId: string; splitAssetId?: string | null }) {
   const router = useRouter();
   const [engine] = useState(() => new EditorEngine(emptyProjectState()));
   const [media] = useState(() => new MediaStore(engine, projectId));
@@ -925,6 +927,23 @@ export function EditorApp({ projectId }: { projectId: string }) {
     return true;
   };
 
+  // A song sent with "split into stems" is separated once, as soon as the session is open.
+  const splitStartedRef = useRef(false);
+  const startSplit = useEffectEvent(() => {
+    window.history.replaceState(null, "", `/editor?project=${projectId}`);
+    const clip = stateRef.current.clips.find((c) => c.assetId === splitAssetId && !c.notes);
+    if (!clip) {
+      setNotice("The song to split into stems is not on the timeline. Select it and use Separate stems.");
+      return;
+    }
+    void runJob("separate", { stems: 4 }, `Separating ${clip.name}`, [clip.id]);
+  });
+  useEffect(() => {
+    if (!ready || !splitAssetId || splitStartedRef.current) return;
+    splitStartedRef.current = true;
+    startSplit();
+  }, [ready, splitAssetId]);
+
   /** Render a few seconds through a plugin and play them, without changing the session. */
   const auditionPlugin = async (pluginId: string, parameters: Record<string, number>) => {
     const clip = primaryClip;
@@ -1199,9 +1218,16 @@ export function EditorApp({ projectId }: { projectId: string }) {
           setWorking(`Encoding ${kind.toUpperCase()}…`);
           downloadBlob(await editorApi.encode(wav, kind), `${safeName}.${kind}`);
         } else if (kind === "mastering") {
-          setWorking("Sending the mix to the mastering workspace…");
-          await uploadAudio(new File([wav], `${safeName} (editor mix).wav`, { type: "audio/wav" }));
-          router.push("/");
+          setWorking("Sending the mix to the analyser…");
+          const { run } = await uploadAudio(new File([wav], `${safeName} (editor mix).wav`, { type: "audio/wav" }));
+          await analyzeRun(run.id, false);
+          router.push(`/?run=${run.id}`);
+          return;
+        } else if (kind === "studio") {
+          // The mix is kept in this session's clip list (not on the timeline) as the song to start from.
+          setWorking("Sending the mix to the AI Song Studio…");
+          const mix = await editorApi.uploadAsset(projectId, new File([wav], `${safeName} (mix).wav`, { type: "audio/wav" }));
+          router.push(startSongUrl({ projectId, assetId: mix.id, name: `${name || "Mix"} (mix)` }));
           return;
         } else {
           downloadBlob(wav, kind === "range" ? `${safeName} (range).wav` : `${safeName}.wav`);
@@ -1472,9 +1498,10 @@ export function EditorApp({ projectId }: { projectId: string }) {
         >
           <ArrowLeft className="h-4 w-4" />
         </Link>
-        <div className="hidden w-44 min-w-0 flex-col lg:flex">
+        <div className="hidden w-44 min-w-28 flex-col lg:flex">
           <input
             value={name}
+            title={name}
             aria-label="Project name"
             onChange={(event) => setName(event.target.value.slice(0, 120))}
             onBlur={() => {

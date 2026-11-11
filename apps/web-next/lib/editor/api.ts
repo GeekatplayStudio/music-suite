@@ -58,6 +58,9 @@ export const editorApi = {
   },
   importRun: (id: string, runId: string) =>
     request<Asset>(`/projects/${id}/assets/from-run/${runId}`, { method: "POST" }),
+  /** Copy a clip from another session into this one; the original stays where it is. */
+  copyAsset: (id: string, fromProjectId: string, assetId: string) =>
+    request<Asset>(`/projects/${id}/assets/from-asset`, json({ project_id: fromProjectId, asset_id: assetId })),
   deleteAsset: (id: string, assetId: string) =>
     request<{ deleted: boolean }>(`/projects/${id}/assets/${assetId}`, { method: "DELETE" }),
   assetAudioUrl: (id: string, assetId: string) => `${BASE}/projects/${id}/assets/${assetId}/audio`,

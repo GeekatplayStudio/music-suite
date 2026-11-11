@@ -170,6 +170,18 @@ export interface Album {
   created_at: string;
 }
 
+export interface Inspiration {
+  name: string;
+  fields: FieldValues;
+  measured: {
+    bpm: number | null;
+    key: string | null;
+    beats_per_bar: number | null;
+    duration_seconds: number;
+    lufs: number | null;
+  };
+}
+
 export interface HistoryRecord {
   id: string;
   created_at: string;
@@ -252,8 +264,16 @@ export const generationApi = {
   draftPlan: (providerId: string, fields: FieldValues) =>
     request<{ plan: PlanSection[] }>(`/generation/providers/${providerId}/plan`, json({ fields })),
   deleteHistory: (id: string) => request<{ deleted: boolean }>(`/generation/history/${id}`, { method: "DELETE" }),
-  startSong: (projectId: string, params: { provider: string; task: string; title: string; fields: FieldValues }) =>
-    request<Job>(`/editor/projects/${projectId}/jobs`, json({ op: "generate_song", asset_id: null, params })),
+  /** Start a song. ``sourceAssetId`` is the clip a source task (restyle, extend, add a part…) works on. */
+  startSong: (
+    projectId: string,
+    params: { provider: string; task: string; title: string; fields: FieldValues },
+    sourceAssetId: string | null = null
+  ) =>
+    request<Job>(`/editor/projects/${projectId}/jobs`, json({ op: "generate_song", asset_id: sourceAssetId, params })),
+  /** Tempo, key, metre, length and style tags of a clip, as values for the generate form. */
+  inspire: (projectId: string, assetId: string) =>
+    request<Inspiration>("/generation/inspire", json({ project_id: projectId, asset_id: assetId })),
   cancelJob: (projectId: string, jobId: string) =>
     request<Job>(`/editor/projects/${projectId}/jobs/${jobId}/cancel`, { method: "POST" })
 };

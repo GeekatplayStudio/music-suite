@@ -17,6 +17,7 @@ from audioqi.editor.projects import EditorError
 from audioqi.generation import (
     albums,
     engine,
+    inspire,
     records,
     resources,
     secrets,
@@ -98,6 +99,17 @@ def stop_engine() -> dict[str, Any]:
         raise HTTPException(status_code=409, detail="A song is being generated. Cancel it first.")
     engine.SUPERVISOR.stop()
     return {"running": engine.SUPERVISOR.running()}
+
+
+@router.post("/inspire")
+def inspire_from(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """Tempo, key, metre, length and style tags of a clip, as values for the generate form."""
+    if set(payload) - {"project_id", "asset_id"}:
+        raise HTTPException(status_code=422, detail="Only 'project_id' and 'asset_id' may be sent.")
+    project_id, asset_id = payload.get("project_id"), payload.get("asset_id")
+    if not projects.is_canonical_uuid(project_id) or not projects.is_canonical_uuid(asset_id):
+        raise HTTPException(status_code=422, detail="Unknown project or clip.")
+    return _guard(lambda: inspire.describe(project_id, asset_id))
 
 
 @router.post("/lyrics")
