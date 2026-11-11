@@ -349,3 +349,52 @@ def start_background(instrument_id: str) -> dict[str, Any]:
 
     threading.Thread(target=work, name=f"install-{item.id}", daemon=True).start()
     return _status(item)
+
+
+# --------------------------------------------------------------------------- command line
+
+
+def main(argv: list[str] | None = None) -> int:
+    """``python -m audioqi.editor.instruments list`` or ``install surge-xt``."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="python -m audioqi.editor.instruments",
+        description="Install free instrument plugins for the Studio Editor.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("list", help="show the instruments and whether each is installed")
+    add = sub.add_parser("install", help="download and install an instrument")
+    add.add_argument("instrument", choices=sorted(CATALOG))
+    args = parser.parse_args(argv)
+
+    if args.command == "list":
+        for item in list_instruments():
+            size = item["download_bytes"] / 1024**2
+            print(
+                f"[{'x' if item['installed'] else ' '}] {item['id']}: {item['name']} "
+                f"{item['version']} ({item['license']}, {size:.0f} MB)"
+            )
+        return 0
+
+    item = CATALOG[args.instrument]
+    if _installed_bundle(item) is not None:
+        print(f"{item.name} is already installed.")
+        return 0
+    last = [-10.0]
+
+    def report(percent: float, detail: str) -> None:
+        if percent - last[0] >= 5.0 or percent >= 100.0:
+            last[0] = percent
+            print(f"  {percent:5.1f}%  {detail}", flush=True)
+
+    try:
+        install(item.id, report)
+    except InstallError as exc:
+        print(f"{item.name} was not installed: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

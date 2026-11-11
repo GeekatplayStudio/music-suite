@@ -222,6 +222,17 @@ try {
         $global:LASTEXITCODE = 0
     }
 
+    # --- Optional: Surge XT synthesizer (free, 3,000 sounds; plays MIDI clips in the Studio Editor) ---
+    # MUSIC_SUITE_INSTALL_SURGE=1. Also available any time from Models & engines in the app.
+    if ($env:MUSIC_SUITE_INSTALL_SURGE -eq "1") {
+        Write-Host "Installing the Surge XT synthesizer (about 300 MB)..."
+        & $venvPython -m audioqi.editor.instruments install surge-xt
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Surge XT was not installed. Try again from Models & engines in the app." -ForegroundColor Yellow
+        }
+        $global:LASTEXITCODE = 0
+    }
+
     Write-Host ""
     $gitRevision = "no-git-revision"
     if (Get-Command git.exe -ErrorAction SilentlyContinue) {

@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { Check, Cpu, Download, HardDrive, Loader2, Music2, Scissors, Trash2 } from "lucide-react";
+import { Check, Cpu, Download, HardDrive, Loader2, Music2, Piano, Scissors, Trash2 } from "lucide-react";
 
 import { addonsApi, formatBytes, type AddonsOverview } from "@/lib/addons/api";
+import { editorApi } from "@/lib/editor/api";
+import type { InstrumentOffer } from "@/lib/editor/types";
 import { generationApi, type Overview } from "@/lib/generation/api";
 import { cn } from "@/lib/utils";
 
@@ -57,6 +59,7 @@ function Status({ ok, children }: { ok: boolean; children: React.ReactNode }) {
 export function ModelsPage() {
   const [addons, setAddons] = useState<AddonsOverview | null>(null);
   const [music, setMusic] = useState<Overview | null>(null);
+  const [instruments, setInstruments] = useState<InstrumentOffer[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [chosen, setChosen] = useState<Set<string> | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -66,21 +69,34 @@ export function ModelsPage() {
     else setError(message(nextAddons.reason, "Models & engines could not be loaded."));
     if (nextMusic.status === "fulfilled") setMusic(nextMusic.value);
   }, []);
+  const loadInstruments = useCallback(
+    () =>
+      editorApi
+        .instruments()
+        .then(setInstruments)
+        .catch(() => undefined),
+    []
+  );
   const refresh = useCallback(
-    () => Promise.allSettled([addonsApi.overview(), generationApi.overview()]).then(apply),
-    [apply]
+    () => Promise.all([Promise.allSettled([addonsApi.overview(), generationApi.overview()]).then(apply), loadInstruments()]),
+    [apply, loadInstruments]
   );
 
   useEffect(() => {
     let alive = true;
     void Promise.allSettled([addonsApi.overview(), generationApi.overview()]).then((results) => alive && apply(results));
+    void editorApi
+      .instruments()
+      .then((items) => alive && setInstruments(items))
+      .catch(() => undefined);
     return () => {
       alive = false;
     };
   }, [apply]);
 
   // Follow an install while one runs.
-  const busy = Boolean(addons?.install.running || music?.setup.running);
+  const instrumentBusy = instruments.some((item) => item.running);
+  const busy = Boolean(addons?.install.running || music?.setup.running || instrumentBusy);
   useEffect(() => {
     if (!busy) return;
     const timer = setInterval(() => void refresh(), 1500);
@@ -365,6 +381,59 @@ export function ModelsPage() {
         </section>
       ) : null}
 
+      {instruments.length ? (
+        <section className="glass space-y-3 rounded-2xl border border-white/10 p-4" aria-label="Instruments">
+          <h2 className="display-font flex items-center gap-2 text-base font-semibold text-slate-100">
+            <Piano className="h-4 w-4 text-cyan-300" aria-hidden /> Instruments (Studio Editor)
+          </h2>
+          <p className="text-sm text-slate-400">
+            Free synthesizers that play the notes of a MIDI clip. Each download is a fixed release file from the
+            instrument&apos;s own project, checked before it is installed for your user only.
+          </p>
+          {instruments.map((item) => (
+            <div key={item.id} className="space-y-2 rounded-xl bg-slate-900/70 px-3 py-2">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-100">
+                    {item.name} {item.version} <span className="font-normal text-slate-400">· {item.license}</span>
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {item.summary} {item.installed ? "" : `Download: ${formatBytes(item.download_bytes)}.`}
+                  </p>
+                </div>
+                {item.installed && !item.running ? (
+                  <Status ok>Installed</Status>
+                ) : !item.supported ? (
+                  <Status ok={false}>macOS and Windows only</Status>
+                ) : item.running ? null : (
+                  <button
+                    type="button"
+                    className={quiet}
+                    disabled={busy}
+                    onClick={() => void run(() => editorApi.installInstrument(item.id), "The install could not be started.")}
+                  >
+                    <Download className="h-3.5 w-3.5" aria-hidden /> Install
+                  </button>
+                )}
+              </div>
+              {item.running ? <Progress percent={item.percent} detail={item.detail} label={`${item.name} install progress`} /> : null}
+              {item.error && !item.running ? (
+                <p role="alert" className="rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                  {item.error}
+                </p>
+              ) : null}
+            </div>
+          ))}
+          <p className="text-xs text-slate-400">
+            To use one, select a MIDI clip in the{" "}
+            <Link href="/editor" className="font-semibold text-cyan-300 underline-offset-2 hover:underline">
+              Studio Editor
+            </Link>{" "}
+            and open its Plugin instrument section.
+          </p>
+        </section>
+      ) : null}
+
       <section className="rounded-2xl border border-dashed border-white/15 p-4 text-xs text-slate-400" aria-label="From a terminal">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-300">
           <HardDrive className="h-4 w-4" aria-hidden /> From a terminal
@@ -373,7 +442,8 @@ export function ModelsPage() {
           The same installs work from the Music Suite folder:{" "}
           <code className="rounded bg-black/40 px-1">.venv\Scripts\python -m audioqi.addons install stems</code> (Windows) or{" "}
           <code className="rounded bg-black/40 px-1">.venv/bin/python -m audioqi.addons install stems</code> (macOS).{" "}
-          <code className="rounded bg-black/40 px-1">list</code> shows what is installed.
+          <code className="rounded bg-black/40 px-1">list</code> shows what is installed. Instruments:{" "}
+          <code className="rounded bg-black/40 px-1">python -m audioqi.editor.instruments install surge-xt</code>.
         </p>
       </section>
     </main>

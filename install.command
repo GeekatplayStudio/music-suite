@@ -110,6 +110,12 @@ if [ "${MUSIC_SUITE_INSTALL_STEMS:-0}" = "1" ]; then
   .venv/bin/python -m audioqi.addons install stems || echo "AI stem separation was not installed. Try again from Models & engines in the app."
 fi
 
+# --- Optional: Surge XT synthesizer (free, 3,000 sounds; plays MIDI clips in the Studio Editor) ---
+# MUSIC_SUITE_INSTALL_SURGE=1 installs it here; it is also in Models & engines in the app.
+if [ "${MUSIC_SUITE_INSTALL_SURGE:-0}" = "1" ]; then
+  .venv/bin/python -m audioqi.editor.instruments install surge-xt || echo "Surge XT was not installed. Try again from Models & engines in the app."
+fi
+
 GIT_REVISION="$(git rev-parse HEAD 2>/dev/null || printf 'no-git-revision')"
 .venv/bin/python -c 'import hashlib, pathlib, sys; files=(pathlib.Path("pyproject.toml"), pathlib.Path("apps/web-next/pnpm-lock.yaml")); print("-".join([*(hashlib.sha256(path.read_bytes()).hexdigest().upper() for path in files), sys.argv[1]]))' "$GIT_REVISION" > .music-suite-install-state
 

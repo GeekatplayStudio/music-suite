@@ -711,3 +711,28 @@ def test_load_sound_in_window_writes_the_whole_file_at_once(tmp_path: Path) -> N
         assert (tmp_path / "load").read_text() == "QUJD" and not (tmp_path / "load.part").exists()
     finally:
         plugins._windows.pop("job-2", None)
+
+
+def test_command_line_lists_and_installs(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(instruments, "_installed_bundle", lambda _item: None)
+    calls: list[str] = []
+
+    def fake_install(instrument_id, report):
+        calls.append(instrument_id)
+        report(50.0, "Halfway.")
+        report(100.0, "Done.")
+
+    monkeypatch.setattr(instruments, "install", fake_install)
+    assert instruments.main(["list"]) == 0
+    assert "[ ] surge-xt: Surge XT" in capsys.readouterr().out
+    assert instruments.main(["install", "surge-xt"]) == 0 and calls == ["surge-xt"]
+    assert "100.0%" in capsys.readouterr().out
+
+    def failing(_id, _report):
+        raise instruments.InstallError("no disk space")
+
+    monkeypatch.setattr(instruments, "install", failing)
+    assert instruments.main(["install", "surge-xt"]) == 1
+    assert "no disk space" in capsys.readouterr().err
+    monkeypatch.setattr(instruments, "_installed_bundle", lambda _item: Path("/x"))
+    assert instruments.main(["install", "surge-xt"]) == 0  # Already there: nothing to do.
