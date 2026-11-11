@@ -182,7 +182,7 @@ Moved to Phase 4: lasso and brush selections in the spectral view, mid/side EQ, 
 
 Shipped:
 
-- **MIDI clips and instrument tracks.** A MIDI clip holds notes and plays the track's built-in synth (saw, square, triangle or sine, with attack, release and a low-pass cutoff). The synth feeds the track's EQ, effects, sends and automation like any audio, and is included in exports. MIDI clips move, trim, split and duplicate like audio clips.
+- **MIDI clips and instrument tracks.** A MIDI clip holds notes and plays the track's built-in synth (`lib/editor/synth.ts`). Since 2026-11-11 it has three oscillators with unison and stereo spread, FM, noise, a 12/24 dB filter with drive and key follow, two ADSR envelopes, two tempo-syncable LFOs, an eight-route modulation matrix, mono glide and 17 presets levelled by measurement. Each voice is native Web Audio nodes, so live play, previews and exports share it. Older projects migrate automatically. The synth feeds the track's EQ, effects, sends and automation like any audio, and is included in exports. MIDI clips move, trim, split and duplicate like audio clips.
 - **Piano roll** (P): click to add a note, drag to move it in time and pitch, drag its right edge to resize, right-click to delete; per-note velocity; snapping to sixteenths of the project tempo; notes sound as you place them.
 - **MIDI files**: import `.mid` (formats 0 and 1, tempo changes honoured; one track per MIDI track) and export any MIDI clip. Both happen in the browser.
 - **Audio to MIDI** ("Convert to MIDI notes"): transcribes a clip onto a new instrument track. Uses Spotify's `basic-pitch` (chords and melodies) when installed, otherwise pYIN, which follows one note at a time.

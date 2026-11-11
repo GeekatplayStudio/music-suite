@@ -1279,6 +1279,8 @@ export function EditorApp({
 
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     const target = event.target as HTMLElement | null;
+    // An open dialog (such as the sound editor) handles its own keys.
+    if (target?.closest('[aria-modal="true"]')) return;
     const field = target?.closest("input, textarea, select, [contenteditable='true']") as HTMLInputElement | null;
     if (field) {
       const passive = field.tagName === "INPUT" && ["range", "checkbox"].includes(field.type);
@@ -1900,6 +1902,7 @@ export function EditorApp({
           generation={generation}
           onCheckGeneration={checkGeneration}
           onOpenSongStudio={openSongStudio}
+          onPreviewNote={(trackId, pitch) => engine.previewNote(trackId, pitch)}
           songProviders={songProviders}
           projectId={projectId}
           onAddMidiTrack={addInstrumentTrack}

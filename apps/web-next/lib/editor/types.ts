@@ -1,3 +1,5 @@
+import { initPatch, normalizePatch, type Patch } from "@/lib/editor/synth";
+
 export interface Asset {
   id: string;
   name: string;
@@ -308,15 +310,19 @@ export interface Note {
 export interface Synth {
   /** "drums" plays the built-in drum kit instead of the pitched synth. */
   kind: "synth" | "drums";
-  wave: "sawtooth" | "square" | "triangle" | "sine";
-  attack: number;
-  release: number;
-  /** Low-pass cutoff in Hz. */
-  cutoff: number;
+  /** The sound: oscillators, filter, envelopes, LFOs and modulation (see lib/editor/synth). */
+  patch: Patch;
 }
 
 export function defaultSynth(): Synth {
-  return { kind: "synth", wave: "sawtooth", attack: 0.01, release: 0.2, cutoff: 3200 };
+  return { kind: "synth", patch: initPatch() };
+}
+
+/** Accepts saved synths of either format; the first editor saved wave/attack/release/cutoff. */
+export function normalizeSynth(raw: unknown): Synth {
+  const saved = (raw ?? {}) as Record<string, unknown>;
+  const kind = saved.kind === "drums" ? "drums" : "synth";
+  return { kind, patch: normalizePatch(saved.patch, saved.patch ? undefined : saved) };
 }
 
 export interface Clip {
@@ -440,7 +446,7 @@ export function normalizeTrack(track: Track): Track {
     auto: track.auto ?? {},
     output: track.output ?? "master",
     sends: track.sends ?? {},
-    synth: { ...defaultSynth(), ...track.synth },
+    synth: normalizeSynth(track.synth),
     fx: normalizeFx(track.fx)
   };
 }

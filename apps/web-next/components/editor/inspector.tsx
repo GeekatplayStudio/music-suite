@@ -4,7 +4,9 @@ import { Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { ActionButton, PanelSection, Slider, fieldClass, formatDb } from "@/components/editor/controls";
+import { SynthEditor } from "@/components/editor/synth-editor";
 import { AiEditSection } from "@/components/generation/ai-edit-section";
+import { FACTORY_PRESETS, loadUserPresets, normalizePatch, type Patch } from "@/lib/editor/synth";
 import type { ProviderInfo } from "@/lib/generation/api";
 import { editorApi } from "@/lib/editor/api";
 import type { Favourite, ProcessStep } from "@/lib/editor/favourites";
@@ -63,6 +65,8 @@ interface InspectorProps {
   onCheckGeneration: () => void;
   /** Opens AI Song Studio set to generate into this project. */
   onOpenSongStudio: () => void;
+  /** Sound one note on a track's instrument. */
+  onPreviewNote: (trackId: string, pitch: number) => void;
   onOpenPianoRoll: () => void;
   onExportMidi: () => void;
   getPosition: () => number;
@@ -442,23 +446,13 @@ export function Inspector(props: InspectorProps) {
                       Each row of the grid is a drum: kick, snare, clap, hats, toms and cymbal. Note length is ignored.
                     </p>
                   ) : null}
-                  <label className={`flex items-center gap-2 text-[11px] text-slate-400 ${track.synth.kind === "drums" ? "hidden" : ""}`}>
-                    <span className="w-16 shrink-0">Wave</span>
-                    <select
-                      className={fieldClass}
-                      value={track.synth.wave}
-                      aria-label="Oscillator wave"
-                      onChange={(event) => props.onPatchTrack({ synth: { ...track.synth, wave: event.target.value as typeof track.synth.wave } }, "")}
-                    >
-                      <option value="sawtooth">Saw (bright)</option>
-                      <option value="square">Square (hollow)</option>
-                      <option value="triangle">Triangle (soft)</option>
-                      <option value="sine">Sine (pure)</option>
-                    </select>
-                  </label>
-                  <Slider label="Attack" value={track.synth.attack} min={0.002} max={1} step={0.002} defaultValue={0.01} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(attack) => props.onPatchTrack({ synth: { ...track.synth, attack } }, "syn-a")} />
-                  <Slider label="Release" value={track.synth.release} min={0.02} max={3} step={0.01} defaultValue={0.2} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(release) => props.onPatchTrack({ synth: { ...track.synth, release } }, "syn-r")} />
-                  <FreqSlider label="Cutoff" value={track.synth.cutoff} min={120} max={16000} fallback={3200} onChange={(cutoff) => props.onPatchTrack({ synth: { ...track.synth, cutoff } }, "syn-c")} />
+                  {track.synth.kind === "synth" ? (
+                    <InstrumentControls
+                      track={track}
+                      onPatch={(patch, key) => props.onPatchTrack({ synth: { ...track.synth, patch } }, key ? `syn-${key}` : "")}
+                      onPreview={(pitch) => props.onPreviewNote(track.id, pitch)}
+                    />
+                  ) : null}
                 </PanelSection>
               ) : null}
             </>
@@ -1656,6 +1650,73 @@ function VoiceUnit({ voice, onChange }: { voice: VoiceFx; onChange: (patch: Part
 }
 
 /** Frequency slider on a logarithmic scale, the way pitch is heard. */
+/** Preset, a few quick controls, and the full sound editor for a track's built-in synth. */
+function InstrumentControls({
+  track,
+  onPatch,
+  onPreview
+}: {
+  track: Track;
+  onPatch: (patch: Patch, key: string) => void;
+  onPreview: (pitch: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const patch = track.synth.patch;
+  const presets = [...FACTORY_PRESETS, ...(editing ? [] : loadUserPresetsSafe())];
+  return (
+    <>
+      <label className="flex items-center gap-2 text-[11px] text-slate-400">
+        <span className="w-16 shrink-0">Sound</span>
+        <select
+          className={fieldClass}
+          value={presets.some((p) => p.name === patch.name) ? patch.name : ""}
+          aria-label="Sound preset"
+          onChange={(event) => {
+            const found = presets.find((p) => p.name === event.target.value);
+            if (found) {
+              onPatch(normalizePatch(found), "");
+              onPreview(60);
+            }
+          }}
+        >
+          {presets.some((p) => p.name === patch.name) ? null : <option value="">{patch.name} (edited)</option>}
+          {presets.map((p, i) => (
+            <option key={`${i}-${p.name}`} value={p.name}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <FreqSlider
+        label="Brightness"
+        value={patch.filter.cutoff}
+        min={60}
+        max={18000}
+        fallback={3200}
+        onChange={(cutoff) => onPatch({ ...patch, filter: { ...patch.filter, cutoff } }, "cut")}
+      />
+      <Slider label="Attack" value={patch.ampEnv.attack} min={0.001} max={2} step={0.001} defaultValue={0.01} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(attack) => onPatch({ ...patch, ampEnv: { ...patch.ampEnv, attack } }, "a")} />
+      <Slider label="Release" value={patch.ampEnv.release} min={0.005} max={4} step={0.005} defaultValue={0.2} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(release) => onPatch({ ...patch, ampEnv: { ...patch.ampEnv, release } }, "r")} />
+      <ActionButton variant="primary" className="w-full" onClick={() => setEditing(true)}>
+        Edit sound: oscillators, filter, LFOs, modulation…
+      </ActionButton>
+      {editing ? (
+        <SynthEditor
+          patch={patch}
+          trackName={track.name}
+          onChange={onPatch}
+          onPreview={onPreview}
+          onClose={() => setEditing(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function loadUserPresetsSafe(): Patch[] {
+  return typeof window === "undefined" ? [] : loadUserPresets();
+}
+
 function FreqSlider({
   label,
   value,

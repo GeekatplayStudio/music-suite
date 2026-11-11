@@ -261,7 +261,18 @@ Select a track and press the microphone button. With a range highlighted it beco
 
 ### Composing with MIDI
 
-*Add an instrument (MIDI) track* in the project panel creates a four-bar clip and opens the piano roll. Click to add notes, drag to move, drag the right edge to resize, right-click to delete, shift-drag to select several. *Note input* lets the keys `A W S E D F T G Y H U J K` or a MIDI keyboard add notes at the playhead. Switch the instrument type to **Drum kit** for a labelled drum grid. Import `.mid` files with Import; export a clip with *Export as a .mid file*.
+*Add an instrument (MIDI) track* in the project panel creates a four-bar clip and opens the piano roll. Click to add notes, drag to move, drag the right edge to resize, right-click to delete, shift-drag to select several. *Note input* lets the keys `A W S E D F T G Y H U J K` or a MIDI keyboard add notes at the playhead. Switch the instrument type to **Drum kit** for a labelled drum grid.
+
+**The synth.** Pick a **Sound** (17 presets from basses to pads, leads, bells and an organ, all at a similar loudness), adjust *Brightness*, *Attack* and *Release*, or press **Edit sound** for everything:
+
+- *Oscillators 1–3*: wave (saw, square, two pulse widths, triangle, sine, organ, hollow, bright), octave, semitones, fine tune, level, unison voices (up to 7), detune and stereo spread.
+- *Filter*: low-, high-, band-pass or notch, 12 or 24 dB/oct, cutoff, resonance, drive, key follow, and how far envelope 2 sweeps it.
+- *Noise, FM and voice*: a noise source; FM, where oscillator 2 shapes oscillator 1 (bells, electric pianos); poly or mono, where mono plays one note at a time and glides between overlapping notes; velocity response; volume.
+- *Envelopes*: envelope 1 shapes the volume, envelope 2 is free for the filter and the modulation routes.
+- *LFOs*: two, with five shapes including random steps, free in Hz or locked to the project tempo (1 bar down to 1/16, and triplets).
+- *Modulation*: up to 8 routes from LFO 1/2, envelope 2, velocity or the note played to pitch, any oscillator's pitch or level, noise, FM amount, cutoff, resonance, volume or pan, each with a positive or negative amount.
+
+The keyboard at the top of the editor plays the sound. **Save as my sound** keeps it in this browser under its name. Every change is one step in Undo, and the sound is saved with the project and used in exports. Import `.mid` files with Import; export a clip with *Export as a .mid file*.
 
 ### Plugins
 

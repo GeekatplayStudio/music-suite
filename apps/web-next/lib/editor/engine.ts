@@ -18,6 +18,7 @@ import {
   projectDuration
 } from "@/lib/editor/types";
 
+import { type Voice, playNote, startVoice } from "@/lib/editor/synth";
 import { type WamInstance, createWam } from "@/lib/editor/wam";
 
 export const ENGINE_SAMPLE_RATE = 48_000;
@@ -600,7 +601,7 @@ function scheduleClips(
     if (clip.notes) {
       const input = mixer.tracks.get(clip.trackId)?.input;
       const synth = synths.get(clip.trackId);
-      if (input && synth) scheduleNotes(ctx, clip, synth, input, fromPosition, contextStart, sources);
+      if (input && synth) scheduleNotes(ctx, clip, synth, state.bpm, input, fromPosition, contextStart, sources);
       continue;
     }
     const nodes = mixer.tracks.get(clip.trackId);
@@ -722,64 +723,10 @@ function playDrum(
   }
 }
 
-interface VoiceGraph {
-  envelope: GainNode;
-  oscillators: OscillatorNode[];
-  /** Each oscillator's own detune in cents, before any pitch bend. */
-  detunes: number[];
-}
-
-/** Detuned oscillators through a low-pass filter into an envelope gain that starts silent. */
-function voiceGraph(ctx: BaseAudioContext, synth: Synth, output: AudioNode, pitch: number, when: number, bendCents = 0): VoiceGraph {
-  const frequency = 440 * Math.pow(2, (pitch - 69) / 12);
-  const filter = ctx.createBiquadFilter();
-  filter.type = "lowpass";
-  filter.frequency.value = Math.min(ctx.sampleRate * 0.45, Math.max(60, synth.cutoff));
-  filter.Q.value = 0.7;
-  const envelope = ctx.createGain();
-  envelope.gain.setValueAtTime(0, when);
-  filter.connect(envelope).connect(output);
-  const rich = synth.wave === "sawtooth" || synth.wave === "square";
-  const detunes = rich ? [-6, 6] : [0];
-  const oscillators = detunes.map((cents) => {
-    const oscillator = ctx.createOscillator();
-    oscillator.type = synth.wave;
-    oscillator.frequency.value = frequency;
-    oscillator.detune.value = cents + bendCents;
-    oscillator.connect(filter);
-    oscillator.start(when);
-    return oscillator;
-  });
-  return { envelope, oscillators, detunes };
-}
-
-/** One synth voice: detuned oscillators through a low-pass filter and an attack/release envelope. */
-function playVoice(
-  ctx: BaseAudioContext,
-  synth: Synth,
-  output: AudioNode,
-  pitch: number,
-  level: number,
-  when: number,
-  until: number,
-  sources: AudioScheduledSourceNode[]
-): void {
-  const { envelope, oscillators } = voiceGraph(ctx, synth, output, pitch, when);
-  const attack = Math.max(0.002, Math.min(synth.attack, (until - when) * 0.9));
-  envelope.gain.linearRampToValueAtTime(level, when + attack);
-  envelope.gain.setValueAtTime(level, until);
-  envelope.gain.setTargetAtTime(0, until, Math.max(0.005, synth.release / 4));
-  for (const oscillator of oscillators) {
-    oscillator.stop(until + synth.release * 1.5 + 0.05);
-    sources.push(oscillator);
-  }
-}
-
 /** A key held on a MIDI keyboard: a synth voice, or one note of a vocoder's carrier. */
 interface LiveNote {
   trackId: string;
-  graph: VoiceGraph | null;
-  release: number;
+  voice: Voice | null;
   /** Released while the sustain pedal was down; ends when the pedal comes up. */
   sustained: boolean;
 }
@@ -793,6 +740,7 @@ function scheduleNotes(
   ctx: BaseAudioContext,
   clip: Clip,
   synth: Synth,
+  bpm: number,
   output: AudioNode,
   fromPosition: number,
   contextStart: number,
@@ -800,21 +748,32 @@ function scheduleNotes(
 ): void {
   const gain = dbToGain(clip.gainDb);
   const clipEnd = clip.start + clip.duration;
-  for (const note of clip.notes ?? []) {
-    // Only notes that begin inside the clip's window sound; they are cut at its end.
-    if (note.t < clip.offset - 1e-6 || note.t >= clip.offset + clip.duration) continue;
+  const mono = synth.kind === "synth" && synth.patch.mode === "mono";
+  // Only notes that begin inside the clip's window sound; they are cut at its end.
+  const notes = (clip.notes ?? [])
+    .filter((note) => note.t >= clip.offset - 1e-6 && note.t < clip.offset + clip.duration)
+    .sort((a, b) => a.t - b.t || b.p - a.p);
+  notes.forEach((note, index) => {
     const start = clip.start + note.t - clip.offset;
-    const end = Math.min(clipEnd, start + note.d);
-    if (end <= fromPosition + 0.005) continue;
+    let end = Math.min(clipEnd, start + note.d);
+    let glideFrom: number | null = null;
+    if (mono) {
+      // One note at a time: a note ends where the next begins, and glides when they overlap.
+      const next = notes[index + 1];
+      if (next) end = Math.min(end, clip.start + next.t - clip.offset);
+      const previous = notes[index - 1];
+      if (previous && previous.t + previous.d >= note.t - 0.01) glideFrom = previous.p;
+    }
+    if (end <= fromPosition + 0.005 || end <= start) return;
     const when = contextStart + Math.max(0, start - fromPosition);
     const until = contextStart + (end - fromPosition);
     if (synth.kind === "drums") {
       // A drum hit is not resumed part-way through.
       if (start >= fromPosition - 0.005) playDrum(ctx, output, note.p, note.v * 0.22 * gain, when, sources);
-      continue;
+      return;
     }
-    playVoice(ctx, synth, output, note.p, note.v * 0.22 * gain, when, until, sources);
-  }
+    playNote(ctx, synth.patch, output, note.p, 0.22 * gain, when, until, { velocity: note.v, bpm, glideFrom }, sources);
+  });
 }
 
 function reverseBuffer(ctx: BaseAudioContext, buffer: AudioBuffer): AudioBuffer {
@@ -1195,8 +1154,9 @@ export class EditorEngine {
     const synth = this.state.tracks.find((track) => track.id === trackId)?.synth;
     if (!input || !synth) return;
     const voices: AudioScheduledSourceNode[] = [];
-    if (synth.kind === "drums") playDrum(ctx, input, pitch, 0.18, ctx.currentTime + 0.005, voices);
-    else playVoice(ctx, synth, input, pitch, 0.18, ctx.currentTime + 0.005, ctx.currentTime + 0.22, voices);
+    const when = ctx.currentTime + 0.005;
+    if (synth.kind === "drums") playDrum(ctx, input, pitch, 0.18, when, voices);
+    else playNote(ctx, synth.patch, input, pitch, 0.22, when, when + 0.3, { velocity: 0.8, bpm: this.state.bpm }, voices);
   }
 
   /* ---------- Live playing from a MIDI keyboard ---------- */
@@ -1253,18 +1213,31 @@ export class EditorEngine {
       keys.add(pitch);
       this.carrierKeys.set(trackId, keys);
       this.postCarrier(trackId);
-      this.live.set(pitch, { trackId, graph: null, release: 0, sustained: false });
+      this.live.set(pitch, { trackId, voice: null, sustained: false });
       return true;
     }
-    const level = clamp(velocity, 0.05, 1) * 0.22;
     const when = ctx.currentTime + 0.003;
     if (track.synth.kind === "drums") {
-      playDrum(ctx, nodes.input, pitch, level, when, []);
+      playDrum(ctx, nodes.input, pitch, clamp(velocity, 0.05, 1) * 0.22, when, []);
       return true;
     }
-    const graph = voiceGraph(ctx, track.synth, nodes.input, pitch, when, this.bendCents);
-    graph.envelope.gain.linearRampToValueAtTime(level, when + Math.max(0.002, track.synth.attack));
-    this.live.set(pitch, { trackId, graph, release: track.synth.release, sustained: false });
+    const patch = track.synth.patch;
+    let glideFrom: number | null = null;
+    if (patch.mode === "mono") {
+      // A mono synth plays the newest key and glides to it from the one still held.
+      for (const [held, note] of this.live) {
+        if (note.trackId !== trackId || !note.voice) continue;
+        glideFrom = held;
+        this.endLive(held, ctx.currentTime);
+      }
+    }
+    const voice = startVoice(ctx, patch, nodes.input, pitch, 0.22, when, {
+      velocity: clamp(velocity, 0.05, 1),
+      bpm: this.state.bpm,
+      bendCents: this.bendCents,
+      glideFrom,
+    });
+    this.live.set(pitch, { trackId, voice, sustained: false });
     return true;
   }
 
@@ -1287,11 +1260,7 @@ export class EditorEngine {
   pitchBend(semitones: number): void {
     this.bendCents = semitones * 100;
     const now = this.ctx?.currentTime ?? 0;
-    for (const note of this.live.values()) {
-      note.graph?.oscillators.forEach((oscillator, i) => {
-        oscillator.detune.setTargetAtTime(note.graph!.detunes[i] + this.bendCents, now, 0.005);
-      });
-    }
+    for (const note of this.live.values()) note.voice?.bend(this.bendCents, now);
     for (const trackId of this.carrierKeys.keys()) this.postCarrier(trackId);
   }
 
@@ -1306,17 +1275,9 @@ export class EditorEngine {
     const note = this.live.get(pitch);
     if (!note) return;
     this.live.delete(pitch);
-    if (note.graph) {
-      const gain = note.graph.envelope.gain;
-      // Release from wherever the envelope is, even part-way through its attack.
-      if (typeof gain.cancelAndHoldAtTime === "function") gain.cancelAndHoldAtTime(now);
-      else {
-        const value = gain.value;
-        gain.cancelScheduledValues(now);
-        gain.setValueAtTime(value, now);
-      }
-      gain.setTargetAtTime(0, now, Math.max(0.005, note.release / 4));
-      for (const oscillator of note.graph.oscillators) oscillator.stop(now + note.release * 1.5 + 0.05);
+    if (note.voice) {
+      // Releases from wherever the envelopes are, even part-way through the attack.
+      note.voice.release(now);
       return;
     }
     const keys = this.carrierKeys.get(note.trackId);
