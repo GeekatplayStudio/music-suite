@@ -1075,7 +1075,19 @@ export function EditorApp({
     const instrument = track?.pluginInstrument;
     if (!track || !instrument) return;
     try {
-      const built = await editorApi.pluginSoundState(instrument.id, sound.id);
+      await applyPluginSound(clipId, await editorApi.pluginSoundState(instrument.id, sound.id));
+    } catch (err) {
+      setNotice(errorMessage(err, "That sound could not be loaded."));
+    }
+  };
+
+  /** Put a sound (from the library or a file) on the clip's track, live if a session is running. */
+  const applyPluginSound = async (clipId: string, built: { name: string; state: string }) => {
+    const clip = stateRef.current.clips.find((c) => c.id === clipId);
+    const track = clip ? stateRef.current.tracks.find((t) => t.id === clip.trackId) : undefined;
+    const instrument = track?.pluginInstrument;
+    if (!track || !instrument) return;
+    try {
       const latest = stateRef.current.tracks.find((t) => t.id === track.id)?.pluginInstrument;
       if (latest?.id !== instrument.id) return; // The instrument changed meanwhile.
       commit(updateTrack(stateRef.current, track.id, { pluginInstrument: { ...latest, state: built.state, soundName: built.name } }));
@@ -2041,6 +2053,7 @@ export function EditorApp({
           onPlayPlugin={playPlugin}
           onStopPlugin={stopPlugin}
           onPickPluginSound={(clipId, sound) => void pickPluginSound(clipId, sound)}
+          onImportPluginSound={(clipId, sound) => void applyPluginSound(clipId, sound)}
           onClosePluginWindow={(jobId) =>
             void editorApi.closePluginWindow(projectId, jobId).catch((err: unknown) => setNotice(errorMessage(err, "The window could not be closed.")))
           }

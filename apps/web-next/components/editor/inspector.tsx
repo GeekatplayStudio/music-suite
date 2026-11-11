@@ -69,6 +69,7 @@ interface InspectorProps {
   onPlayPlugin: (clipId: string) => void;
   onStopPlugin: (clipId: string) => void;
   onPickPluginSound: (clipId: string, sound: PluginSound) => void;
+  onImportPluginSound: (clipId: string, sound: { name: string; state: string }) => void;
   onRefreshPlugins: () => void;
   generation: GenerationStatus | null;
   /** Generators that can edit the selected clip (local engine first). */
@@ -488,6 +489,7 @@ export function Inspector(props: InspectorProps) {
                   hasNotes={Boolean(clip.notes?.length)}
                   onSet={(pluginInstrument) => props.onPatchTrack({ pluginInstrument }, "")}
                   onPickSound={(sound) => props.onPickPluginSound(clip.id, sound)}
+                  onImportSound={(sound) => props.onImportPluginSound(clip.id, sound)}
                   onPlay={() => props.onPlayPlugin(clip.id)}
                   onStop={() => props.onStopPlugin(clip.id)}
                   onOpenWindow={() => props.onOpenPluginWindow(clip.id)}

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, Loader2, Play, RotateCcw, SlidersHorizontal, Square, Waves } from "lucide-react";
 
-import { SoundBrowser } from "@/components/editor/plugin-instrument";
+import { PluginSoundFiles, SoundBrowser } from "@/components/editor/plugin-instrument";
 import { PresetBar, SynthControls } from "@/components/editor/synth-editor";
 import { Piano } from "@/components/synth/piano";
 import { editorApi } from "@/lib/editor/api";
@@ -178,12 +178,14 @@ export function SynthStudio() {
     void editorApi.stopAudition(audition).catch(() => undefined);
     setAudition(null);
   };
+  const applySound = async (built: { name: string; state: string }) => {
+    setSound(built);
+    if (auditionRef.current) await editorApi.loadInAudition(auditionRef.current, built.state);
+  };
   const pick = async (picked: PluginSound) => {
     setError(null);
     try {
-      const built = await editorApi.pluginSoundState(pluginId, picked.id);
-      setSound(built);
-      if (auditionRef.current) await editorApi.loadInAudition(auditionRef.current, built.state);
+      await applySound(await editorApi.pluginSoundState(pluginId, picked.id));
     } catch (err) {
       setError(message(err, "That sound could not be loaded."));
     }
@@ -309,12 +311,19 @@ export function SynthStudio() {
                     {error}
                   </p>
                 ) : null}
+                {chosen ? (
+                  <PluginSoundFiles
+                    plugin={chosen.name}
+                    sound={sound}
+                    onImport={(read) => void applySound(read).catch((err: unknown) => setError(message(err, "That sound could not be loaded.")))}
+                  />
+                ) : null}
                 <p className="text-xs leading-snug text-slate-400">
-                  To use a sound in a song, select a MIDI clip in the{" "}
+                  To use a sound in a song, star it here, then select a MIDI clip in the{" "}
                   <Link href="/editor" className="font-semibold text-cyan-300 underline-offset-2 hover:underline">
                     Studio Editor
-                  </Link>{" "}
-                  and pick it in the clip&apos;s Plugin instrument section.
+                  </Link>
+                  : your favourites are at the top of the clip&apos;s sound list. A sound file from Export opens there with Import sound.
                 </p>
               </>
             )}

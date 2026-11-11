@@ -1,10 +1,11 @@
 "use client";
 
-import { Loader2, Play, Square } from "lucide-react";
+import { Download, Loader2, Play, Square, Star, Upload } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { ActionButton, PanelSection, fieldClass } from "@/components/editor/controls";
 import { editorApi } from "@/lib/editor/api";
+import { SOUND_FILE_EXTENSION, exportSound, loadFavourites, readSoundFile, toggleFavourite } from "@/lib/editor/sound-file";
 import type { InstrumentOffer, PluginInfo, PluginSound, Track } from "@/lib/editor/types";
 
 type Check = { status: "idle" } | { status: "checking" } | { status: "error"; message: string };
@@ -30,6 +31,7 @@ export function PluginInstrumentSection({
   hasNotes,
   onSet,
   onPickSound,
+  onImportSound,
   onPlay,
   onStop,
   onOpenWindow,
@@ -45,6 +47,8 @@ export function PluginInstrumentSection({
   hasNotes: boolean;
   onSet: (instrument: Track["pluginInstrument"]) => void;
   onPickSound: (sound: PluginSound) => void;
+  /** Use a sound opened from a file. */
+  onImportSound: (sound: { name: string; state: string }) => void;
   /** Start hearing the clip through the plugin (a session starts if none is running). */
   onPlay: () => void;
   onStop: () => void;
@@ -133,6 +137,11 @@ export function PluginInstrumentSection({
       {current ? (
         <>
           <SoundBrowser key={current.id} pluginId={current.id} current={current.soundName} onPick={onPickSound} />
+          <PluginSoundFiles
+            plugin={current.name}
+            sound={current.state ? { name: current.soundName ?? `${current.name} sound`, state: current.state } : null}
+            onImport={onImportSound}
+          />
           <div className="grid grid-cols-2 gap-2">
             <ActionButton
               disabled={!hasNotes || playing}
@@ -193,7 +202,7 @@ export function PluginInstrumentSection({
   );
 }
 
-/** Searchable list of the plugin's own sounds (Surge XT's patch library). */
+/** Searchable list of the plugin's own sounds (Surge XT's patch library), with favourites. */
 export function SoundBrowser({
   pluginId,
   current,
@@ -209,6 +218,7 @@ export function SoundBrowser({
   const [sounds, setSounds] = useState<PluginSound[] | null>(null);
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState("");
+  const [favourites, setFavourites] = useState<string[]>(() => loadFavourites(pluginId));
 
   useEffect(() => {
     let cancelled = false;
@@ -228,10 +238,13 @@ export function SoundBrowser({
     return words.every((word) => text.includes(word));
   });
   const groups = new Map<string, PluginSound[]>();
+  const starred = shown.filter((sound) => favourites.includes(sound.id));
+  if (starred.length) groups.set("★ Favourites", starred);
   for (const sound of shown.slice(0, 600)) {
     const key = sound.library === "Factory" ? sound.category : `${sound.library}: ${sound.category}`;
     groups.set(key, [...(groups.get(key) ?? []), sound]);
   }
+  const isFavourite = favourites.includes(picked);
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between text-[11px] text-slate-400">
@@ -240,14 +253,27 @@ export function SoundBrowser({
           {current ?? "Plugin default"}
         </span>
       </div>
-      <input
-        type="search"
-        className={fieldClass}
-        placeholder={`Search ${sounds.length} sounds: bass, pad, keys…`}
-        aria-label="Search sounds"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-      />
+      <div className="flex gap-1.5">
+        <input
+          type="search"
+          className={fieldClass}
+          placeholder={`Search ${sounds.length} sounds: bass, pad, keys…`}
+          aria-label="Search sounds"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <button
+          type="button"
+          disabled={!picked}
+          aria-pressed={isFavourite}
+          aria-label={isFavourite ? "Remove from favourites" : "Add to favourites"}
+          title={picked ? (isFavourite ? "Remove from favourites" : "Keep this sound at the top of the list") : "Pick a sound first"}
+          onClick={() => setFavourites(toggleFavourite(pluginId, picked))}
+          className="inline-flex h-8 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:pointer-events-none disabled:opacity-40"
+        >
+          <Star className={`h-4 w-4 ${isFavourite ? "fill-amber-300 text-amber-300" : ""}`} aria-hidden />
+        </button>
+      </div>
       <select
         className={`${fieldClass} ${tall ? "h-[min(60vh,34rem)] text-sm" : "h-36"}`}
         size={tall ? 20 : 8}
@@ -262,7 +288,8 @@ export function SoundBrowser({
         {[...groups.entries()].map(([group, items]) => (
           <optgroup key={group} label={group}>
             {items.map((sound) => (
-              <option key={sound.id} value={sound.id}>
+              // A favourite is listed twice: its copy at the top needs its own key.
+              <option key={`${group}-${sound.id}`} value={sound.id}>
                 {sound.name}
               </option>
             ))}
@@ -271,9 +298,67 @@ export function SoundBrowser({
       </select>
       <p className="text-[11px] text-slate-500">
         {shown.length > 600 ? `Showing 600 of ${shown.length}: search to narrow down.` : `${shown.length} sounds.`} Use the arrow keys to step
-        through them while playing.
+        through them while playing. The star keeps a sound at the top.
       </p>
     </div>
+  );
+}
+
+/** Save the plugin's current sound to a file, or open one. */
+export function PluginSoundFiles({
+  plugin,
+  sound,
+  onImport
+}: {
+  plugin: string;
+  sound: { name: string; state: string } | null;
+  onImport: (sound: { name: string; state: string }) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const open = async (file: File | undefined) => {
+    if (!file) return;
+    setFailure(null);
+    try {
+      const read = await readSoundFile(file);
+      if (read.kind !== "plugin") throw new Error("That is a Music Suite synth sound. Open it with Import in the synth's sound editor.");
+      if (read.plugin !== plugin) throw new Error(`That sound is for ${read.plugin}, not ${plugin}.`);
+      onImport({ name: read.name, state: read.state });
+    } catch (err) {
+      setFailure(err instanceof Error ? err.message : "That file could not be opened.");
+    }
+  };
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-2">
+        <ActionButton
+          disabled={!sound}
+          title={sound ? "Save this sound as a file, to back it up or share it" : "Pick or shape a sound first"}
+          onClick={() => sound && exportSound({ kind: "plugin", plugin, name: sound.name, state: sound.state })}
+        >
+          <Download className="h-3.5 w-3.5" aria-hidden /> Export sound
+        </ActionButton>
+        <ActionButton onClick={() => fileRef.current?.click()} title="Open a sound file saved with Export">
+          <Upload className="h-3.5 w-3.5" aria-hidden /> Import sound
+        </ActionButton>
+      </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept={`${SOUND_FILE_EXTENSION},application/json`}
+        className="hidden"
+        aria-label="Plugin sound file to import"
+        onChange={(event) => {
+          void open(event.target.files?.[0]);
+          event.target.value = "";
+        }}
+      />
+      {failure ? (
+        <p role="alert" className="text-[11px] text-rose-300">
+          {failure}
+        </p>
+      ) : null}
+    </>
   );
 }
 

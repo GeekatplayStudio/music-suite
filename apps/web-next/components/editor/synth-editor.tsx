@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Save, Trash2, X } from "lucide-react";
+import { Download, Plus, Save, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { ActionButton, fieldClass } from "@/components/editor/controls";
@@ -23,6 +23,7 @@ import {
   type Oscillator,
   type Patch,
 } from "@/lib/editor/synth";
+import { SOUND_FILE_EXTENSION, exportSound, readSoundFile } from "@/lib/editor/sound-file";
 import { cn } from "@/lib/utils";
 
 /** "Patch change" with a coalescing key, so dragging a slider is one undo step. */
@@ -96,7 +97,20 @@ function EnvelopeRows({ env, prefix, onChange }: { env: Envelope; prefix: string
 /** Sound name, presets and "my sounds": shared by the editor's dialog and Synth Studio. */
 export function PresetBar({ patch, onChange }: { patch: Patch; onChange: PatchChange }) {
   const [userPresets, setUserPresets] = useState<Patch[]>(() => loadUserPresets());
+  const [fileError, setFileError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const set = (change: Partial<Patch>, key: string) => onChange({ ...patch, ...change }, key);
+  const importFile = async (file: File | undefined) => {
+    if (!file) return;
+    setFileError(null);
+    try {
+      const sound = await readSoundFile(file);
+      if (sound.kind !== "synth") throw new Error(`That is a ${sound.plugin} sound. Open it from the plugin instrument's sound list instead.`);
+      onChange(sound.patch, "");
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : "That file could not be opened.");
+    }
+  };
   const loadPreset = (name: string) => {
     const found = [...FACTORY_PRESETS, ...userPresets].find((p) => p.name === name);
     if (found) onChange(normalizePatch(found), "");
@@ -137,6 +151,28 @@ export function PresetBar({ patch, onChange }: { patch: Patch; onChange: PatchCh
       <ActionButton onClick={() => setUserPresets(deleteUserPreset(patch.name))} title="Remove this name from My sounds">
         <Trash2 className="h-3.5 w-3.5" aria-hidden /> Forget
       </ActionButton>
+    ) : null}
+    <ActionButton onClick={() => exportSound({ kind: "synth", patch })} title="Save this sound as a file, to back it up or share it">
+      <Download className="h-3.5 w-3.5" aria-hidden /> Export
+    </ActionButton>
+    <ActionButton onClick={() => fileRef.current?.click()} title="Open a sound file saved with Export">
+      <Upload className="h-3.5 w-3.5" aria-hidden /> Import
+    </ActionButton>
+    <input
+      ref={fileRef}
+      type="file"
+      accept={`${SOUND_FILE_EXTENSION},application/json`}
+      className="hidden"
+      aria-label="Sound file to import"
+      onChange={(event) => {
+        void importFile(event.target.files?.[0]);
+        event.target.value = "";
+      }}
+    />
+    {fileError ? (
+      <p role="alert" className="w-full text-[11px] text-rose-300">
+        {fileError}
+      </p>
     ) : null}
     </>
   );
