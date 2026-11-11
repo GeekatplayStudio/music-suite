@@ -13,6 +13,8 @@ import hashlib
 import json
 import os
 import re
+import secrets
+import socket
 import subprocess
 import sys
 import tempfile
@@ -43,6 +45,9 @@ _instruments: dict[str, bool] = {}
 #: Open plugin windows: key -> the folder where the app leaves commands for the worker.
 _windows: dict[str, Path] = {}
 WINDOW_COMMANDS = ("close", "play", "stop")
+#: Sessions that take live notes: key -> the token and port of the worker's socket.
+_live: dict[str, dict[str, Any]] = {}
+_live_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 #: How long a plugin's own window may stay open before the worker gives up.
 EDITOR_TIMEOUT_SECONDS = 3600
 MAX_STATE_BYTES = 16 * 1024 * 1024
@@ -227,6 +232,7 @@ def _run_worker(
         finally:
             if window_key:
                 _windows.pop(window_key, None)
+                _live.pop(window_key, None)
         outcome = projects.read_json_safe(report) or {}
         if proc.returncode != 0 or not outcome.get("ok") or (audio_out and not dst.is_file()):
             reason = outcome.get("error")
@@ -271,6 +277,7 @@ def open_plugin_window(
     *,
     window: bool = True,
     play: bool = False,
+    live: bool = False,
 ) -> dict[str, Any]:
     """Show the plugin's own window; returns its sound once it is closed.
 
@@ -287,6 +294,8 @@ def open_plugin_window(
             "seconds": seconds,
             "window": window,
             "play": play,
+            "live": live,
+            "token": _live_token(key) if key and live else None,
         },
         EDITOR_TIMEOUT_SECONDS,
         audio_out=False,
@@ -299,6 +308,8 @@ def open_plugin_window(
     result = {"plugin": str(item["name"]), "state": saved, "is_instrument": _instruments[plugin_id]}
     if isinstance(outcome.get("preview"), str):
         result["preview"] = outcome["preview"][:80]
+    if isinstance(outcome.get("live"), dict):
+        result["live"] = outcome["live"]
     return result
 
 
@@ -334,6 +345,29 @@ def window_command(key: str, command: str) -> bool:
     return True
 
 
+def _live_token(key: str) -> str:
+    token = secrets.token_hex(8)
+    _live[key] = {"token": token.encode("ascii"), "port": None}
+    return token
+
+
+def send_midi(key: str, messages: list[bytes]) -> bool:
+    """Play 3-byte MIDI messages into a live session at once. False if it cannot take them."""
+    session, control = _live.get(key), _windows.get(key)
+    if session is None or control is None:
+        return False
+    if session["port"] is None:
+        try:
+            session["port"] = int((control / "port").read_text("ascii"))
+        except (OSError, ValueError):
+            return False  # The worker is still starting.
+    try:
+        _live_socket.sendto(session["token"] + b"".join(messages), ("127.0.0.1", session["port"]))
+    except OSError:
+        return False
+    return True
+
+
 def load_sound_in_window(key: str, state: str) -> bool:
     """Switch an open plugin session to a saved sound (base64). False if none is open."""
     control = _windows.get(key)
@@ -356,21 +390,30 @@ def close_plugin_window(key: str) -> bool:
 # --------------------------------------------------------------------------- auditions
 # Hearing an instrument outside any project (Synth Studio): one at a time, no window.
 
-_audition: dict[str, Any] = {"key": None, "error": None}
+_audition: dict[str, Any] = {"key": None, "error": None, "live": None}
 
 
 def start_audition(
-    plugin_id: str, state: str | None, notes: list[dict[str, float]], seconds: float
+    plugin_id: str,
+    state: str | None,
+    notes: list[dict[str, float]],
+    seconds: float,
+    *,
+    play: bool = True,
+    live: bool = False,
 ) -> str:
     """Loop ``notes`` through an instrument on the speakers; returns the audition's key."""
     _require(plugin_id)
     stop_audition()
     key = projects.new_id()
-    _audition.update(key=key, error=None)
+    _audition.update(key=key, error=None, live=None)
 
     def work() -> None:
         try:
-            open_plugin_window(plugin_id, state, key, notes, seconds, window=False, play=True)
+            result = open_plugin_window(
+                plugin_id, state, key, notes, seconds, window=False, play=play, live=live
+            )
+            _audition["live"] = result.get("live")
         except EditorError as exc:
             if _audition["key"] == key:
                 _audition["error"] = str(exc)
@@ -387,7 +430,10 @@ def start_audition(
 
 def audition_status(key: str) -> dict[str, Any]:
     running = _audition["key"] == key
-    return {"id": key, "running": running, "error": None if running else _audition["error"]}
+    status = {"id": key, "running": running, "error": None if running else _audition["error"]}
+    if not running and _audition["live"]:
+        status["live"] = _audition["live"]  # Timing of the last live session, for diagnosis.
+    return status
 
 
 def stop_audition(key: str | None = None) -> None:

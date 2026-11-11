@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Loader2, Play, Square, Star, Upload } from "lucide-react";
+import { Download, Loader2, Piano, Play, Square, Star, Upload } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { ActionButton, PanelSection, fieldClass } from "@/components/editor/controls";
@@ -15,7 +15,8 @@ function megabytes(bytes: number): string {
 }
 
 /** What is running for this clip's plugin instrument right now. */
-export type PluginSession = "none" | "starting" | "listening" | "window";
+/** "listening" loops the clip; "live" is on for a MIDI keyboard; "window" shows the plugin's own window. */
+export type PluginSession = "none" | "starting" | "listening" | "live" | "window";
 
 /**
  * Plays a MIDI clip's notes through an installed VST3 / Audio Unit instrument
@@ -33,6 +34,7 @@ export function PluginInstrumentSection({
   onPickSound,
   onImportSound,
   onPlay,
+  onLive,
   onStop,
   onOpenWindow,
   onCloseWindow,
@@ -51,6 +53,8 @@ export function PluginInstrumentSection({
   onImportSound: (sound: { name: string; state: string }) => void;
   /** Start hearing the clip through the plugin (a session starts if none is running). */
   onPlay: () => void;
+  /** Start the plugin silent, to play it from a MIDI keyboard. */
+  onLive: () => void;
   onStop: () => void;
   onOpenWindow: () => void;
   onCloseWindow: () => void;
@@ -69,7 +73,8 @@ export function PluginInstrumentSection({
   const current = track.pluginInstrument;
   // Plugins already known to be effects are left out; unknown ones are checked when chosen.
   const candidates = plugins.filter((plugin) => plugin.is_instrument !== false);
-  const playing = session === "listening" || session === "starting" || (session === "window" && windowPlaying);
+  const loopable = session === "window" || session === "live";
+  const playing = session === "listening" || session === "starting" || (loopable && windowPlaying);
 
   const choose = (id: string) => {
     const ticket = ++request.current;
@@ -147,15 +152,15 @@ export function PluginInstrumentSection({
               disabled={!hasNotes || playing}
               title={hasNotes ? "Loops this clip through the plugin on this computer's speakers" : "Add notes to the clip first"}
               onClick={() => {
-                if (session === "window") setWindowPlaying(true);
+                if (loopable) setWindowPlaying(true);
                 onPlay();
               }}
             >
               <Play className="h-3.5 w-3.5" aria-hidden /> Play
             </ActionButton>
             <ActionButton
-              disabled={!playing}
-              title="Stops playing"
+              disabled={!playing && session !== "live"}
+              title={session === "live" ? "Turns the plugin off" : "Stops playing"}
               onClick={() => {
                 setWindowPlaying(false);
                 onStop();
@@ -164,14 +169,28 @@ export function PluginInstrumentSection({
               <Square className="h-3.5 w-3.5" aria-hidden /> Stop
             </ActionButton>
           </div>
+          <ActionButton
+            className="w-full"
+            disabled={session !== "none"}
+            title="Starts the plugin without the loop, so your MIDI keyboard plays it. Record as usual to capture the notes."
+            onClick={onLive}
+          >
+            <Piano className="h-3.5 w-3.5" aria-hidden /> Play it from your MIDI keyboard
+          </ActionButton>
           <p className="text-[11px] leading-snug text-slate-400" role="status">
+            {session === "listening" || loopable
+              ? `${current.name} is on: a connected MIDI keyboard plays it. Press record to capture what you play as notes. `
+              : ""}
+            {session === "live" && !playing ? "Stop turns it off." : ""}
             {!hasNotes
               ? "Add notes to this clip to hear it through the plugin."
               : session === "starting"
                 ? `Starting ${current.name}…`
                 : playing
                   ? "Playing this clip in a loop through your speakers. Pick sounds to hear each one."
-                  : "Play loops this clip through the plugin, so each sound you pick is heard straight away."}
+                  : session === "live"
+                    ? ""
+                    : "Play loops this clip through the plugin, so each sound you pick is heard straight away."}
           </p>
           {session === "window" ? (
             <>

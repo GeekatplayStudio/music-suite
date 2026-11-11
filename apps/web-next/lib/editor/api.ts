@@ -55,8 +55,14 @@ export const editorApi = {
     request<PluginInfo>(`/plugins/${pluginId}${instrument ? "?instrument=true" : ""}`),
   instruments: () => request<InstrumentOffer[]>("/instruments"),
   /** Hear an instrument outside any project (Synth Studio). */
-  startAudition: (body: { plugin_id: string; state: string | null; notes: Note[]; seconds: number }) =>
+  startAudition: (body: { plugin_id: string; state: string | null; notes: Note[]; seconds: number; play: boolean; live: boolean }) =>
     request<Audition>("/audition", json(body)),
+  /** Start or stop the looping phrase of a running audition. */
+  previewAudition: (key: string, play: boolean) => request<Audition>(`/audition/${key}/preview`, json({ play })),
+  /** Play notes live: each message is [status, data1, data2]. */
+  midiToAudition: (key: string, messages: number[][]) => request<{ sent: boolean }>(`/audition/${key}/midi`, json({ messages })),
+  midiToPluginWindow: (id: string, jobId: string, messages: number[][]) =>
+    request<{ sent: boolean }>(`/projects/${id}/jobs/${jobId}/midi`, json({ messages })),
   audition: (key: string) => request<Audition>(`/audition/${key}`),
   loadInAudition: (key: string, state: string) => request<Audition>(`/audition/${key}/load`, json({ state })),
   stopAudition: (key: string) => request<Audition>(`/audition/${key}/stop`, { method: "POST" }),

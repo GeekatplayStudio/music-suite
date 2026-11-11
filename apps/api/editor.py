@@ -119,6 +119,22 @@ def load_in_audition(key: str, payload: dict[str, Any] = Body(...)) -> dict[str,
     return _guard(lambda: editor_jobs.load_in_audition(key, payload.get("state")))
 
 
+@router.post("/audition/{key}/preview")
+def preview_in_audition(key: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    play = payload.get("play")
+    if not isinstance(play, bool):
+        raise HTTPException(status_code=422, detail="'play' must be true or false.")
+    if plugins.audition_status(key)["running"]:
+        plugins.window_command(key, "play" if play else "stop")
+    return plugins.audition_status(key)
+
+
+@router.post("/audition/{key}/midi")
+def midi_to_audition(key: str, payload: dict[str, Any] = Body(...)) -> dict[str, bool]:
+    messages = _guard(lambda: editor_jobs.midi_messages(payload.get("messages")))
+    return {"sent": plugins.send_midi(key, messages)}
+
+
 @router.post("/audition/{key}/stop")
 def stop_audition(key: str) -> dict[str, Any]:
     plugins.stop_audition(key)
@@ -342,6 +358,13 @@ def get_job(project_id: str, job_id: str) -> dict[str, Any]:
 @router.post("/projects/{project_id}/jobs/{job_id}/close-window")
 def close_plugin_window(project_id: str, job_id: str) -> dict[str, Any]:
     return _guard(lambda: editor_jobs.close_window(project_id, job_id))
+
+
+@router.post("/projects/{project_id}/jobs/{job_id}/midi")
+def midi_to_plugin_window(
+    project_id: str, job_id: str, payload: dict[str, Any] = Body(...)
+) -> dict[str, bool]:
+    return _guard(lambda: editor_jobs.midi_to_window(project_id, job_id, payload.get("messages")))
 
 
 @router.post("/projects/{project_id}/jobs/{job_id}/load")

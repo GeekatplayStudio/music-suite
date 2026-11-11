@@ -687,7 +687,7 @@ def test_loading_a_sound_into_a_running_session(client: TestClient, monkeypatch)
     sound = base64.b64encode(b"bass").decode()
 
     def fake_window(plugin_id, state, key, notes, seconds, **options):
-        assert options == {"window": False, "play": True}
+        assert options == {"window": False, "play": True, "live": False}
         url = f"/editor/projects/{seen['pid']}/jobs/{key}/load"
         assert client.post(url, json={"state": sound}).status_code == 200
         assert client.post(url, json={"state": "no!"}).status_code == 422
@@ -778,5 +778,116 @@ def test_audition_plays_outside_a_project_and_stops(client: TestClient, monkeypa
         "running": False,
         "error": None,
     }
-    assert seen["options"] == {"window": False, "play": True} and seen["commands"] == ["close"]
+    assert seen["options"] == {"window": False, "play": True, "live": False} and seen[
+        "commands"
+    ] == ["close"]
     assert client.post("/editor/audition", json={**body, "notes": []}).status_code == 422
+
+
+# --------------------------------------------------------------------------- live playing
+
+
+def test_live_notes_reach_the_instrument_through_the_socket(tmp_path: Path, monkeypatch) -> None:
+    class Speakers:
+        sample_rate = 48000.0
+        num_output_channels = 2
+
+        def __init__(self) -> None:
+            self.written: list[np.ndarray] = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def write(self, audio, rate):
+            self.written.append(np.array(audio))
+
+    speakers = Speakers()
+    monkeypatch.setattr(plugin_worker, "_output_stream", lambda *_a: speakers)
+    monkeypatch.setattr(plugin_worker, "_load", lambda _path: FakeInstrument())
+    plugins._windows["live-1"] = tmp_path
+    token = plugins._live_token("live-1")
+    results: dict[str, Any] = {}
+
+    def drive() -> None:
+        for _ in range(100):  # Wait for the worker's socket.
+            if plugins.send_midi("live-1", [bytes([0x90, 69, 100])]):
+                break
+            time.sleep(0.02)
+        # A datagram with the wrong token is ignored.
+        port = int((tmp_path / "port").read_text())
+        plugins._live_socket.sendto(b"x" * 16 + bytes([0x90, 40, 127]), ("127.0.0.1", port))
+        time.sleep(0.4)
+        results["sent_off"] = plugins.send_midi("live-1", [bytes([0x80, 69, 0])])
+        time.sleep(0.2)
+        (tmp_path / "close").touch()
+
+    threading.Thread(target=drive).start()
+    try:
+        outcome = plugin_worker.open_editor(
+            {
+                "plugin": "x",
+                "control_dir": str(tmp_path),
+                "window": False,
+                "live": True,
+                "token": token,
+            }
+        )
+    finally:
+        plugins._windows.pop("live-1", None)
+        plugins._live.pop("live-1", None)
+    assert outcome["ok"] and results["sent_off"] is True
+    live = outcome["live"]
+    assert live["notes"] == 2 and live["block_ms"] == round(1000 * 256 / 48000, 2)
+    assert 0 <= live["wait_ms_max"] < 250
+    assert all(block.shape[1] == plugin_worker.LIVE_BLOCK_FRAMES for block in speakers.written)
+    heard = np.concatenate(speakers.written, axis=1)[0]
+    loud = np.flatnonzero(np.abs(heard) > 0.01)
+    assert loud.size > 4800  # The held note sounded for a while...
+    spectrum = np.abs(np.fft.rfft(heard[loud[0] : loud[0] + 9600]))
+    assert abs(np.argmax(spectrum) * 48000 / 9600 - 440.0) < 10  # ...as A4 only: no stray note 40.
+    assert np.abs(heard[-2400:]).max() < 0.01  # Released before the session closed.
+    assert plugins.send_midi("live-1", [bytes([0x90, 60, 100])]) is False  # Session is over.
+
+
+def test_live_midi_routes_validate_messages(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr(engines, "plugin_hosting_available", lambda: True)
+    monkeypatch.setattr(plugins, "_require", lambda _pid: {"name": "Surge XT"})
+    sent: list[tuple[str, list[bytes]]] = []
+    monkeypatch.setattr(plugins, "send_midi", lambda key, msgs: sent.append((key, msgs)) or True)
+    release = threading.Event()
+    options: dict[str, Any] = {}
+
+    def fake_window(plugin_id, state, key, notes, seconds, **opts):
+        options.update(opts)
+        release.wait(5)
+        return {}
+
+    monkeypatch.setattr(plugins, "open_plugin_window", fake_window)
+    monkeypatch.setattr(plugins, "window_command", lambda key, cmd: release.set() or True)
+    body = {"plugin_id": PLUGIN_ID, "play": False, "live": True}
+    key = client.post("/editor/audition", json=body).json()["id"]
+    url = f"/editor/audition/{key}/midi"
+    # The channel is forced to 1; note on, off, controller and bend are accepted.
+    good = [[0x93, 60, 100], [0x80, 60, 0], [0xB0, 64, 127], [0xE0, 0, 64]]
+    assert client.post(url, json={"messages": good}).json() == {"sent": True}
+    assert sent[0][1] == [
+        bytes([0x90, 60, 100]),
+        bytes([0x80, 60, 0]),
+        bytes([0xB0, 64, 127]),
+        bytes([0xE0, 0, 64]),
+    ]
+    for bad in (
+        [],
+        [[0x90, 60]],
+        [[0xC0, 1, 0]],
+        [[0x90, 200, 1]],
+        [[0x90, 60, True]],
+        "x",
+        [[0x90, 60, 1]] * 65,
+    ):
+        assert client.post(url, json={"messages": bad}).status_code == 422, bad
+    client.post(f"/editor/audition/{key}/stop")
+    assert options == {"window": False, "play": False, "live": True}

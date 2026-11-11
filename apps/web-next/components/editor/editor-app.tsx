@@ -1028,7 +1028,7 @@ export function EditorApp({
     const instrument = clip ? stateRef.current.tracks.find((t) => t.id === clip.trackId)?.pluginInstrument : undefined;
     if (!clip || !instrument) return;
     // The clip's notes come along so they can be played live while the window is open.
-    const params = { plugin_id: instrument.id, state: instrument.state ?? null, notes: pluginNotes(clip), seconds: clamp(clip.duration, 0.25, 600) };
+    const params = { plugin_id: instrument.id, state: instrument.state ?? null, notes: pluginNotes(clip), seconds: clamp(clip.duration, 0.25, 600), live: true };
     void runJob("plugin_window", params, `${instrument.name} window open: close it to keep the sound`, [clip.id]);
   };
 
@@ -1037,9 +1037,10 @@ export function EditorApp({
     jobsRef.current.find((j) => j.clipId === clipId && j.job.op === "plugin_window" && (j.job.status === "queued" || j.job.status === "running"));
 
   /** Play the clip through its plugin instrument: in the open window, or in a new listening session. */
-  const playPlugin = (clipId: string) => {
+  const playPlugin = (clipId: string, loop = true) => {
     const running = pluginSession(clipId);
     if (running) {
+      if (!loop) return;
       void editorApi.previewInPluginWindow(projectId, running.job.id, true).catch((err: unknown) => setNotice(errorMessage(err, "Playing could not start.")));
       return;
     }
@@ -1052,16 +1053,32 @@ export function EditorApp({
       notes: pluginNotes(clip),
       seconds: clamp(clip.duration, 0.25, 600),
       window: false,
-      play: true
+      play: loop,
+      live: true
     };
-    void runJob("plugin_window", params, `Playing ${clip.name} through ${instrument.name}`, [clip.id]);
+    const title = loop ? `Playing ${clip.name} through ${instrument.name}` : `${instrument.name} is live: play your MIDI keyboard`;
+    void runJob("plugin_window", params, title, [clip.id]);
   };
+
+  /** The running plugin session that plays a track, if any: live notes go to it. */
+  const liveSession = (trackId: string | undefined) =>
+    trackId
+      ? jobsRef.current.find(
+          (j) =>
+            j.job.op === "plugin_window" &&
+            (j.job.status === "queued" || j.job.status === "running") &&
+            stateRef.current.clips.find((c) => c.id === j.clipId)?.trackId === trackId
+        )
+      : undefined;
+  const sendLive = (jobId: string, messages: number[][]) =>
+    void editorApi.midiToPluginWindow(projectId, jobId, messages).catch(() => undefined);
 
   /** Stop playing: a listening session ends; an open window stays open, silent. */
   const stopPlugin = (clipId: string) => {
     const running = pluginSession(clipId);
     if (!running) return;
     const call =
+      // In the plugin's window Stop only silences the loop; otherwise it ends the session.
       running.job.stage === "window"
         ? editorApi.previewInPluginWindow(projectId, running.job.id, false)
         : editorApi.closePluginWindow(projectId, running.job.id);
@@ -1150,6 +1167,17 @@ export function EditorApp({
     const loopEnd = state.loop.enabled && state.loop.end > state.loop.start ? state.loop.end : null;
     // Where the key went down on the timeline: what was audible then, not what was being scheduled.
     const at = () => Math.max(0, engine.heardPosition() - Math.max(0, (performance.now() - event.timeStamp) / 1000));
+    // While a plugin instrument is running for the track, it sounds the keys instead of the built-in synth.
+    const live = liveSession(take?.trackId ?? midiTrack?.id)?.job.id;
+    if (live) {
+      if (event.kind === "on") sendLive(live, [[0x90, event.pitch, clamp(Math.round(event.velocity * 127), 1, 127)]]);
+      else if (event.kind === "off") sendLive(live, [[0x80, event.pitch, 0]]);
+      else if (event.kind === "sustain") sendLive(live, [[0xb0, 64, event.down ? 127 : 0]]);
+      else if (event.kind === "bend") {
+        const wheel = clamp(Math.round(((event.value + 1) / 2) * 16383), 0, 16383);
+        sendLive(live, [[0xe0, wheel & 0x7f, wheel >> 7]]);
+      } else sendLive(live, [[0xb0, 123, 0]]);
+    }
     if (event.kind === "reset") {
       engine.allNotesOff();
       if (take) for (const pitch of [...take.held.keys()]) closeTakeNote(take, pitch, at(), loopEnd);
@@ -1164,7 +1192,7 @@ export function EditorApp({
       engine.pitchBend(event.value * 2);
     } else if (event.kind === "on") {
       const trackId = take?.trackId ?? midiTrack?.id;
-      if (trackId) engine.liveNoteOn(trackId, event.pitch, event.velocity);
+      if (trackId && !live) engine.liveNoteOn(trackId, event.pitch, event.velocity);
       if (take) {
         const time = at();
         closeTakeNote(take, event.pitch, time, loopEnd);
@@ -2051,6 +2079,7 @@ export function EditorApp({
           onRenderWithPlugin={renderWithPlugin}
           onOpenPluginWindow={openPluginWindow}
           onPlayPlugin={playPlugin}
+          onLivePlugin={(clipId) => playPlugin(clipId, false)}
           onStopPlugin={stopPlugin}
           onPickPluginSound={(clipId, sound) => void pickPluginSound(clipId, sound)}
           onImportPluginSound={(clipId, sound) => void applyPluginSound(clipId, sound)}

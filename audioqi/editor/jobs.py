@@ -333,7 +333,7 @@ def _notes(raw: Any, seconds: float, *, required: bool = True) -> list[dict[str,
 
 def _v_plugin_window(params: dict[str, Any]) -> dict[str, Any]:
     """Open the plugin's window; ``notes`` (a loop of ``seconds``) can be previewed live."""
-    _reject_unknown(params, {"plugin_id", "state", "notes", "seconds", "window", "play"})
+    _reject_unknown(params, {"plugin_id", "state", "notes", "seconds", "window", "play", "live"})
     seconds = _number(params, "seconds", 0.25, 600.0, 4.0)
     assert seconds is not None
     return {
@@ -344,6 +344,8 @@ def _v_plugin_window(params: dict[str, Any]) -> dict[str, Any]:
         # Without a window the session only plays sounds, until the app closes it.
         "window": _boolean(params, "window", True),
         "play": _boolean(params, "play", False),
+        # Takes notes played live (a MIDI keyboard or the on-screen piano).
+        "live": _boolean(params, "live", False),
     }
 
 
@@ -770,8 +772,10 @@ def _op_plugin_window(ctx: _Context) -> _Outcome:
     window = bool(ctx.params.get("window", True))
     if window:
         ctx.progress("window", 10, "The plugin's window is open. Close it to keep the sound.")
-    else:
+    elif ctx.params.get("play"):
         ctx.progress("listening", 10, "Playing sounds through the plugin.")
+    else:
+        ctx.progress("live", 10, "The plugin is on for live playing.")
     outcome = plugins.open_plugin_window(
         ctx.params["plugin_id"],
         ctx.params["state"],
@@ -780,6 +784,7 @@ def _op_plugin_window(ctx: _Context) -> _Outcome:
         ctx.params.get("seconds"),
         window=window,
         play=bool(ctx.params.get("play")),
+        live=bool(ctx.params.get("live")),
     )
     return [], {**outcome, "window": window}
 
@@ -1036,13 +1041,45 @@ def start_audition(params: Any) -> dict[str, Any]:
         raise EditorError(plugins.UNAVAILABLE_MESSAGE)
     if not isinstance(params, dict):
         raise ParamError("The request must be an object.")
-    cleaned = _v_plugin_window({**params, "window": False, "play": True})
-    if not cleaned["notes"]:
+    cleaned = _v_plugin_window({"play": True, **params, "window": False})
+    if cleaned["play"] and not cleaned["notes"]:
         raise ParamError("'notes' must be a non-empty list of notes.")
     key = plugins.start_audition(
-        cleaned["plugin_id"], cleaned["state"], cleaned["notes"], cleaned["seconds"]
+        cleaned["plugin_id"],
+        cleaned["state"],
+        cleaned["notes"],
+        cleaned["seconds"],
+        play=cleaned["play"],
+        live=cleaned["live"],
     )
     return plugins.audition_status(key)
+
+
+#: Live messages a session accepts: note off, note on, controller, pitch bend.
+_LIVE_STATUSES = (0x80, 0x90, 0xB0, 0xE0)
+
+
+def midi_messages(raw: Any) -> list[bytes]:
+    """Validated live MIDI: a short list of ``[status, data1, data2]``, put on channel 1."""
+    if not isinstance(raw, list) or not 0 < len(raw) <= 64:
+        raise ParamError("'messages' must be a list of 1 to 64 MIDI messages.")
+    cleaned: list[bytes] = []
+    for item in raw:
+        ok = isinstance(item, list) and len(item) == 3
+        ok = ok and all(isinstance(v, int) and not isinstance(v, bool) for v in item)
+        if not ok or (item[0] & 0xF0) not in _LIVE_STATUSES:
+            raise ParamError("Each MIDI message must be [status, data1, data2].")
+        if not (0 <= item[1] <= 127 and 0 <= item[2] <= 127):
+            raise ParamError("MIDI data bytes must be 0 to 127.")
+        cleaned.append(bytes([item[0] & 0xF0, item[1], item[2]]))
+    return cleaned
+
+
+def midi_to_window(project_id: str, job_id: str, raw: Any) -> dict[str, bool]:
+    record = _load(project_id, job_id)
+    if record.get("op") != "plugin_window":
+        raise ParamError("This job did not open a plugin session.")
+    return {"sent": plugins.send_midi(job_id, midi_messages(raw))}
 
 
 def load_in_audition(key: str, state: Any) -> dict[str, Any]:

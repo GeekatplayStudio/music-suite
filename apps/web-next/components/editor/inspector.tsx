@@ -67,6 +67,8 @@ interface InspectorProps {
   onClosePluginWindow: (jobId: string) => void;
   /** Hear a MIDI clip through its track's plugin instrument (starts a session if needed). */
   onPlayPlugin: (clipId: string) => void;
+  /** Start the plugin without the loop, to play it from a MIDI keyboard. */
+  onLivePlugin: (clipId: string) => void;
   onStopPlugin: (clipId: string) => void;
   onPickPluginSound: (clipId: string, sound: PluginSound) => void;
   onImportPluginSound: (clipId: string, sound: { name: string; state: string }) => void;
@@ -282,7 +284,9 @@ export function Inspector(props: InspectorProps) {
       ? "window"
       : windowJob.job.stage === "listening"
         ? "listening"
-        : "starting";
+        : windowJob.job.stage === "live"
+          ? "live"
+          : "starting";
   const stemOptions = capabilities?.separation.stem_options ?? [2, 4];
   const stemChoice = stemOptions.includes(stems) ? stems : (stemOptions[stemOptions.length - 1] ?? 4);
   // Kit pieces and lead/backing vocals need the AI stem separation pack.
@@ -491,6 +495,7 @@ export function Inspector(props: InspectorProps) {
                   onPickSound={(sound) => props.onPickPluginSound(clip.id, sound)}
                   onImportSound={(sound) => props.onImportPluginSound(clip.id, sound)}
                   onPlay={() => props.onPlayPlugin(clip.id)}
+                  onLive={() => props.onLivePlugin(clip.id)}
                   onStop={() => props.onStopPlugin(clip.id)}
                   onOpenWindow={() => props.onOpenPluginWindow(clip.id)}
                   onCloseWindow={() => windowJob && props.onClosePluginWindow(windowJob.job.id)}

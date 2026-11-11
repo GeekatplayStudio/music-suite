@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import base64
 import binascii
+import collections
 import contextlib
 import json
 import math
+import socket
 import sys
 import threading
 import time
@@ -33,6 +35,11 @@ PRIME_SECONDS = 0.25
 #: into an output buffer twice that size.
 PREVIEW_BLOCK_FRAMES = 1024
 PREVIEW_BUFFER_FRAMES = 2048
+#: Smaller blocks while notes are played live, so a key is heard quickly.
+LIVE_BLOCK_FRAMES = 256
+LIVE_BUFFER_FRAMES = 512
+#: Live notes arrive as datagrams: a token, then 3-byte MIDI messages.
+LIVE_TOKEN_BYTES = 16
 
 
 def _load(path: str) -> Any:
@@ -158,6 +165,8 @@ class LivePreview:
         self._stop_pending = False
         #: A sound the app asked for, applied by the audio thread before its next block.
         self.pending_state: bytes | None = None
+        #: Notes played live, waiting for the next audio block: (message, time received).
+        self.live: collections.deque[tuple[bytes, float]] = collections.deque(maxlen=4096)
 
     def play(self) -> None:
         self.playing, self.position = True, 0.0
@@ -189,7 +198,37 @@ class LivePreview:
         return out
 
 
-def _output_stream() -> Any:
+def _listen_live(control: Path, token: bytes, close: threading.Event, preview: LivePreview) -> None:
+    """Receive live notes on a loopback socket and queue them for the audio thread.
+
+    The port is published in ``control/port``. A datagram without the session's token is
+    ignored, so another program on this computer cannot play notes into the session.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.bind(("127.0.0.1", 0))
+        sock.settimeout(0.25)
+        staged = control / "port.part"
+        staged.write_text(str(sock.getsockname()[1]), encoding="ascii")
+        staged.replace(control / "port")
+        while not close.is_set():
+            try:
+                data = sock.recv(4096)
+            except TimeoutError:
+                continue
+            if data[:LIVE_TOKEN_BYTES] != token:
+                continue
+            now = time.monotonic()
+            body = data[LIVE_TOKEN_BYTES:]
+            for start in range(0, len(body) - 2, 3):
+                preview.live.append((body[start : start + 3], now))
+    except OSError:
+        return
+    finally:
+        sock.close()
+
+
+def _output_stream(buffer_frames: int = PREVIEW_BUFFER_FRAMES) -> Any:
     """The default speakers or headphones, or None when there is no output device."""
     try:
         from pedalboard.io import AudioStream
@@ -198,13 +237,17 @@ def _output_stream() -> Any:
         if not name:
             return None
         # A roomy buffer leaves time to render each block without gaps.
-        return AudioStream(output_device_name=name, buffer_size=PREVIEW_BUFFER_FRAMES)
+        return AudioStream(output_device_name=name, buffer_size=buffer_frames)
     except Exception:
         return None
 
 
 def _pump(
-    plugin: Any, close: threading.Event, preview: LivePreview, status: dict[str, Any]
+    plugin: Any,
+    close: threading.Event,
+    preview: LivePreview,
+    status: dict[str, Any],
+    live: bool = False,
 ) -> None:
     """Keep the plugin's audio engine running, playing the preview through the speakers.
 
@@ -213,11 +256,13 @@ def _pump(
     """
     import numpy as np
 
-    stream = _output_stream()
+    stream = _output_stream(LIVE_BUFFER_FRAMES) if live else _output_stream()
     status["preview"] = "speakers" if stream is not None else "no output device"
     rate = float(stream.sample_rate) if stream is not None else 48000.0
-    frames = PREVIEW_BLOCK_FRAMES
+    frames = LIVE_BLOCK_FRAMES if live else PREVIEW_BLOCK_FRAMES
     seconds = frames / rate
+    waits: list[float] = []
+    resyncs = 0
     # Pedalboard's write() spins while its buffer is full, so stay at most one block
     # ahead of what the device has played and sleep the rest of the time.
     started, sent = time.monotonic(), 0
@@ -234,8 +279,15 @@ def _pump(
                 time.sleep((ahead - frames) / rate)
             elif ahead < -frames:
                 started, sent = time.monotonic(), 0  # Fell behind (system busy): resync.
+                resyncs += 1
+            messages = preview.block(seconds)
+            now = time.monotonic()
+            while preview.live:
+                message, received = preview.live.popleft()
+                messages.append((message, 0.0))
+                waits.append(now - received)
             out = plugin(
-                preview.block(seconds),
+                messages,
                 duration=seconds,
                 sample_rate=rate,
                 num_channels=2,
@@ -253,6 +305,16 @@ def _pump(
         status["preview"] = f"stopped: {type(exc).__name__}"
         return
     finally:
+        if live:
+            # How long live notes waited for an audio block, and what follows it on the way out.
+            status["live"] = {
+                "notes": len(waits),
+                "wait_ms_avg": round(1000 * sum(waits) / len(waits), 2) if waits else 0.0,
+                "wait_ms_max": round(1000 * max(waits), 2) if waits else 0.0,
+                "block_ms": round(1000 * frames / rate, 2),
+                "buffer_ms": round(1000 * LIVE_BUFFER_FRAMES / rate, 2),
+                "resyncs": resyncs,
+            }
         if stream is not None:
             with contextlib.suppress(Exception):
                 stream.__exit__(None, None, None)
@@ -296,15 +358,21 @@ def open_editor(request: dict[str, Any]) -> dict[str, Any]:
     if request.get("play"):
         preview.play()
     control = request.get("control_dir")
+    live = bool(request.get("live"))
     if control:
         threading.Thread(
             target=_watch, args=(Path(str(control)), close, preview), daemon=True
         ).start()
+        token = str(request.get("token") or "").encode("ascii", "ignore")
+        if live and len(token) == LIVE_TOKEN_BYTES:
+            threading.Thread(
+                target=_listen_live, args=(Path(str(control)), token, close, preview), daemon=True
+            ).start()
     pump_thread = None
     status: dict[str, Any] = {}
     if getattr(plugin, "is_instrument", False):
         pump_thread = threading.Thread(
-            target=_pump, args=(plugin, close, preview, status), daemon=True
+            target=_pump, args=(plugin, close, preview, status, live), daemon=True
         )
         pump_thread.start()
     try:

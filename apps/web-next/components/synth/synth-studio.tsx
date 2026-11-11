@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Loader2, Play, RotateCcw, SlidersHorizontal, Square, Waves } from "lucide-react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
+import { Download, Loader2, Piano as PianoIcon, Play, Power, RotateCcw, SlidersHorizontal, Square, Waves } from "lucide-react";
 
 import { PluginSoundFiles, SoundBrowser } from "@/components/editor/plugin-instrument";
 import { PresetBar, SynthControls } from "@/components/editor/synth-editor";
 import { Piano } from "@/components/synth/piano";
 import { editorApi } from "@/lib/editor/api";
+import { type MidiEvent, midiHub } from "@/lib/editor/midi";
 import { initPatch, normalizePatch, startVoice, type Patch, type Voice } from "@/lib/editor/synth";
 import type { Note, PluginInfo, PluginSound } from "@/lib/editor/types";
 import { cn } from "@/lib/utils";
@@ -86,7 +87,7 @@ export function SynthStudio() {
     voice.release(audio.current.ctx.currentTime);
   }, []);
   const noteOn = useCallback(
-    (pitch: number) => {
+    (pitch: number, velocity = 0.8) => {
       const { ctx, out } = output();
       const sound = patchRef.current;
       const now = ctx.currentTime + 0.003;
@@ -99,7 +100,7 @@ export function SynthStudio() {
         }
       }
       noteOff(pitch);
-      voices.current.set(pitch, startVoice(ctx, sound, out, pitch, 0.22, now, { velocity: 0.8, bpm: 120, glideFrom }));
+      voices.current.set(pitch, startVoice(ctx, sound, out, pitch, 0.22, now, { velocity, bpm: 120, glideFrom }));
       lastPitch.current = pitch;
     },
     [noteOff]
@@ -120,6 +121,7 @@ export function SynthStudio() {
   const [sound, setSound] = useState<{ name: string; state: string } | null>(null);
   const [audition, setAudition] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [looping, setLooping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const auditionRef = useRef<string | null>(null);
   useEffect(() => {
@@ -153,7 +155,9 @@ export function SynthStudio() {
         .audition(audition)
         .then((status) => {
           if (status.running) return;
+          auditionRef.current = null;
           setAudition(null);
+          setLooping(false);
           if (status.error) setError(status.error);
         })
         .catch(() => undefined);
@@ -161,23 +165,49 @@ export function SynthStudio() {
     return () => window.clearInterval(timer);
   }, [audition]);
 
-  const play = async () => {
-    if (!pluginId || audition || starting) return;
+  /** Start the instrument: with the looping phrase, or silent and ready for the piano. */
+  const start = async (loop: boolean) => {
+    if (!pluginId || auditionRef.current || starting) return;
     setError(null);
     setStarting(true);
     try {
-      const started = await editorApi.startAudition({ plugin_id: pluginId, state: sound?.state ?? null, notes: DEMO_NOTES, seconds: DEMO_SECONDS });
+      const body = { plugin_id: pluginId, state: sound?.state ?? null, notes: DEMO_NOTES, seconds: DEMO_SECONDS, play: loop, live: true };
+      const started = await editorApi.startAudition(body);
+      auditionRef.current = started.id;
       setAudition(started.id);
+      setLooping(loop);
     } catch (err) {
-      setError(message(err, "Playing could not start."));
+      setError(message(err, "The instrument could not start."));
     }
     setStarting(false);
   };
+  const play = () => {
+    if (!audition) return void start(true);
+    setLooping(true);
+    void editorApi.previewAudition(audition, true).catch(() => undefined);
+  };
   const stop = () => {
     if (!audition) return;
-    void editorApi.stopAudition(audition).catch(() => undefined);
-    setAudition(null);
+    setLooping(false);
+    void editorApi.previewAudition(audition, false).catch(() => undefined);
   };
+  const turnOff = () => {
+    if (!audition) return;
+    void editorApi.stopAudition(audition).catch(() => undefined);
+    auditionRef.current = null;
+    setAudition(null);
+    setLooping(false);
+  };
+  /** Notes from the piano or a MIDI keyboard, played through the instrument at once. */
+  const sendLive = useCallback((messages: number[][]) => {
+    const key = auditionRef.current;
+    if (key) void editorApi.midiToAudition(key, messages).catch(() => undefined);
+  }, []);
+  const pluginNoteOn = (pitch: number, velocity = 0.8) => {
+    if (!auditionRef.current) return void start(false); // The first key switches the instrument on.
+    sendLive([[0x90, pitch, Math.min(127, Math.max(1, Math.round(velocity * 127)))]]);
+  };
+  const pluginNoteOff = (pitch: number) => sendLive([[0x80, pitch, 0]]);
   const applySound = async (built: { name: string; state: string }) => {
     setSound(built);
     if (auditionRef.current) await editorApi.loadInAudition(auditionRef.current, built.state);
@@ -192,6 +222,41 @@ export function SynthStudio() {
   };
   const chosen = plugins?.find((plugin) => plugin.id === pluginId);
 
+  /* ---------- MIDI keyboard: plays whichever tab is open ---------- */
+
+  const midi = useSyncExternalStore(midiHub.watch, midiHub.snapshot, midiHub.serverSnapshot);
+  const onMidi = useEffectEvent((event: MidiEvent) => {
+    if (tab === "builtin") {
+      if (event.kind === "on") noteOn(event.pitch, event.velocity);
+      else if (event.kind === "off") noteOff(event.pitch);
+      else if (event.kind === "reset") for (const pitch of [...voices.current.keys()]) noteOff(pitch);
+      return;
+    }
+    if (event.kind === "on") pluginNoteOn(event.pitch, event.velocity);
+    else if (event.kind === "off") pluginNoteOff(event.pitch);
+    else if (event.kind === "sustain") sendLive([[0xb0, 64, event.down ? 127 : 0]]);
+    else if (event.kind === "bend") {
+      const wheel = Math.min(16383, Math.max(0, Math.round(((event.value + 1) / 2) * 16383)));
+      sendLive([[0xe0, wheel & 0x7f, wheel >> 7]]);
+    } else sendLive([[0xb0, 123, 0]]);
+  });
+  useEffect(() => {
+    void midiHub.connectIfAllowed();
+    return midiHub.subscribe((event) => onMidi(event));
+  }, []);
+  const midiLabel =
+    midi.state === "ready"
+      ? midi.inputs.length
+        ? `MIDI: ${midi.inputs.map((input) => input.name).join(", ")}`
+        : "MIDI on: no keyboard found"
+      : midi.state === "connecting"
+        ? "Connecting…"
+        : midi.state === "unsupported"
+          ? "This browser has no MIDI support"
+          : midi.state === "denied"
+            ? "MIDI access was refused"
+            : "Connect a MIDI keyboard";
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-[1800px] flex-col gap-4 px-3 pb-16 pt-6 sm:px-6 sm:pt-8">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -204,6 +269,15 @@ export function SynthStudio() {
           </p>
         </div>
         <nav className="flex flex-wrap gap-2" aria-label="Music Suite">
+          <button
+            type="button"
+            className={cn(quiet, midi.state === "ready" && midi.inputs.length ? "text-emerald-300" : "")}
+            disabled={midi.state === "connecting" || midi.state === "unsupported"}
+            title="Play the open tab's instrument from a USB or Bluetooth MIDI keyboard"
+            onClick={() => void midiHub.connect()}
+          >
+            <PianoIcon className="h-3.5 w-3.5 shrink-0" aria-hidden /> <span className="max-w-56 truncate">{midiLabel}</span>
+          </button>
           <Link href="/editor" className={quiet}>
             Studio Editor
           </Link>
@@ -280,6 +354,7 @@ export function SynthStudio() {
                   aria-label="Instrument"
                   value={pluginId}
                   disabled={Boolean(audition) || starting}
+                  title={audition ? "Turn the instrument off to choose another" : undefined}
                   onChange={(event) => {
                     setPluginId(event.target.value);
                     setSound(null);
@@ -292,20 +367,27 @@ export function SynthStudio() {
                   ))}
                 </select>
                 <div className="grid grid-cols-2 gap-2">
-                  <button type="button" className={primary} disabled={Boolean(audition) || starting} onClick={() => void play()}>
+                  <button type="button" className={primary} disabled={looping || starting} onClick={play}>
                     {starting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Play className="h-4 w-4" aria-hidden />} Play
                   </button>
-                  <button type="button" className={cn(primary, "bg-slate-700 text-slate-100 hover:bg-slate-600")} disabled={!audition} onClick={stop}>
+                  <button type="button" className={cn(primary, "bg-slate-700 text-slate-100 hover:bg-slate-600")} disabled={!looping} onClick={stop}>
                     <Square className="h-4 w-4" aria-hidden /> Stop
                   </button>
                 </div>
                 <p className="text-xs leading-snug text-slate-400" role="status">
                   {starting
                     ? `Starting ${chosen?.name ?? "the instrument"}…`
-                    : audition
+                    : looping
                       ? "Playing a short phrase in a loop through your speakers. Pick sounds to hear each one."
-                      : "Play loops a short phrase (bass note, rising chord, held chord) so each sound you pick is heard straight away."}
+                      : audition
+                        ? `${chosen?.name ?? "The instrument"} is on: play it on the piano below or your MIDI keyboard.`
+                        : "Play loops a short phrase so each sound you pick is heard straight away. Or just press a piano key to switch the instrument on and play it yourself."}
                 </p>
+                {audition ? (
+                  <button type="button" className={cn(quiet, "w-full")} onClick={turnOff}>
+                    <Power className="h-3.5 w-3.5" aria-hidden /> Turn {chosen?.name ?? "the instrument"} off
+                  </button>
+                ) : null}
                 {error ? (
                   <p role="alert" className="rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
                     {error}
@@ -335,6 +417,16 @@ export function SynthStudio() {
               {chosen && chosen.name !== "Surge XT" ? (
                 <p className="text-xs text-slate-400">The sound list is available for Surge XT. Other instruments play their default sound here.</p>
               ) : null}
+            </section>
+          ) : null}
+          {pluginId ? (
+            <section className="glass rounded-2xl border border-white/10 p-3 sm:p-4 lg:col-span-2" aria-label="Play the instrument">
+              <h2 className="display-font mb-2 text-base font-semibold text-slate-100">Play {chosen?.name ?? "the instrument"}</h2>
+              <Piano className="" onNoteOn={pluginNoteOn} onNoteOff={pluginNoteOff} />
+              <p className="mt-1 text-xs text-slate-400">
+                Notes travel through the suite to the instrument, about 15–25 ms on this computer. Bluetooth headphones add their own delay:
+                for playing, wired headphones or speakers feel tighter.
+              </p>
             </section>
           ) : null}
         </div>
