@@ -21,6 +21,8 @@ const primary =
   "hover:bg-cyan-300 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-200 disabled:pointer-events-none disabled:opacity-40";
 
 const PATCH_KEY = "music-suite-synth-studio-patch";
+/** Keys that can sound at once on the suite's synth before the oldest gives way. */
+const MAX_HELD_VOICES = 12;
 /** What Play loops through a plugin instrument: a bass note, a rising chord and a held chord. */
 const DEMO_SECONDS = 4;
 const DEMO_NOTES: Note[] = [
@@ -68,7 +70,6 @@ export function SynthStudio() {
 
   const audio = useRef<{ ctx: AudioContext; out: AudioNode } | null>(null);
   const voices = useRef(new Map<number, Voice>());
-  const lastPitch = useRef<number | null>(null);
   const output = () => {
     if (!audio.current) {
       const ctx = new AudioContext({ latencyHint: "interactive" });
@@ -80,12 +81,26 @@ export function SynthStudio() {
     if (audio.current.ctx.state !== "running") void audio.current.ctx.resume();
     return audio.current;
   };
-  const noteOff = useCallback((pitch: number) => {
+  // Sustain pedal: released keys keep sounding until the pedal comes up.
+  const pedal = useRef({ down: false, held: new Set<number>() });
+  const bend = useRef(0);
+  const endVoice = useCallback((pitch: number) => {
     const voice = voices.current.get(pitch);
     if (!voice || !audio.current) return;
     voices.current.delete(pitch);
+    pedal.current.held.delete(pitch);
     voice.release(audio.current.ctx.currentTime);
   }, []);
+  const noteOff = useCallback(
+    (pitch: number) => {
+      if (pedal.current.down && voices.current.has(pitch)) pedal.current.held.add(pitch);
+      else endVoice(pitch);
+    },
+    [endVoice]
+  );
+  const allNotesOff = useCallback(() => {
+    for (const pitch of [...voices.current.keys()]) endVoice(pitch);
+  }, [endVoice]);
   const noteOn = useCallback(
     (pitch: number, velocity = 0.8) => {
       const { ctx, out } = output();
@@ -96,15 +111,30 @@ export function SynthStudio() {
         // One note at a time: the held note ends and the new one glides from it.
         for (const held of [...voices.current.keys()]) {
           glideFrom = held;
-          noteOff(held);
+          endVoice(held);
         }
       }
-      noteOff(pitch);
-      voices.current.set(pitch, startVoice(ctx, sound, out, pitch, 0.22, now, { velocity, bpm: 120, glideFrom }));
-      lastPitch.current = pitch;
+      endVoice(pitch);
+      // A rich sound uses many oscillators per key: the oldest key gives way past the limit.
+      while (voices.current.size >= MAX_HELD_VOICES) endVoice(voices.current.keys().next().value as number);
+      const options = { velocity, bpm: 120, glideFrom, bendCents: bend.current };
+      voices.current.set(pitch, startVoice(ctx, sound, out, pitch, 0.22, now, options));
     },
-    [noteOff]
+    [endVoice]
   );
+  const setSustain = useCallback(
+    (down: boolean) => {
+      pedal.current.down = down;
+      if (!down) for (const pitch of [...pedal.current.held]) endVoice(pitch);
+    },
+    [endVoice]
+  );
+  /** Pitch-bend wheel, -1 to 1: two semitones each way. */
+  const setBend = useCallback((value: number) => {
+    bend.current = value * 200;
+    const now = audio.current?.ctx.currentTime ?? 0;
+    for (const voice of voices.current.values()) voice.bend(bend.current, now);
+  }, []);
   useEffect(() => {
     const held = voices.current;
     return () => {
@@ -229,7 +259,9 @@ export function SynthStudio() {
     if (tab === "builtin") {
       if (event.kind === "on") noteOn(event.pitch, event.velocity);
       else if (event.kind === "off") noteOff(event.pitch);
-      else if (event.kind === "reset") for (const pitch of [...voices.current.keys()]) noteOff(pitch);
+      else if (event.kind === "sustain") setSustain(event.down);
+      else if (event.kind === "bend") setBend(event.value);
+      else allNotesOff();
       return;
     }
     if (event.kind === "on") pluginNoteOn(event.pitch, event.velocity);
@@ -307,7 +339,12 @@ export function SynthStudio() {
             id={`tab-${id}`}
             aria-selected={tab === id}
             aria-controls={`panel-${id}`}
-            onClick={() => setTab(id)}
+            onClick={() => {
+              // Nothing keeps sounding from the tab being left.
+              allNotesOff();
+              sendLive([[0xb0, 123, 0]]);
+              setTab(id);
+            }}
             className={cn(
               "inline-flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300 sm:px-4",
               tab === id ? "bg-cyan-400 text-slate-950" : "text-slate-300 hover:bg-slate-800"

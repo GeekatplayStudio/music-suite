@@ -99,6 +99,11 @@ class MidiHub {
     return () => this.listeners.delete(listener);
   }
 
+  /** Play notes from the on-screen piano: they are handled exactly like a MIDI keyboard's. */
+  play(event: MidiEvent): void {
+    this.emit(event);
+  }
+
   /** For useSyncExternalStore. */
   watch = (onChange: () => void): (() => void) => {
     this.watchers.add(onChange);

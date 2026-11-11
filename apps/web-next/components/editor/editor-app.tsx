@@ -12,6 +12,7 @@ import {
   MousePointer2,
   MoveHorizontal,
   Pause,
+  Piano as PianoIcon,
   Play,
   Plus,
   Redo2,
@@ -30,6 +31,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useEffectEvent, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 
 import { ActionButton, IconButton } from "@/components/editor/controls";
+import { Piano } from "@/components/synth/piano";
 import { Inspector, type JobEntry } from "@/components/editor/inspector";
 import { MidiControl } from "@/components/editor/midi-control";
 import { PianoRoll } from "@/components/editor/piano-roll";
@@ -480,6 +482,7 @@ export function EditorApp({
   const [playing, setPlaying] = useState(false);
   const [, setTransportTick] = useState(0);
   const [mediaVersion, setMediaVersion] = useState(0);
+  const [showKeys, setShowKeys] = useState(false);
   const [jobs, setJobs] = useState<JobEntry[]>([]);
   // Event handlers read the latest jobs without being re-created for each update.
   const jobsRef = useRef(jobs);
@@ -713,7 +716,8 @@ export function EditorApp({
   const midiTrack = selectedTrack ?? state.tracks.find((t) => hasNotes(t.id)) ?? null;
   const midiPlaysVoice = midiTrack !== null && playsCarrier(midiTrack);
   // Recording captures keyboard notes on an instrument track; everywhere else it records the microphone.
-  const recordsNotes = keyboardConnected && midiTrack !== null && hasNotes(midiTrack.id) && !midiPlaysVoice;
+  // The on-screen piano counts as a keyboard: what is played on it can be recorded too.
+  const recordsNotes = (keyboardConnected || showKeys) && midiTrack !== null && hasNotes(midiTrack.id) && !midiPlaysVoice;
   const duration = projectDuration(state);
   const totalSec = Math.max(duration * 1.2 + 20, viewWidth / pxPerSec);
 
@@ -1750,6 +1754,13 @@ export function EditorApp({
             recordsNotes={recordsNotes}
             onAddInstrument={addInstrumentTrack}
           />
+          <IconButton
+            label={showKeys ? "Hide the piano" : "Show a piano to play the selected instrument track"}
+            active={showKeys}
+            onClick={() => setShowKeys((open) => !open)}
+          >
+            <PianoIcon className="h-4 w-4" />
+          </IconButton>
         </div>
 
         <div className="flex flex-col items-stretch">
@@ -2031,6 +2042,36 @@ export function EditorApp({
               onRepair={(params, title) => runJobs("spectral_repair", params, title)}
               onClose={() => setShowSpectral(false)}
             />
+          ) : null}
+
+          {showKeys ? (
+            <section className="shrink-0 border-t border-white/10 bg-slate-950/80 px-2 pb-2 pt-1.5" aria-label="Piano">
+              <div className="mb-1 flex items-center gap-2 text-[11px] text-slate-400">
+                <span className="min-w-0 flex-1 truncate">
+                  {midiTrack ? (
+                    <>
+                      Piano plays <strong className="text-slate-200">{midiTrack.name}</strong>
+                      {recordsNotes ? ". Press record to capture what you play as notes." : hasNotes(midiTrack.id) ? "." : ": add an instrument (MIDI) track to record notes."}
+                    </>
+                  ) : (
+                    "Add an instrument (MIDI) track to play it here."
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowKeys(false)}
+                  className="rounded px-1.5 py-0.5 text-slate-300 hover:bg-slate-800 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
+                >
+                  Hide
+                </button>
+              </div>
+              <Piano
+                compact
+                typing={false}
+                onNoteOn={(pitch) => midiHub.play({ kind: "on", pitch, velocity: 0.8, timeStamp: performance.now() })}
+                onNoteOff={(pitch) => midiHub.play({ kind: "off", pitch, timeStamp: performance.now() })}
+              />
+            </section>
           ) : null}
 
           <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-white/10 bg-slate-950 px-3 text-[11px] text-slate-400" aria-live="polite">

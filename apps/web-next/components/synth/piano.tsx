@@ -21,11 +21,17 @@ function noteName(pitch: number): string {
 export function Piano({
   onNoteOn,
   onNoteOff,
-  className
+  className,
+  typing = true,
+  compact = false
 }: {
   onNoteOn: (pitch: number) => void;
   onNoteOff: (pitch: number) => void;
   className?: string;
+  /** Play from the computer keyboard too. Off where those keys are shortcuts. */
+  typing?: boolean;
+  /** A lower strip without the hint line, for docking under other panels. */
+  compact?: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [octaves, setOctaves] = useState(3);
@@ -69,10 +75,21 @@ export function Piano({
   });
 
   useEffect(() => {
-    const typing = (target: EventTarget | null) =>
+    if (!typing) {
+      // Notes held by pointer still end when the window loses focus or the piano goes away.
+      const drop = () => {
+        for (const id of [...heldRef.current.keys()]) actions.current.release(id);
+      };
+      window.addEventListener("blur", drop);
+      return () => {
+        window.removeEventListener("blur", drop);
+        drop();
+      };
+    }
+    const inField = (target: EventTarget | null) =>
       target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
     const down = (event: KeyboardEvent) => {
-      if (event.repeat || event.metaKey || event.ctrlKey || event.altKey || typing(event.target)) return;
+      if (event.repeat || event.metaKey || event.ctrlKey || event.altKey || inField(event.target)) return;
       const key = event.key.toLowerCase();
       if (key === "z") setKeyOctave((o) => Math.max(1, o - 1));
       else if (key === "x") setKeyOctave((o) => Math.min(7, o + 1));
@@ -94,7 +111,7 @@ export function Piano({
       window.removeEventListener("blur", allUp);
       allUp();
     };
-  }, [keyOctave]);
+  }, [keyOctave, typing]);
 
   // Centre the range around middle C.
   const first = 12 * (5 - Math.ceil(octaves / 2));
@@ -113,7 +130,11 @@ export function Piano({
     "aria-pressed": held.has(pitch),
     onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
       // Let the pointer slide on to other keys instead of staying captured by this one.
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      try {
+        event.currentTarget.releasePointerCapture?.(event.pointerId);
+      } catch {
+        /* this pointer was not captured: nothing to release */
+      }
       pointer(event, pitch);
     },
     onPointerEnter: (event: React.PointerEvent) => event.buttons > 0 && pointer(event, pitch),
@@ -134,7 +155,10 @@ export function Piano({
         ref={hostRef}
         role="group"
         aria-label="Piano"
-        className="relative h-28 touch-none select-none overflow-hidden rounded-xl bg-slate-800 p-1 sm:h-36 lg:h-44"
+        className={cn(
+          "relative touch-none select-none overflow-hidden rounded-xl bg-slate-800 p-1",
+          compact ? "h-20 sm:h-24" : "h-28 sm:h-36 lg:h-44"
+        )}
         onPointerLeave={(event) => pointer(event, null)}
         onPointerCancel={(event) => pointer(event, null)}
       >
@@ -171,11 +195,13 @@ export function Piano({
             })}
         </div>
       </div>
+      {compact ? null : (
       <p className="mt-1.5 text-xs text-slate-400">
         Click, touch and slide, or type <kbd className="rounded bg-slate-800 px-1">A</kbd>–<kbd className="rounded bg-slate-800 px-1">L</kbd>{" "}
         (black keys on the row above). <kbd className="rounded bg-slate-800 px-1">Z</kbd> / <kbd className="rounded bg-slate-800 px-1">X</kbd>{" "}
         move the typing octave: now {noteName(12 * (keyOctave + 1))}.
       </p>
+      )}
     </div>
   );
 }
