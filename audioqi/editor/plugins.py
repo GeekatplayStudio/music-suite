@@ -46,6 +46,7 @@ WINDOW_COMMANDS = ("close", "play", "stop")
 #: How long a plugin's own window may stay open before the worker gives up.
 EDITOR_TIMEOUT_SECONDS = 3600
 MAX_STATE_BYTES = 16 * 1024 * 1024
+MAX_STATE_TEXT = MAX_STATE_BYTES * 4 // 3 + 4
 
 
 def plugin_dirs() -> list[tuple[Path, str, str]]:
@@ -267,6 +268,9 @@ def open_plugin_window(
     key: str | None = None,
     notes: list[dict[str, float]] | None = None,
     seconds: float | None = None,
+    *,
+    window: bool = True,
+    play: bool = False,
 ) -> dict[str, Any]:
     """Show the plugin's own window; returns its sound once it is closed.
 
@@ -276,7 +280,14 @@ def open_plugin_window(
     item = _require(plugin_id)
     outcome, _ = _run_worker(
         item,
-        {"mode": "editor", "state": state, "notes": notes or [], "seconds": seconds},
+        {
+            "mode": "editor",
+            "state": state,
+            "notes": notes or [],
+            "seconds": seconds,
+            "window": window,
+            "play": play,
+        },
         EDITOR_TIMEOUT_SECONDS,
         audio_out=False,
         window_key=key,
@@ -318,6 +329,20 @@ def window_command(key: str, command: str) -> bool:
         return False
     try:
         (control / command).touch()
+    except OSError:
+        return False
+    return True
+
+
+def load_sound_in_window(key: str, state: str) -> bool:
+    """Switch an open plugin session to a saved sound (base64). False if none is open."""
+    control = _windows.get(key)
+    if control is None or len(state) > MAX_STATE_TEXT:
+        return False
+    try:
+        staged = control / "load.part"
+        staged.write_text(state, encoding="ascii")
+        staged.replace(control / "load")  # Appears whole, never half written.
     except OSError:
         return False
     return True

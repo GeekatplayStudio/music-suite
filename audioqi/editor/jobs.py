@@ -333,7 +333,7 @@ def _notes(raw: Any, seconds: float, *, required: bool = True) -> list[dict[str,
 
 def _v_plugin_window(params: dict[str, Any]) -> dict[str, Any]:
     """Open the plugin's window; ``notes`` (a loop of ``seconds``) can be previewed live."""
-    _reject_unknown(params, {"plugin_id", "state", "notes", "seconds"})
+    _reject_unknown(params, {"plugin_id", "state", "notes", "seconds", "window", "play"})
     seconds = _number(params, "seconds", 0.25, 600.0, 4.0)
     assert seconds is not None
     return {
@@ -341,6 +341,9 @@ def _v_plugin_window(params: dict[str, Any]) -> dict[str, Any]:
         "state": _plugin_state(params),
         "notes": _notes(params.get("notes"), seconds, required=False),
         "seconds": seconds,
+        # Without a window the session only plays sounds, until the app closes it.
+        "window": _boolean(params, "window", True),
+        "play": _boolean(params, "play", False),
     }
 
 
@@ -764,15 +767,21 @@ def _op_render_instrument(ctx: _Context) -> _Outcome:
 def _op_plugin_window(ctx: _Context) -> _Outcome:
     if not engines.plugin_hosting_available():
         raise EditorError(plugins.UNAVAILABLE_MESSAGE)
-    ctx.progress("process", 10, "The plugin's window is open. Close it to keep the sound.")
+    window = bool(ctx.params.get("window", True))
+    if window:
+        ctx.progress("window", 10, "The plugin's window is open. Close it to keep the sound.")
+    else:
+        ctx.progress("listening", 10, "Playing sounds through the plugin.")
     outcome = plugins.open_plugin_window(
         ctx.params["plugin_id"],
         ctx.params["state"],
         str(ctx.record["id"]),
         ctx.params.get("notes") or [],
         ctx.params.get("seconds"),
+        window=window,
+        play=bool(ctx.params.get("play")),
     )
-    return [], outcome
+    return [], {**outcome, "window": window}
 
 
 def _warp_outcome(ctx: _Context, audio: np.ndarray, sr: int, markers: list, suffix: str):
@@ -1018,6 +1027,19 @@ def window_command(project_id: str, job_id: str, command: str) -> dict[str, Any]
         raise ParamError("The command must be close, play or stop.")
     if record.get("status") in ("queued", "running"):
         plugins.window_command(job_id, command)
+    return _public(record)
+
+
+def load_in_window(project_id: str, job_id: str, state: Any) -> dict[str, Any]:
+    """Switch a running plugin session (window or listening) to a saved sound."""
+    record = _load(project_id, job_id)
+    if record.get("op") != "plugin_window":
+        raise ParamError("This job did not open a plugin session.")
+    cleaned = _plugin_state({"state": state})
+    if cleaned is None:
+        raise ParamError("'state' must be the sound saved from the plugin.")
+    if record.get("status") in ("queued", "running"):
+        plugins.load_sound_in_window(job_id, cleaned)
     return _public(record)
 
 

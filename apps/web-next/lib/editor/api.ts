@@ -4,6 +4,7 @@ import type {
   GenerationStatus,
   InstrumentOffer,
   Job,
+  PluginSound,
   JobOp,
   PluginInfo,
   ProjectDetail,
@@ -46,6 +47,9 @@ export const editorApi = {
   describePlugin: (pluginId: string, instrument = false) =>
     request<PluginInfo>(`/plugins/${pluginId}${instrument ? "?instrument=true" : ""}`),
   instruments: () => request<InstrumentOffer[]>("/instruments"),
+  pluginSounds: (pluginId: string) => request<{ sounds: PluginSound[] }>(`/plugins/${pluginId}/sounds`),
+  pluginSoundState: (pluginId: string, soundId: string) =>
+    request<{ name: string; state: string }>(`/plugins/${pluginId}/sounds/${soundId}`, { method: "POST" }),
   installInstrument: (instrumentId: string) =>
     request<InstrumentOffer>(`/instruments/${instrumentId}/install`, { method: "POST" }),
   listProjects: () => request<ProjectSummary[]>("/projects"),
@@ -69,6 +73,8 @@ export const editorApi = {
   deleteAsset: (id: string, assetId: string) =>
     request<{ deleted: boolean }>(`/projects/${id}/assets/${assetId}`, { method: "DELETE" }),
   assetAudioUrl: (id: string, assetId: string) => `${BASE}/projects/${id}/assets/${assetId}/audio`,
+  loadInPluginWindow: (id: string, jobId: string, state: string) =>
+    request<Job>(`/projects/${id}/jobs/${jobId}/load`, json({ state })),
   previewInPluginWindow: (id: string, jobId: string, play: boolean) =>
     request<Job>(`/projects/${id}/jobs/${jobId}/preview`, json({ play })),
   closePluginWindow: (id: string, jobId: string) =>

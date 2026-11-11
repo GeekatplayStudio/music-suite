@@ -11,6 +11,7 @@ import io
 import itertools
 import json
 import stat
+import struct
 import tarfile
 import threading
 import time
@@ -27,7 +28,7 @@ from fastapi.testclient import TestClient
 
 import apps.api.editor as editor_api
 import apps.api.main as api_main
-from audioqi.editor import engines, instruments, plugin_worker, plugins, projects
+from audioqi.editor import engines, instruments, plugin_worker, plugins, projects, sounds
 
 SR = 48_000
 PLUGIN_ID = "b" * 20
@@ -278,7 +279,7 @@ def test_preview_commands_reach_only_an_open_window(client: TestClient, monkeypa
     monkeypatch.setattr(plugins, "window_command", lambda key, cmd: sent.append((key, cmd)) or True)
     seen: dict[str, Any] = {}
 
-    def fake_window(plugin_id, state, key, notes, seconds):
+    def fake_window(plugin_id, state, key, notes, seconds, **options):
         seen.update(notes=notes, seconds=seconds)
         # While the window is "open", the job is running: send commands then.
         pid_ = seen["pid"]
@@ -324,7 +325,7 @@ def test_close_window_is_only_for_plugin_window_jobs(client: TestClient, monkeyp
     assert response.status_code == 422
     saved = base64.b64encode(b"s").decode()
     monkeypatch.setattr(
-        plugins, "open_plugin_window", lambda *a: {"plugin": "Surge XT", "state": saved}
+        plugins, "open_plugin_window", lambda *a, **k: {"plugin": "Surge XT", "state": saved}
     )
     window = _job(client, pid, "plugin_window", {"plugin_id": PLUGIN_ID})
     response = client.post(f"/editor/projects/{pid}/jobs/{window['id']}/close-window")
@@ -403,7 +404,7 @@ def test_plugin_window_job_returns_the_saved_sound(client: TestClient, monkeypat
     monkeypatch.setattr(
         plugins,
         "open_plugin_window",
-        lambda *_args: {"plugin": "Surge XT", "state": saved, "is_instrument": True},
+        lambda *_args, **_kw: {"plugin": "Surge XT", "state": saved, "is_instrument": True},
     )
     job = _job(client, _project(client), "plugin_window", {"plugin_id": PLUGIN_ID})
     assert job["status"] == "completed" and job["result_assets"] == []
@@ -575,3 +576,138 @@ def test_pinned_downloads_are_complete() -> None:
         for spec in specs:
             assert spec.url.startswith("https://github.com/surge-synthesizer/releases-xt/")
             assert spec.size > 1_000_000 and len(spec.sha256) == 64
+
+
+# --------------------------------------------------------------------------- sound library
+
+
+def _fxp(name: str, body: bytes = b"<patch/>") -> bytes:
+    """A minimal Surge XT patch file: 60-byte header, then the sub3 chunk."""
+    chunk = b"sub3" + struct.pack("<I", len(body)) + bytes(8) + body
+    header = b"CcnK" + bytes(4) + b"FPCh" + bytes(8) + name.encode()[:28].ljust(36, b"\x00")
+    header = header.ljust(56, b"\x00")
+    return header + struct.pack(">I", len(chunk)) + chunk
+
+
+def test_juce_text_encoding_round_trips() -> None:
+    for data in (b"", b"a", b"ab", b"abc", bytes(range(256)) * 3):
+        text = sounds.juce_encode(data)
+        assert text.startswith(f"{len(data)}.") and sounds.juce_decode(text) == data
+    # JUCE packs bits least significant first: 0x41 is 01|000001, so "A" (1) then "A" (1).
+    assert sounds.juce_encode(b"\x41") == "1.AA"
+    assert sounds.juce_encode(b"\xff") == "1.+C"  # 111111 (63) then 11 (3).
+
+
+def test_a_patch_file_becomes_a_saved_sound() -> None:
+    patch = _fxp("Bass")
+    raw = base64.b64decode(sounds.surge_state(patch))
+    assert raw[:4] == b"VC2!" and raw.endswith(b"\x00")
+    (length,) = struct.unpack("<I", raw[4:8])
+    xml = raw[8 : 8 + length]
+    inner = xml.split(b"<IComponent>")[1].split(b"</IComponent>")[0].decode()
+    component = sounds.juce_decode(inner)
+    assert component == patch[60:] + b"\x00" * 8 + b"JUCEPrivateData"
+    with pytest.raises(projects.EditorError):
+        sounds.surge_state(b"not a patch" * 10)
+    with pytest.raises(projects.EditorError, match="damaged"):
+        sounds.surge_state(patch[:-3])
+
+
+def test_the_sound_list_hides_paths(tmp_path: Path, monkeypatch) -> None:
+    factory = tmp_path / "factory"
+    (factory / "Basses").mkdir(parents=True)
+    (factory / "Basses" / "Deep.fxp").write_bytes(_fxp("Deep"))
+    (factory / "Pads").mkdir()
+    (factory / "Pads" / "Warm.fxp").write_bytes(_fxp("Warm"))
+    (factory / "Pads" / "notes.txt").write_text("not a patch")
+    monkeypatch.setattr(sounds, "_surge_libraries", lambda: [("Factory", factory)])
+    sounds.reset_cache()
+    try:
+        listed = sounds.list_sounds("Surge XT")
+        assert sorted((s["category"], s["name"]) for s in listed) == [
+            ("Basses", "Deep"),
+            ("Pads", "Warm"),
+        ]
+        assert all(set(s) == {"id", "name", "category", "library"} for s in listed)
+        assert str(tmp_path) not in json.dumps(listed)
+        deep = next(s for s in listed if s["name"] == "Deep")
+        built = sounds.sound_state("Surge XT", deep["id"])
+        assert built["name"] == "Deep" and built["state"] == sounds.surge_state(_fxp("Deep"))
+        assert sounds.list_sounds("Some Other Synth") == []
+        with pytest.raises(projects.NotFoundError):
+            sounds.sound_state("Surge XT", "0" * 16)
+    finally:
+        sounds.reset_cache()
+
+
+def test_sound_routes(client: TestClient, monkeypatch, tmp_path: Path) -> None:
+    (tmp_path / "Keys").mkdir()
+    (tmp_path / "Keys" / "Piano.fxp").write_bytes(_fxp("Piano"))
+    monkeypatch.setattr(sounds, "_surge_libraries", lambda: [("Factory", tmp_path)])
+    monkeypatch.setattr(
+        plugins, "plugin_name", lambda pid: "Surge XT" if pid == PLUGIN_ID else None
+    )
+    sounds.reset_cache()
+    try:
+        listed = client.get(f"/editor/plugins/{PLUGIN_ID}/sounds").json()["sounds"]
+        assert [s["name"] for s in listed] == ["Piano"]
+        built = client.post(f"/editor/plugins/{PLUGIN_ID}/sounds/{listed[0]['id']}").json()
+        assert built["name"] == "Piano" and base64.b64decode(built["state"])[:4] == b"VC2!"
+        assert client.post(f"/editor/plugins/{PLUGIN_ID}/sounds/{'1' * 16}").status_code == 404
+        assert client.get(f"/editor/plugins/{'c' * 20}/sounds").status_code == 404
+    finally:
+        sounds.reset_cache()
+
+
+def test_listening_without_a_window_and_switching_sounds(tmp_path: Path, monkeypatch) -> None:
+    fake = FakeInstrument()
+    monkeypatch.setattr(plugin_worker, "_load", lambda _path: fake)
+    shown: list[bool] = []
+    monkeypatch.setattr(fake, "show_editor", lambda *_a: shown.append(True))
+
+    def drive() -> None:
+        time.sleep(0.3)
+        (tmp_path / "load").write_text(base64.b64encode(b"loud").decode())
+        time.sleep(0.5)
+        (tmp_path / "close").touch()
+
+    threading.Thread(target=drive).start()
+    outcome = plugin_worker.open_editor(
+        {"plugin": "x", "control_dir": str(tmp_path), "window": False, "play": True}
+    )
+    assert outcome["ok"] and not shown  # No window was opened.
+    assert base64.b64decode(outcome["state"]) == b"loud"  # The sound switched mid-session.
+    assert not (tmp_path / "load").exists()
+
+
+def test_loading_a_sound_into_a_running_session(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr(engines, "plugin_hosting_available", lambda: True)
+    loaded: list[str] = []
+    monkeypatch.setattr(plugins, "load_sound_in_window", lambda key, st: loaded.append(st) or True)
+    sound = base64.b64encode(b"bass").decode()
+
+    def fake_window(plugin_id, state, key, notes, seconds, **options):
+        assert options == {"window": False, "play": True}
+        url = f"/editor/projects/{seen['pid']}/jobs/{key}/load"
+        assert client.post(url, json={"state": sound}).status_code == 200
+        assert client.post(url, json={"state": "no!"}).status_code == 422
+        assert client.post(url, json={}).status_code == 422
+        return {"plugin": "Surge XT", "state": sound}
+
+    seen: dict[str, str] = {}
+    monkeypatch.setattr(plugins, "open_plugin_window", fake_window)
+    pid = seen["pid"] = _project(client)
+    params = {"plugin_id": PLUGIN_ID, "notes": NOTES, "window": False, "play": True}
+    job = _job(client, pid, "plugin_window", params)
+    assert job["status"] == "completed", job["error"]
+    assert job["stage"] == "done" and loaded == [sound]
+
+
+def test_load_sound_in_window_writes_the_whole_file_at_once(tmp_path: Path) -> None:
+    assert plugins.load_sound_in_window("missing", "AAAA") is False
+    plugins._windows["job-2"] = tmp_path
+    try:
+        assert plugins.load_sound_in_window("job-2", "QUJD") is True
+        assert (tmp_path / "load").read_text() == "QUJD" and not (tmp_path / "load.part").exists()
+    finally:
+        plugins._windows.pop("job-2", None)

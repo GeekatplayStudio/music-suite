@@ -4,7 +4,7 @@ import { Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { ActionButton, PanelSection, Slider, fieldClass, formatDb } from "@/components/editor/controls";
-import { PluginInstrumentSection } from "@/components/editor/plugin-instrument";
+import { type PluginSession, PluginInstrumentSection } from "@/components/editor/plugin-instrument";
 import { SynthEditor } from "@/components/editor/synth-editor";
 import { AiEditSection } from "@/components/generation/ai-edit-section";
 import { FACTORY_PRESETS, loadUserPresets, normalizePatch, type Patch } from "@/lib/editor/synth";
@@ -23,6 +23,7 @@ import {
   type Job,
   type JobOp,
   type PluginInfo,
+  type PluginSound,
   type ProjectState,
   type TimeRange,
   type Track,
@@ -64,8 +65,10 @@ interface InspectorProps {
   /** Open the track's plugin instrument window for a MIDI clip. */
   onOpenPluginWindow: (clipId: string) => void;
   onClosePluginWindow: (jobId: string) => void;
-  /** Start or stop the clip playing through the plugin while its window is open. */
-  onPreviewInPluginWindow: (jobId: string, play: boolean) => void;
+  /** Hear a MIDI clip through its track's plugin instrument (starts a session if needed). */
+  onPlayPlugin: (clipId: string) => void;
+  onStopPlugin: (clipId: string) => void;
+  onPickPluginSound: (clipId: string, sound: PluginSound) => void;
   onRefreshPlugins: () => void;
   generation: GenerationStatus | null;
   /** Generators that can edit the selected clip (local engine first). */
@@ -272,6 +275,13 @@ export function Inspector(props: InspectorProps) {
   const windowJob = clip
     ? props.jobs.find((j) => j.clipId === clip.id && j.job.op === "plugin_window" && (j.job.status === "queued" || j.job.status === "running"))
     : undefined;
+  const session: PluginSession = !windowJob
+    ? "none"
+    : windowJob.job.stage === "window"
+      ? "window"
+      : windowJob.job.stage === "listening"
+        ? "listening"
+        : "starting";
   const stemOptions = capabilities?.separation.stem_options ?? [2, 4];
   const stemChoice = stemOptions.includes(stems) ? stems : (stemOptions[stemOptions.length - 1] ?? 4);
   // Kit pieces and lead/backing vocals need the AI stem separation pack.
@@ -474,12 +484,14 @@ export function Inspector(props: InspectorProps) {
                   available={Boolean(capabilities?.plugins.available)}
                   plugins={props.plugins}
                   busy={busy}
-                  windowOpen={Boolean(windowJob)}
+                  session={session}
+                  hasNotes={Boolean(clip.notes?.length)}
                   onSet={(pluginInstrument) => props.onPatchTrack({ pluginInstrument }, "")}
+                  onPickSound={(sound) => props.onPickPluginSound(clip.id, sound)}
+                  onPlay={() => props.onPlayPlugin(clip.id)}
+                  onStop={() => props.onStopPlugin(clip.id)}
                   onOpenWindow={() => props.onOpenPluginWindow(clip.id)}
                   onCloseWindow={() => windowJob && props.onClosePluginWindow(windowJob.job.id)}
-                  onPreview={(play) => windowJob && props.onPreviewInPluginWindow(windowJob.job.id, play)}
-                  hasNotes={Boolean(clip.notes?.length)}
                   onRender={() => props.onRenderWithPlugin(clip.id)}
                   onRefreshPlugins={props.onRefreshPlugins}
                 />

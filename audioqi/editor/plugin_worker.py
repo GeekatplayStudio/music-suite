@@ -156,6 +156,8 @@ class LivePreview:
         self.playing = False
         self.position = 0.0
         self._stop_pending = False
+        #: A sound the app asked for, applied by the audio thread before its next block.
+        self.pending_state: bytes | None = None
 
     def play(self) -> None:
         self.playing, self.position = True, 0.0
@@ -223,6 +225,10 @@ def _pump(
         if stream is not None:
             stream.__enter__()
         while not close.is_set():
+            if preview.pending_state is not None:
+                state, preview.pending_state = preview.pending_state, None
+                with contextlib.suppress(Exception):
+                    plugin.raw_state = state
             ahead = sent - (time.monotonic() - started) * rate
             if ahead > frames:
                 time.sleep((ahead - frames) / rate)
@@ -253,8 +259,17 @@ def _pump(
 
 
 def _watch(control: Path, close: threading.Event, preview: LivePreview) -> None:
-    """Follow the app's commands: files named close, play or stop appear in ``control``."""
+    """Follow the app's commands: files named close, play, stop or load appear in ``control``.
+
+    ``load`` holds a saved sound (base64) to switch to.
+    """
     while not close.is_set():
+        load = control / "load"
+        if load.exists():
+            with contextlib.suppress(OSError, ValueError, binascii.Error):
+                preview.pending_state = base64.b64decode(load.read_text("ascii"), validate=True)
+            with contextlib.suppress(OSError):
+                load.unlink()
         for command in ("play", "stop"):
             flag = control / command
             if flag.exists():
@@ -278,6 +293,8 @@ def open_editor(request: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": "the saved sound could not be loaded into the plugin"}
     close = threading.Event()
     preview = LivePreview(list(request.get("notes") or []), float(request.get("seconds") or 4.0))
+    if request.get("play"):
+        preview.play()
     control = request.get("control_dir")
     if control:
         threading.Thread(
@@ -291,8 +308,13 @@ def open_editor(request: dict[str, Any]) -> dict[str, Any]:
         )
         pump_thread.start()
     try:
-        # Blocks until the window is closed, by the user or through ``close``.
-        plugin.show_editor(close)
+        if request.get("window", True):
+            # Blocks until the window is closed, by the user or through ``close``.
+            plugin.show_editor(close)
+        else:
+            # Listening only: no window, runs until the app sends close.
+            while not close.wait(0.5):
+                pass
     except KeyboardInterrupt:
         pass  # Interrupted: keep whatever sound the window holds.
     except Exception:

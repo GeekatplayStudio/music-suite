@@ -21,7 +21,15 @@ from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
 from audioqi.db import SessionLocal
-from audioqi.editor import assets, engines, generation, instruments, plugins, projects
+from audioqi.editor import (
+    assets,
+    engines,
+    generation,
+    instruments,
+    plugins,
+    projects,
+    sounds,
+)
 from audioqi.editor import jobs as editor_jobs
 from audioqi.editor.projects import EditorError
 from audioqi.io.decode import ffmpeg_available
@@ -78,6 +86,22 @@ def list_plugins() -> dict[str, Any]:
 @router.get("/plugins/{plugin_id}")
 def describe_plugin(plugin_id: str, instrument: bool = False) -> dict[str, Any]:
     return _guard(lambda: plugins.describe_plugin(plugin_id, instrument=instrument))
+
+
+@router.get("/plugins/{plugin_id}/sounds")
+def list_plugin_sounds(plugin_id: str) -> dict[str, Any]:
+    name = plugins.plugin_name(plugin_id) if plugins.PLUGIN_ID_RE.match(plugin_id) else None
+    if name is None:
+        raise HTTPException(status_code=404, detail="Plugin not found.")
+    return {"sounds": sounds.list_sounds(name)}
+
+
+@router.post("/plugins/{plugin_id}/sounds/{sound_id}")
+def plugin_sound_state(plugin_id: str, sound_id: str) -> dict[str, Any]:
+    name = plugins.plugin_name(plugin_id) if plugins.PLUGIN_ID_RE.match(plugin_id) else None
+    if name is None:
+        raise HTTPException(status_code=404, detail="Plugin not found.")
+    return _guard(lambda: sounds.sound_state(name, sound_id))
 
 
 @router.get("/instruments")
@@ -297,6 +321,13 @@ def get_job(project_id: str, job_id: str) -> dict[str, Any]:
 @router.post("/projects/{project_id}/jobs/{job_id}/close-window")
 def close_plugin_window(project_id: str, job_id: str) -> dict[str, Any]:
     return _guard(lambda: editor_jobs.close_window(project_id, job_id))
+
+
+@router.post("/projects/{project_id}/jobs/{job_id}/load")
+def load_in_plugin_window(
+    project_id: str, job_id: str, payload: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
+    return _guard(lambda: editor_jobs.load_in_window(project_id, job_id, payload.get("state")))
 
 
 @router.post("/projects/{project_id}/jobs/{job_id}/preview")

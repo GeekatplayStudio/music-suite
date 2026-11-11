@@ -99,6 +99,14 @@ export interface PluginInfo {
   is_instrument?: boolean | null;
 }
 
+/** One sound from a plugin instrument's own library (Surge XT's patches). */
+export interface PluginSound {
+  id: string;
+  name: string;
+  category: string;
+  library: string;
+}
+
 /** A free instrument plugin the editor can download and install in one click. */
 export interface InstrumentOffer {
   id: string;
@@ -221,7 +229,7 @@ export interface Track {
   /** An in-browser plugin (Web Audio Module) inserted after the track's own effects. */
   wam?: { url: string; name: string; state?: unknown };
   /** An installed VST3 / AU instrument that renders this track's MIDI clips to audio. */
-  pluginInstrument?: { id: string; name: string; state?: string };
+  pluginInstrument?: { id: string; name: string; state?: string; soundName?: string };
   fx: TrackFx;
 }
 

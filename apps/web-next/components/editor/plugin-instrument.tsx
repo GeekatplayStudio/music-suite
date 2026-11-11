@@ -5,7 +5,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { ActionButton, PanelSection, fieldClass } from "@/components/editor/controls";
 import { editorApi } from "@/lib/editor/api";
-import type { InstrumentOffer, PluginInfo, Track } from "@/lib/editor/types";
+import type { InstrumentOffer, PluginInfo, PluginSound, Track } from "@/lib/editor/types";
 
 type Check = { status: "idle" } | { status: "checking" } | { status: "error"; message: string };
 
@@ -13,22 +13,27 @@ function megabytes(bytes: number): string {
   return `${Math.round(bytes / 1024 ** 2)} MB`;
 }
 
+/** What is running for this clip's plugin instrument right now. */
+export type PluginSession = "none" | "starting" | "listening" | "window";
+
 /**
  * Plays a MIDI clip's notes through an installed VST3 / Audio Unit instrument
  * (Surge XT and the like). The plugin runs in an isolated process on this computer;
- * the result lands on a new audio track.
+ * a render lands on a new audio track.
  */
 export function PluginInstrumentSection({
   track,
   available,
   plugins,
   busy,
-  windowOpen,
+  session,
+  hasNotes,
   onSet,
+  onPickSound,
+  onPlay,
+  onStop,
   onOpenWindow,
   onCloseWindow,
-  onPreview,
-  hasNotes,
   onRender,
   onRefreshPlugins
 }: {
@@ -36,29 +41,31 @@ export function PluginInstrumentSection({
   available: boolean;
   plugins: PluginInfo[];
   busy: boolean;
-  /** The plugin's window is open on this computer. */
-  windowOpen: boolean;
+  session: PluginSession;
+  hasNotes: boolean;
   onSet: (instrument: Track["pluginInstrument"]) => void;
+  onPickSound: (sound: PluginSound) => void;
+  /** Start hearing the clip through the plugin (a session starts if none is running). */
+  onPlay: () => void;
+  onStop: () => void;
   onOpenWindow: () => void;
   onCloseWindow: () => void;
-  /** Play (true) or stop (false) the clip through the plugin while its window is open. */
-  onPreview: (play: boolean) => void;
-  hasNotes: boolean;
   onRender: () => void;
   onRefreshPlugins: () => void;
 }) {
   const [check, setCheck] = useState<Check>({ status: "idle" });
-  const [previewing, setPreviewing] = useState(false);
+  const [windowPlaying, setWindowPlaying] = useState(false);
   // A new window starts silent.
-  const [seenWindow, setSeenWindow] = useState(windowOpen);
-  if (seenWindow !== windowOpen) {
-    setSeenWindow(windowOpen);
-    setPreviewing(false);
+  const [seenSession, setSeenSession] = useState(session);
+  if (seenSession !== session) {
+    setSeenSession(session);
+    setWindowPlaying(false);
   }
   const request = useRef(0);
   const current = track.pluginInstrument;
   // Plugins already known to be effects are left out; unknown ones are checked when chosen.
   const candidates = plugins.filter((plugin) => plugin.is_instrument !== false);
+  const playing = session === "listening" || session === "starting" || (session === "window" && windowPlaying);
 
   const choose = (id: string) => {
     const ticket = ++request.current;
@@ -102,7 +109,7 @@ export function PluginInstrumentSection({
         className={fieldClass}
         aria-label="Plugin instrument"
         value={current?.id ?? ""}
-        disabled={check.status === "checking"}
+        disabled={check.status === "checking" || session !== "none"}
         onChange={(event) => choose(event.target.value)}
       >
         <option value="">{candidates.length ? "None: the built-in synth plays" : "No plugins found"}</option>
@@ -125,55 +132,56 @@ export function PluginInstrumentSection({
       ) : null}
       {current ? (
         <>
-          {windowOpen ? (
+          <SoundBrowser key={current.id} pluginId={current.id} current={current.soundName} onPick={onPickSound} />
+          <div className="grid grid-cols-2 gap-2">
+            <ActionButton
+              disabled={!hasNotes || playing}
+              title={hasNotes ? "Loops this clip through the plugin on this computer's speakers" : "Add notes to the clip first"}
+              onClick={() => {
+                if (session === "window") setWindowPlaying(true);
+                onPlay();
+              }}
+            >
+              <Play className="h-3.5 w-3.5" aria-hidden /> Play
+            </ActionButton>
+            <ActionButton
+              disabled={!playing}
+              title="Stops playing"
+              onClick={() => {
+                setWindowPlaying(false);
+                onStop();
+              }}
+            >
+              <Square className="h-3.5 w-3.5" aria-hidden /> Stop
+            </ActionButton>
+          </div>
+          <p className="text-[11px] leading-snug text-slate-400" role="status">
+            {!hasNotes
+              ? "Add notes to this clip to hear it through the plugin."
+              : session === "starting"
+                ? `Starting ${current.name}…`
+                : playing
+                  ? "Playing this clip in a loop through your speakers. Pick sounds to hear each one."
+                  : "Play loops this clip through the plugin, so each sound you pick is heard straight away."}
+          </p>
+          {session === "window" ? (
             <>
               <p className="rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-2 py-1.5 text-[11px] leading-snug text-cyan-100" role="status">
-                {current.name}&apos;s window is open on this computer (it may be behind this one). Pick or shape a sound there, then
-                keep it here or close the window.
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                <ActionButton
-                  disabled={!hasNotes || previewing}
-                  title={hasNotes ? "Loops this clip through the plugin on this computer's speakers" : "Add notes to the clip first"}
-                  onClick={() => {
-                    onPreview(true);
-                    setPreviewing(true);
-                  }}
-                >
-                  <Play className="h-3.5 w-3.5" aria-hidden /> Play
-                </ActionButton>
-                <ActionButton
-                  disabled={!previewing}
-                  title="Stops the preview"
-                  onClick={() => {
-                    onPreview(false);
-                    setPreviewing(false);
-                  }}
-                >
-                  <Square className="h-3.5 w-3.5" aria-hidden /> Stop
-                </ActionButton>
-              </div>
-              <p className="text-[11px] leading-snug text-slate-400" role="status">
-                {!hasNotes
-                  ? "Add notes to this clip to hear sounds while you choose."
-                  : previewing
-                    ? "Playing this clip in a loop through your speakers. Pick sounds in the plugin's window to hear each one."
-                    : "Play loops this clip through the plugin, so each sound you pick is heard straight away."}
+                {current.name}&apos;s window is open on this computer (it may be behind this one). Changes made there are kept.
               </p>
               <ActionButton variant="primary" className="w-full" onClick={onCloseWindow}>
                 Keep this sound and close the window
               </ActionButton>
             </>
           ) : (
-            <>
-              <ActionButton className="w-full" disabled={busy} onClick={onOpenWindow}>
-                Open {current.name}&apos;s window
-              </ActionButton>
-              <p className="text-[11px] leading-snug text-slate-400">
-                Pick or shape a sound in the plugin&apos;s own window; it is kept with this track when the window closes.
-                {current.state ? " A sound is saved." : " Until then the plugin's default sound plays."}
-              </p>
-            </>
+            <ActionButton
+              className="w-full"
+              disabled={busy || session !== "none"}
+              title={session !== "none" ? "Press Stop first" : "Shape the sound in the plugin's own controls"}
+              onClick={onOpenWindow}
+            >
+              Edit in {current.name}&apos;s window
+            </ActionButton>
           )}
           <ActionButton variant="primary" className="w-full" disabled={busy} onClick={onRender}>
             Render this clip with {current.name}
@@ -182,6 +190,79 @@ export function PluginInstrumentSection({
       ) : null}
       <InstrumentInstaller onInstalled={onRefreshPlugins} />
     </PanelSection>
+  );
+}
+
+/** Searchable list of the plugin's own sounds (Surge XT's patch library). */
+function SoundBrowser({ pluginId, current, onPick }: { pluginId: string; current?: string; onPick: (sound: PluginSound) => void }) {
+  const [sounds, setSounds] = useState<PluginSound[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    editorApi
+      .pluginSounds(pluginId)
+      .then((list) => !cancelled && setSounds(list.sounds))
+      .catch(() => !cancelled && setSounds([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [pluginId]);
+
+  if (!sounds?.length) return null;
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = sounds.filter((sound) => {
+    const text = `${sound.name} ${sound.category} ${sound.library}`.toLowerCase();
+    return words.every((word) => text.includes(word));
+  });
+  const groups = new Map<string, PluginSound[]>();
+  for (const sound of shown.slice(0, 600)) {
+    const key = sound.library === "Factory" ? sound.category : `${sound.library}: ${sound.category}`;
+    groups.set(key, [...(groups.get(key) ?? []), sound]);
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between text-[11px] text-slate-400">
+        <span>Sound</span>
+        <span className="truncate pl-2 text-slate-200" title={current}>
+          {current ?? "Plugin default"}
+        </span>
+      </div>
+      <input
+        type="search"
+        className={fieldClass}
+        placeholder={`Search ${sounds.length} sounds: bass, pad, keys…`}
+        aria-label="Search sounds"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      <select
+        className={`${fieldClass} h-36`}
+        size={8}
+        aria-label="Sounds"
+        value={picked}
+        onChange={(event) => {
+          const sound = sounds.find((item) => item.id === event.target.value);
+          setPicked(event.target.value);
+          if (sound) onPick(sound);
+        }}
+      >
+        {[...groups.entries()].map(([group, items]) => (
+          <optgroup key={group} label={group}>
+            {items.map((sound) => (
+              <option key={sound.id} value={sound.id}>
+                {sound.name}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+      <p className="text-[11px] text-slate-500">
+        {shown.length > 600 ? `Showing 600 of ${shown.length}: search to narrow down.` : `${shown.length} sounds.`} Use the arrow keys to step
+        through them while playing.
+      </p>
+    </div>
   );
 }
 

@@ -91,6 +91,7 @@ import {
   type JobOp,
   type Note,
   type PluginInfo,
+  type PluginSound,
   type ProjectState,
   type TimeRange,
   type Tool,
@@ -297,8 +298,9 @@ function pluginNotes(clip: Clip): Note[] {
 function applyJob(state: ProjectState, job: Job, clipId: string): ProjectState {
   const source = state.clips.find((c) => c.id === clipId);
   if (job.op === "plugin_window" && source) {
-    // The sound shaped in the plugin's own window is kept with the track.
-    const sound = typeof job.result.state === "string" ? job.result.state : undefined;
+    // The sound shaped in the plugin's own window is kept with the track. A session without a
+    // window cannot change the sound, and the track already holds the last one picked.
+    const sound = typeof job.result.state === "string" && job.result.window !== false ? job.result.state : undefined;
     return {
       ...state,
       tracks: state.tracks.map((t) =>
@@ -479,6 +481,11 @@ export function EditorApp({
   const [, setTransportTick] = useState(0);
   const [mediaVersion, setMediaVersion] = useState(0);
   const [jobs, setJobs] = useState<JobEntry[]>([]);
+  // Event handlers read the latest jobs without being re-created for each update.
+  const jobsRef = useRef(jobs);
+  useEffect(() => {
+    jobsRef.current = jobs;
+  }, [jobs]);
   const [notice, setNotice] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [showHelp, setShowHelp] = useState(false);
@@ -1023,6 +1030,60 @@ export function EditorApp({
     // The clip's notes come along so they can be played live while the window is open.
     const params = { plugin_id: instrument.id, state: instrument.state ?? null, notes: pluginNotes(clip), seconds: clamp(clip.duration, 0.25, 600) };
     void runJob("plugin_window", params, `${instrument.name} window open: close it to keep the sound`, [clip.id]);
+  };
+
+  /** The running plugin session (window or listening) for a clip, if any. */
+  const pluginSession = (clipId: string) =>
+    jobsRef.current.find((j) => j.clipId === clipId && j.job.op === "plugin_window" && (j.job.status === "queued" || j.job.status === "running"));
+
+  /** Play the clip through its plugin instrument: in the open window, or in a new listening session. */
+  const playPlugin = (clipId: string) => {
+    const running = pluginSession(clipId);
+    if (running) {
+      void editorApi.previewInPluginWindow(projectId, running.job.id, true).catch((err: unknown) => setNotice(errorMessage(err, "Playing could not start.")));
+      return;
+    }
+    const clip = stateRef.current.clips.find((c) => c.id === clipId);
+    const instrument = clip ? stateRef.current.tracks.find((t) => t.id === clip.trackId)?.pluginInstrument : undefined;
+    if (!clip || !instrument) return;
+    const params = {
+      plugin_id: instrument.id,
+      state: instrument.state ?? null,
+      notes: pluginNotes(clip),
+      seconds: clamp(clip.duration, 0.25, 600),
+      window: false,
+      play: true
+    };
+    void runJob("plugin_window", params, `Playing ${clip.name} through ${instrument.name}`, [clip.id]);
+  };
+
+  /** Stop playing: a listening session ends; an open window stays open, silent. */
+  const stopPlugin = (clipId: string) => {
+    const running = pluginSession(clipId);
+    if (!running) return;
+    const call =
+      running.job.stage === "window"
+        ? editorApi.previewInPluginWindow(projectId, running.job.id, false)
+        : editorApi.closePluginWindow(projectId, running.job.id);
+    void call.catch((err: unknown) => setNotice(errorMessage(err, "Playing could not be stopped.")));
+  };
+
+  /** Switch the track to a sound from the plugin's library, live if a session is running. */
+  const pickPluginSound = async (clipId: string, sound: PluginSound) => {
+    const clip = stateRef.current.clips.find((c) => c.id === clipId);
+    const track = clip ? stateRef.current.tracks.find((t) => t.id === clip.trackId) : undefined;
+    const instrument = track?.pluginInstrument;
+    if (!track || !instrument) return;
+    try {
+      const built = await editorApi.pluginSoundState(instrument.id, sound.id);
+      const latest = stateRef.current.tracks.find((t) => t.id === track.id)?.pluginInstrument;
+      if (latest?.id !== instrument.id) return; // The instrument changed meanwhile.
+      commit(updateTrack(stateRef.current, track.id, { pluginInstrument: { ...latest, state: built.state, soundName: built.name } }));
+      const running = pluginSession(clipId);
+      if (running) await editorApi.loadInPluginWindow(projectId, running.job.id, built.state);
+    } catch (err) {
+      setNotice(errorMessage(err, "That sound could not be loaded."));
+    }
   };
 
   const refreshPlugins = () => {
@@ -1977,9 +2038,9 @@ export function EditorApp({
           onOpenWam={(trackId) => setWamWindow(trackId)}
           onRenderWithPlugin={renderWithPlugin}
           onOpenPluginWindow={openPluginWindow}
-          onPreviewInPluginWindow={(jobId, play) =>
-            void editorApi.previewInPluginWindow(projectId, jobId, play).catch((err: unknown) => setNotice(errorMessage(err, "The preview could not start.")))
-          }
+          onPlayPlugin={playPlugin}
+          onStopPlugin={stopPlugin}
+          onPickPluginSound={(clipId, sound) => void pickPluginSound(clipId, sound)}
           onClosePluginWindow={(jobId) =>
             void editorApi.closePluginWindow(projectId, jobId).catch((err: unknown) => setNotice(errorMessage(err, "The window could not be closed.")))
           }
