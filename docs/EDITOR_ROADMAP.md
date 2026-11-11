@@ -540,3 +540,11 @@ Tested on 2026-11-09.
 - **Not verified:** lead/backing quality on a song with prominent vocals (the test excerpt is mostly instrumental), the install on macOS or Linux, a GPU without CUDA 13 support (the `cu126` path), and the BS-Roformer-SW 6-stem model (not wired in; its output names are unchecked).
 - **Not done:** the better MIDI transcriber (basic-pitch) could not be offered because it tries to build an old numpy from source in this environment.
 
+### Surge XT's full interface, skin and window (2026-11-11, Windows 11)
+
+- **Loading fix:** the plugin host could not scan Surge XT 1.3.4's bundle folder on Windows ("unsupported plugin format or scan failure"); the worker now falls back to the plugin file inside the bundle. Before this every Surge XT feature failed on this machine.
+- **Full interface:** Synth Studio's auditions take `window: true`, showing Surge's own window while the piano and MIDI keyboard play it; the sound left in the window becomes the current sound when it closes. Verified by opening it through that path and capturing the window, and by the state (92 KB) coming back.
+- **Skin:** `audioqi/editor/surge_skin.py` recolours Surge's factory dark skin (greys to slate, blues to cyan, orange kept) into a user skin and sets it, plus Surge's on-screen keyboard, as defaults the user has not set. Surge only honours `defaultSkin` with a trailing path separator; found by testing, confirmed by screenshots. No Surge artwork (GPL-3) is stored in the repository.
+- **Window:** it opened with its title bar above the screen (could not be dragged) and behind the browser. It is now centred on the work area, brought to the front and titled "Surge XT — Music Suite". Resizing is through Surge's Zoom (confirmed: 75% gave a 694 x 503 window on a 4K screen).
+- **Not verified by hand:** clicking Surge's on-screen piano and its Zoom menu; the skin and window placement on macOS. `test_install_checks_every_download_and_places_the_files` fails on Windows with a path bug in the test itself, before and after these changes.
+

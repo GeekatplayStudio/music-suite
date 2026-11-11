@@ -19,6 +19,8 @@ export interface Audition {
   id: string;
   running: boolean;
   error: string | null;
+  /** The sound left in the plugin's own window, once that window has closed. */
+  state?: string;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -55,7 +57,7 @@ export const editorApi = {
     request<PluginInfo>(`/plugins/${pluginId}${instrument ? "?instrument=true" : ""}`),
   instruments: () => request<InstrumentOffer[]>("/instruments"),
   /** Hear an instrument outside any project (Synth Studio). */
-  startAudition: (body: { plugin_id: string; state: string | null; notes: Note[]; seconds: number; play: boolean; live: boolean }) =>
+  startAudition: (body: { plugin_id: string; state: string | null; notes: Note[]; seconds: number; play: boolean; live: boolean; window?: boolean }) =>
     request<Audition>("/audition", json(body)),
   /** Start or stop the looping phrase of a running audition. */
   previewAudition: (key: string, play: boolean) => request<Audition>(`/audition/${key}/preview`, json({ play })),

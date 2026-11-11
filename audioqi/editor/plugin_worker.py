@@ -42,7 +42,29 @@ LIVE_BUFFER_FRAMES = 512
 LIVE_TOKEN_BYTES = 16
 
 
+def _inner_binaries(path: str) -> list[str]:
+    """The plugin files inside a VST3 bundle folder (``Contents/<arch>/<name>.vst3``)."""
+    bundle = Path(path)
+    if not bundle.is_dir() or bundle.suffix.lower() != ".vst3":
+        return []
+    return [str(item) for item in sorted(bundle.glob("Contents/*/*.vst3")) if item.is_file()]
+
+
 def _load(path: str) -> Any:
+    try:
+        return _load_one(path)
+    except ImportError:
+        # Some hosts cannot scan a bundle folder on Windows (seen with Surge XT 1.3.4:
+        # "unsupported plugin format or scan failure"); the file inside it loads fine.
+        for inner in _inner_binaries(path):
+            try:
+                return _load_one(inner)
+            except Exception:
+                continue
+        raise
+
+
+def _load_one(path: str) -> Any:
     import pedalboard
 
     try:
@@ -344,6 +366,57 @@ def _watch(control: Path, close: threading.Event, preview: LivePreview) -> None:
         time.sleep(0.1)
 
 
+def _place_window(close: threading.Event, title: str) -> None:
+    """Put the plugin's window fully on screen, in front, with its own name (Windows).
+
+    The host opens the window with its client area at the screen's corner, which leaves
+    the title bar above the top edge: it could not be dragged, and sat behind the browser.
+    """
+    if sys.platform != "win32":
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    own = ctypes.windll.kernel32.GetCurrentProcessId()
+    found: list[int] = []
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+    def visit(handle: int, _lparam: int) -> bool:
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(handle, ctypes.byref(owner))
+        if owner.value == own and user32.IsWindowVisible(handle):
+            rect = wintypes.RECT()
+            user32.GetWindowRect(handle, ctypes.byref(rect))
+            if rect.right - rect.left > 200 and rect.bottom - rect.top > 150:
+                found.append(handle)
+        return True
+
+    for _ in range(100):  # Up to 20 s for the plugin to draw its window.
+        if close.wait(0.2):
+            return
+        found.clear()
+        user32.EnumWindows(visit, 0)
+        if found:
+            break
+    if not found:
+        return
+    handle = found[0]
+    time.sleep(0.4)  # Let the plugin settle on its size (zoom, on-screen keyboard).
+    rect, work = wintypes.RECT(), wintypes.RECT()
+    user32.GetWindowRect(handle, ctypes.byref(rect))
+    user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work), 0)  # SPI_GETWORKAREA
+    width, height = rect.right - rect.left, rect.bottom - rect.top
+    left = work.left + max(0, (work.right - work.left - width) // 2)
+    top = work.top + max(0, min(60, work.bottom - work.top - height))
+    user32.SetWindowTextW(handle, title)
+    user32.SetWindowPos(handle, 0, left, top, 0, 0, 0x0001 | 0x0004)  # NOSIZE | NOZORDER
+    # In front once, without staying on top of everything afterwards.
+    user32.SetWindowPos(handle, -1, 0, 0, 0, 0, 0x0001 | 0x0002)
+    user32.SetWindowPos(handle, -2, 0, 0, 0, 0, 0x0001 | 0x0002)
+    user32.SetForegroundWindow(handle)
+
+
 def open_editor(request: dict[str, Any]) -> dict[str, Any]:
     try:
         plugin = _load(str(request["plugin"]))
@@ -377,6 +450,10 @@ def open_editor(request: dict[str, Any]) -> dict[str, Any]:
         pump_thread.start()
     try:
         if request.get("window", True):
+            name = str(getattr(plugin, "name", "") or "Instrument")
+            threading.Thread(
+                target=_place_window, args=(close, f"{name} — Music Suite"), daemon=True
+            ).start()
             # Blocks until the window is closed, by the user or through ``close``.
             plugin.show_editor(close)
         else:

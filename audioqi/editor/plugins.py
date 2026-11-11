@@ -9,6 +9,7 @@ filesystem path is ever accepted from, or returned to, the client.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -285,6 +286,12 @@ def open_plugin_window(
     and stop ``notes`` (a loop of ``seconds``) through the speakers while it is open.
     """
     item = _require(plugin_id)
+    if window and item["name"] == "Surge XT":
+        # Surge XT in the suite's colours, with its own piano shown for trying sounds.
+        from audioqi.editor import surge_skin
+
+        with contextlib.suppress(Exception):
+            surge_skin.ensure()
     outcome, _ = _run_worker(
         item,
         {
@@ -388,9 +395,10 @@ def close_plugin_window(key: str) -> bool:
 
 
 # --------------------------------------------------------------------------- auditions
-# Hearing an instrument outside any project (Synth Studio): one at a time, no window.
+# Hearing an instrument outside any project (Synth Studio): one at a time, with or
+# without the plugin's own window.
 
-_audition: dict[str, Any] = {"key": None, "error": None, "live": None}
+_audition: dict[str, Any] = {"key": None, "error": None, "live": None, "state": None}
 
 
 def start_audition(
@@ -401,19 +409,26 @@ def start_audition(
     *,
     play: bool = True,
     live: bool = False,
+    window: bool = False,
 ) -> str:
-    """Loop ``notes`` through an instrument on the speakers; returns the audition's key."""
+    """Loop ``notes`` through an instrument on the speakers; returns the audition's key.
+
+    With ``window`` the plugin's own interface is shown, and the sound it holds when the
+    window closes is reported by :func:`audition_status`.
+    """
     _require(plugin_id)
     stop_audition()
     key = projects.new_id()
-    _audition.update(key=key, error=None, live=None)
+    _audition.update(key=key, error=None, live=None, state=None)
 
     def work() -> None:
         try:
             result = open_plugin_window(
-                plugin_id, state, key, notes, seconds, window=False, play=play, live=live
+                plugin_id, state, key, notes, seconds, window=window, play=play, live=live
             )
             _audition["live"] = result.get("live")
+            if window and _audition["key"] == key:
+                _audition["state"] = result.get("state")
         except EditorError as exc:
             if _audition["key"] == key:
                 _audition["error"] = str(exc)
@@ -433,6 +448,8 @@ def audition_status(key: str) -> dict[str, Any]:
     status = {"id": key, "running": running, "error": None if running else _audition["error"]}
     if not running and _audition["live"]:
         status["live"] = _audition["live"]  # Timing of the last live session, for diagnosis.
+    if not running and _audition["state"]:
+        status["state"] = _audition["state"]  # The sound left in the plugin's own window.
     return status
 
 

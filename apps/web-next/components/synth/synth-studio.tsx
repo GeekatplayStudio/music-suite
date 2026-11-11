@@ -152,6 +152,8 @@ export function SynthStudio() {
   const [audition, setAudition] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [looping, setLooping] = useState(false);
+  // True while the plugin's own interface (Surge XT's full panel) is open on this computer.
+  const [panelOpen, setPanelOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const auditionRef = useRef<string | null>(null);
   useEffect(() => {
@@ -188,24 +190,36 @@ export function SynthStudio() {
           auditionRef.current = null;
           setAudition(null);
           setLooping(false);
+          setPanelOpen(false);
+          // Whatever was dialled in on the plugin's own panel becomes the current sound.
+          if (status.state) setSound({ name: "Edited in the full interface", state: status.state });
           if (status.error) setError(status.error);
         })
         .catch(() => undefined);
-    }, 2000);
+    }, 1000);
     return () => window.clearInterval(timer);
   }, [audition]);
 
   /** Start the instrument: with the looping phrase, or silent and ready for the piano. */
-  const start = async (loop: boolean) => {
+  const start = async (loop: boolean, panel = false) => {
     if (!pluginId || auditionRef.current || starting) return;
     setError(null);
     setStarting(true);
     try {
-      const body = { plugin_id: pluginId, state: sound?.state ?? null, notes: DEMO_NOTES, seconds: DEMO_SECONDS, play: loop, live: true };
+      const body = {
+        plugin_id: pluginId,
+        state: sound?.state ?? null,
+        notes: DEMO_NOTES,
+        seconds: DEMO_SECONDS,
+        play: loop,
+        live: true,
+        window: panel
+      };
       const started = await editorApi.startAudition(body);
       auditionRef.current = started.id;
       setAudition(started.id);
       setLooping(loop);
+      setPanelOpen(panel);
     } catch (err) {
       setError(message(err, "The instrument could not start."));
     }
@@ -227,6 +241,20 @@ export function SynthStudio() {
     auditionRef.current = null;
     setAudition(null);
     setLooping(false);
+    setPanelOpen(false);
+  };
+  /** Open the plugin's own interface: every oscillator, filter, envelope, LFO and scope it has. */
+  const openPanel = async () => {
+    if (panelOpen || starting) return;
+    const wasLooping = looping;
+    if (auditionRef.current) {
+      // The instrument restarts with its window; the sound in use carries over.
+      const key = auditionRef.current;
+      auditionRef.current = null;
+      setAudition(null);
+      await editorApi.stopAudition(key).catch(() => undefined);
+    }
+    await start(wasLooping, true);
   };
   /** Notes from the piano or a MIDI keyboard, played through the instrument at once. */
   const sendLive = useCallback((messages: number[][]) => {
@@ -403,6 +431,23 @@ export function SynthStudio() {
                     </option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  className={cn(primary, "w-full")}
+                  disabled={panelOpen || starting}
+                  onClick={() => void openPanel()}
+                  title="Opens the instrument's own window with all of its controls and displays"
+                >
+                  <SlidersHorizontal className="h-4 w-4" aria-hidden />
+                  {panelOpen
+                    ? `${chosen?.name ?? "The instrument"}'s full interface is open`
+                    : `Open ${chosen?.name ?? "the instrument"}'s full interface`}
+                </button>
+                <p className="text-xs leading-snug text-slate-400">
+                  {panelOpen
+                    ? "Its window is on this computer's desktop (look on the taskbar if it is behind the browser). To hear a sound: click the piano at the bottom of that window, play your MIDI keyboard, or press Play here to loop a phrase while you turn the controls. Close the window to keep the sound."
+                    : "The real instrument, exactly as its makers built it, in Music Suite's colours: oscillator and filter displays, envelopes, LFOs, the modulation matrix, effects, its own patch browser and a piano for trying sounds."}
+                </p>
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" className={primary} disabled={looping || starting} onClick={play}>
                     {starting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Play className="h-4 w-4" aria-hidden />} Play

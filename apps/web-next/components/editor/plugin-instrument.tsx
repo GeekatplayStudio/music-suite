@@ -195,7 +195,7 @@ export function PluginInstrumentSection({
           {session === "window" ? (
             <>
               <p className="rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-2 py-1.5 text-[11px] leading-snug text-cyan-100" role="status">
-                {current.name}&apos;s window is open on this computer (it may be behind this one). Changes made there are kept.
+                {current.name}&apos;s window is open on this computer (it may be behind this one). To hear the sound, press Play above to loop this clip, or click the piano at the bottom of Surge XT&apos;s window. Changes made there are kept.
               </p>
               <ActionButton variant="primary" className="w-full" onClick={onCloseWindow}>
                 Keep this sound and close the window
@@ -205,10 +205,15 @@ export function PluginInstrumentSection({
             <ActionButton
               className="w-full"
               disabled={busy || session !== "none"}
-              title={session !== "none" ? "Press Stop first" : "Shape the sound in the plugin's own controls"}
+              variant="primary"
+              title={
+                session !== "none"
+                  ? "Press Stop first"
+                  : "The real instrument: all of its controls, displays, modulation and its own patch browser"
+              }
               onClick={onOpenWindow}
             >
-              Edit in {current.name}&apos;s window
+              Open {current.name}&apos;s full interface
             </ActionButton>
           )}
           <ActionButton variant="primary" className="w-full" disabled={busy} onClick={onRender}>

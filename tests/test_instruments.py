@@ -891,3 +891,92 @@ def test_live_midi_routes_validate_messages(client: TestClient, monkeypatch) -> 
         assert client.post(url, json={"messages": bad}).status_code == 422, bad
     client.post(f"/editor/audition/{key}/stop")
     assert options == {"window": False, "play": False, "live": True}
+
+
+def test_a_bundle_that_will_not_scan_loads_from_its_inner_file(tmp_path, monkeypatch) -> None:
+    """Surge XT 1.3.4 on Windows: the bundle folder fails to scan, the file inside loads."""
+    from audioqi.editor import plugin_worker
+
+    inner = tmp_path / "Synth.vst3" / "Contents" / "x86_64-win" / "Synth.vst3"
+    inner.parent.mkdir(parents=True)
+    inner.write_bytes(b"dll")
+    tried: list[str] = []
+
+    def load_one(path: str) -> str:
+        tried.append(path)
+        if path != str(inner):
+            raise ImportError("unsupported plugin format or scan failure")
+        return "plugin"
+
+    monkeypatch.setattr(plugin_worker, "_load_one", load_one)
+    assert plugin_worker._load(str(tmp_path / "Synth.vst3")) == "plugin"
+    assert tried == [str(tmp_path / "Synth.vst3"), str(inner)]
+    with pytest.raises(ImportError):
+        plugin_worker._load(str(tmp_path / "Missing.vst3"))
+
+
+def test_an_audition_can_show_the_plugins_own_window(client: TestClient, monkeypatch) -> None:
+    from audioqi.editor import jobs as editor_jobs_module
+    from audioqi.editor import plugins as plugins_module
+
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(engines, "plugin_hosting_available", lambda: True)
+
+    def start(plugin_id, state, notes, seconds, *, play, live, window):  # noqa: ANN001
+        seen.update(window=window, live=live)
+        return "k"
+
+    monkeypatch.setattr(plugins_module, "start_audition", start)
+    monkeypatch.setattr(plugins_module, "audition_status", lambda key: {"id": key, "running": True})
+    body = {"plugin_id": "a" * 20, "state": None, "notes": [], "seconds": 2, "play": False}
+    editor_jobs_module.start_audition({**body, "live": True, "window": True})
+    assert seen == {"window": True, "live": True}
+    editor_jobs_module.start_audition(body)
+    assert seen["window"] is False
+
+
+def test_surge_skin_recolours_greys_and_blues_only() -> None:
+    from audioqi.editor import surge_skin
+
+    r, g, b = surge_skin.recolour(0x24, 0x24, 0x24)  # A dark panel grey.
+    assert b > r and b > g and max(r, g, b) < 0x40  # Slate: blue-tinted and still dark.
+    r, g, b = surge_skin.recolour(0x2E, 0x86, 0xFE)  # Surge's modulation blue.
+    assert g > r and b > r and abs(g - b) < 60  # Cyan.
+    assert surge_skin.recolour(0xFF, 0x93, 0x00) == (0xFF, 0x93, 0x00)  # Orange is kept.
+    text = '<path fill="#242424" stroke="url(#a1b2c3)"/><use xlink:href="#abc"/><c v="#005CB680"/>'
+    out = surge_skin.recolour_text(text)
+    assert "url(#a1b2c3)" in out and 'href="#abc"' in out  # References are not colours.
+    assert "#242424" not in out and out.endswith('80"/>')  # Recoloured; alpha kept.
+
+
+def test_surge_skin_is_built_and_made_the_default(tmp_path, monkeypatch) -> None:
+    import os
+
+    from audioqi.editor import surge_skin
+
+    factory = tmp_path / "factory" / surge_skin.BASE_SKIN
+    (factory / "SVG").mkdir(parents=True)
+    (factory / "skin.xml").write_text(
+        '<surge-skin name="Surge Dark" version="2"><color id="bg" value="#242424"/></surge-skin>'
+    )
+    (factory / "SVG" / "a.svg").write_text('<svg><rect fill="#808080"/></svg>')
+    user = tmp_path / "user"
+    monkeypatch.setattr(surge_skin, "factory_skin", lambda: factory)
+    monkeypatch.setattr(surge_skin, "user_dir", lambda: user)
+
+    first = surge_skin.ensure()
+    assert first["ok"] and first["built"] and first["files"] == 2
+    skin = (user / "Skins" / surge_skin.SKIN_DIR / "skin.xml").read_text()
+    assert 'name="Music Suite"' in skin and "#242424" not in skin
+    defaults = (user / "SurgeXTUserDefaults.xml").read_text()
+    # Surge only honours a default skin written with a trailing path separator.
+    assert f'key="defaultSkin" value="{surge_skin.SKIN_DIR}{os.sep}"' in defaults
+    assert 'key="showVirtualKeyboardPlugin" value="1"' in defaults
+
+    # A second run rebuilds nothing, and a choice the user made is never overwritten.
+    changed = defaults.replace(f"{surge_skin.SKIN_DIR}{os.sep}", "mine.surge-skin" + os.sep)
+    (user / "SurgeXTUserDefaults.xml").write_text(changed)
+    again = surge_skin.ensure()
+    assert again["built"] is False and again["defaults"] == []
+    assert "mine.surge-skin" in (user / "SurgeXTUserDefaults.xml").read_text()
+

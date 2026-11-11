@@ -1041,7 +1041,8 @@ def start_audition(params: Any) -> dict[str, Any]:
         raise EditorError(plugins.UNAVAILABLE_MESSAGE)
     if not isinstance(params, dict):
         raise ParamError("The request must be an object.")
-    cleaned = _v_plugin_window({"play": True, **params, "window": False})
+    # ``window`` shows the plugin's own interface (Surge XT's full panel) while it plays.
+    cleaned = _v_plugin_window({"play": True, "window": False, **params})
     if cleaned["play"] and not cleaned["notes"]:
         raise ParamError("'notes' must be a non-empty list of notes.")
     key = plugins.start_audition(
@@ -1051,6 +1052,7 @@ def start_audition(params: Any) -> dict[str, Any]:
         cleaned["seconds"],
         play=cleaned["play"],
         live=cleaned["live"],
+        window=cleaned["window"],
     )
     return plugins.audition_status(key)
 
