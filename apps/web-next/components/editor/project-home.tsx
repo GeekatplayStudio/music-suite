@@ -7,28 +7,35 @@ import { useEffect, useState } from "react";
 
 import { ActionButton, fieldClass } from "@/components/editor/controls";
 import { editorApi } from "@/lib/editor/api";
-import { type ProjectSummary } from "@/lib/editor/types";
-import { type Incoming, placeIncoming } from "@/lib/handoff";
+import { type Capabilities, type ProjectSummary } from "@/lib/editor/types";
+import { type Incoming, type SplitDepth, placeIncoming } from "@/lib/handoff";
 
 interface ProjectHomeProps {
   /** A song sent here from the analyser or another session; the page asks where it goes. */
   incoming: Incoming | null;
   /** Start with "split into stems" ticked (the "Deconstruct" buttons send this). */
   split: boolean;
+  depth: SplitDepth;
 }
 
-export function ProjectHome({ incoming, split: splitInitially }: ProjectHomeProps) {
+export function ProjectHome({ incoming, split: splitInitially, depth: depthInitially }: ProjectHomeProps) {
   const router = useRouter();
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [placing, setPlacing] = useState<string | null>(null);
   const [split, setSplit] = useState(splitInitially);
+  const [depth, setDepth] = useState<SplitDepth>(depthInitially);
+  const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    editorApi
+      .capabilities()
+      .then((caps) => !cancelled && setCapabilities(caps))
+      .catch(() => undefined);
     editorApi
       .listProjects()
       .then((list) => !cancelled && setProjects(list))
@@ -57,7 +64,7 @@ export function ProjectHome({ incoming, split: splitInitially }: ProjectHomeProp
     setError(null);
     try {
       const { projectId, asset } = await placeIncoming(targetId, incoming);
-      router.push(`/editor?project=${projectId}${split ? `&split=${asset.id}` : ""}`);
+      router.push(`/editor?project=${projectId}${split ? `&split=${asset.id}&stems=${depth}` : ""}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The song could not be added to the session.");
       setPlacing(null);
@@ -93,6 +100,12 @@ export function ProjectHome({ incoming, split: splitInitially }: ProjectHomeProp
           className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-cyan-200 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
         >
           AI Song Studio
+        </Link>
+        <Link
+          href="/models"
+          className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
+        >
+          Models &amp; engines
         </Link>
         <Link
           href="/"
@@ -134,6 +147,33 @@ export function ProjectHome({ incoming, split: splitInitially }: ProjectHomeProp
               </span>
             </span>
           </label>
+          {split ? (
+            <label className="flex flex-wrap items-center gap-2 px-3 text-sm text-slate-300">
+              <span className="font-semibold">How far</span>
+              <select
+                className={`${fieldClass} h-9 w-auto min-w-72 text-sm`}
+                value={depth}
+                disabled={placing !== null}
+                onChange={(event) => setDepth(event.target.value as SplitDepth)}
+                aria-label="How many stems"
+              >
+                <option value="auto">As many as this computer can ({Math.max(...(capabilities?.separation.stem_options ?? [4]))} stems)</option>
+                <option value="2">2 stems: vocals and instrumental</option>
+                <option value="4">4 stems: vocals, drums, bass, other</option>
+                {capabilities?.separation.stem_options.includes(6) ? (
+                  <option value="6">6 stems: adds guitar and piano</option>
+                ) : null}
+                {capabilities?.separation.detail ? (
+                  <option value="full">Everything: 12 stems with drum kit pieces and lead/backing vocals</option>
+                ) : null}
+              </select>
+              {capabilities && !capabilities.separation.detail ? (
+                <a href="/models" className="text-xs font-semibold text-cyan-300 underline-offset-2 hover:underline">
+                  More stems with AI stem separation
+                </a>
+              ) : null}
+            </label>
+          ) : null}
           <ActionButton
             variant="primary"
             className="h-11 w-full text-sm"

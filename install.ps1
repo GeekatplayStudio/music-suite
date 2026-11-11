@@ -1,6 +1,7 @@
 param(
     [switch]$WithGpu,
     [switch]$WithPro,
+    [switch]$WithAiStems,
     [string]$ComfyUIPath,
     [switch]$InstallComfyDependencies
 )
@@ -205,6 +206,18 @@ try {
         & $venvPython -m audioqi.generation.setup $aiFlag
         if ($LASTEXITCODE -ne 0) {
             Write-Host "The AI music engine was not installed. Music Suite itself is ready." -ForegroundColor Yellow
+        }
+        $global:LASTEXITCODE = 0
+    }
+
+    # --- Optional: AI stem separation (6 stems, drum kit pieces, lead/backing vocals) ---
+    # -WithAiStems or MUSIC_SUITE_INSTALL_STEMS=1. Uses the NVIDIA GPU when there is one.
+    # Also available any time from Models & engines in the app.
+    if ($WithAiStems -or $env:MUSIC_SUITE_INSTALL_STEMS -eq "1") {
+        Write-Host "Installing AI stem separation (about 3 GB with GPU support, plus models)..."
+        & $venvPython -m audioqi.addons install stems
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "AI stem separation was not installed. Try again from Models & engines in the app." -ForegroundColor Yellow
         }
         $global:LASTEXITCODE = 0
     }

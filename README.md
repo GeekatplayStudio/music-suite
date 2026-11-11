@@ -33,7 +33,7 @@ The former **AudioQI Analyzer** and **Sonic Visual AI** projects now share one c
 | 🤖 **Master** | Internal, FFmpeg, Pedalboard, and Matchering paths with per-stage progress, marker-aware refinement, and a regression guard that refuses passes which add glare |
 | ✨ **Create** | AI Song Studio: write lyrics and a style with a local language model, then generate full songs with vocals on this computer (ACE-Step 1.5). Or start from a song you have: match its tempo, key and feel, restyle it, extend it, add a part, or build a song around a vocal |
 | 🔁 **Move** | Send any song between the analyser, the AI Song Studio and the Studio Editor in one click. It is always added (to a new or existing session, on a new track) and never replaces your work, and can be split into stems on arrival |
-| ✂️ **Edit** | Multitrack Studio Editor: waveform clips, stem separation, repair tools, a spectral view, mixing with buses and automation, voice effects (vocoder, pitch shift, robot), recording, MIDI with a piano roll and a live MIDI keyboard, and AI tempo/key matching |
+| ✂️ **Edit** | Multitrack Studio Editor: waveform clips, stem separation up to 12 stems (drum kit pieces, lead and backing vocals), repair tools, a spectral view, mixing with buses and automation, voice effects (vocoder, pitch shift, robot), recording, MIDI with a piano roll and a live MIDI keyboard, and AI tempo/key matching |
 | 🌈 **Visualize** | 60 FPS Spectrum, Orbit, and Waveform modes driven by the Web Audio analyser |
 | 🪐 **Map** | Full-song 3D geometry with tempo and key estimation, structural repeat detection, per-node inspection, presets, overlays, and exports |
 | 🧠 **Describe** | Local Ollama model writes the track's style, always shown beside the description derived from the measurements |
@@ -138,14 +138,12 @@ Open it from the **Studio Editor** button in the workspace (it opens the selecte
 
 Press `?` in the editor for the full list of keyboard shortcuts.
 
-**Optional engines.** The editor works with the base install and uses built-in fallbacks where a better engine is missing. For the best quality, install the extras into the suite's virtual environment:
+**Optional engines: Models & engines.** The editor works with the base install and uses built-in fallbacks where a better engine is missing. Open **Models & engines** (a button in every workspace, or `/models`) to see your graphics card and install what you want with one click:
 
-```bash
-pip install -e ".[editor]"      # Pedalboard (Rubber Band stretch, VST3/AU) and noisereduce
-pip install -e ".[editor-ai]"   # audio-separator, Demucs, beat_this, PyTorch — stems and beat tracking
-```
+- **AI stem separation**: Demucs, BS-RoFormer and MDX23C models. Splits into 2, 4 or 6 stems (vocals, drums, bass, guitar, piano, other), and further: drums into **kick, snare, toms, hi-hat, ride and crash**, vocals into **lead and backing**. A full split is 12 stems. It also adds AI beat tracking. On Windows with an NVIDIA card it installs PyTorch's CUDA build, so separation runs on the GPU (a 45-second excerpt split into 12 stems in about 20 s on an RTX 3090).
+- **AI music**: the AI Song Studio engine, its editing and XL models, and the lyrics writer, in the same list.
 
-The macOS installer adds the `editor` extra automatically. `editor-ai` is a large download and is left to you. Some separation models carry non-commercial licences, and Pedalboard and Rubber Band are GPLv3; check them before distributing a bundled build or releasing separated stems commercially.
+Installs never change a package that is already there: every installed version is pinned while pip runs. The same installs work from a terminal (`python -m audioqi.addons list`, `python -m audioqi.addons install stems`), from the installers (`install.ps1 -WithAiStems`, or `MUSIC_SUITE_INSTALL_STEMS=1 ./install.command`), and with `make install-stems`. The `editor` extra (Pedalboard for Rubber Band stretch and VST3/AU, plus noisereduce) is installed by the installers. Some separation models carry non-commercial licences, and Pedalboard and Rubber Band are GPLv3; check them before distributing a bundled build or releasing separated stems commercially.
 
 **MIDI keyboards.** Plug in a USB keyboard (Roland and other class-compliant keyboards need no driver), press the keyboard button beside record, and allow MIDI devices when the browser asks. It plays the selected track; on a track with a MIDI clip, the record button records what you play as notes. Web MIDI works in Chrome and Edge; Safari does not support it. Details are in the [Help Guide](docs/HELP_GUIDE.md).
 
@@ -191,7 +189,7 @@ Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (ab
 - FFmpeg and ffprobe on `PATH`
 - Git for in-app updates
 - Optional: ComfyUI with a compatible Torch/CUDA environment (for music generation)
-- Optional: the `editor` and `editor-ai` extras for the Studio Editor's best engines (see above)
+- Optional: AI stem separation from *Models & engines* (about 3 GB with NVIDIA GPU support, plus 2.2 GB of models)
 - Optional, for AI Song Studio: about 6 GB of free disk, CMake and a C++ compiler (the installer adds CMake through Homebrew or winget), and Ollama for the best lyrics
 
 ---

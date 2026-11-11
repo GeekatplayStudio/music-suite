@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from apps.api.addons import router as addons_router
 from apps.api.editor import router as editor_router
 from apps.api.generation import router as generation_router
 from audioqi.config import ensure_data_dirs, get_settings
@@ -169,6 +170,7 @@ app.add_middleware(
     allow_headers=["Accept", "Content-Type", "X-Music-Suite-Action"],
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
+app.include_router(addons_router)
 app.include_router(editor_router)
 app.include_router(generation_router)
 

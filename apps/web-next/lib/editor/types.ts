@@ -68,7 +68,16 @@ export interface Job {
 }
 
 export interface Capabilities {
-  separation: { available: boolean; engine: string; engines: string[]; stem_options: number[] };
+  separation: {
+    available: boolean;
+    engine: string;
+    engines: string[];
+    stem_options: number[];
+    /** Drum kit pieces and lead/backing vocals are available (AI stem separation installed). */
+    detail?: boolean;
+    /** What the AI separators run on: "cuda", "mps", "cpu" or "none". */
+    accelerator?: string;
+  };
   stretch: { engine: string };
   pitch: { engine: string };
   denoise: { engines: string[] };

@@ -39,7 +39,7 @@ import { TrackHeader } from "@/components/editor/track-header";
 import { analyzeRun, uploadAudio } from "@/lib/api";
 import { editorApi } from "@/lib/editor/api";
 import { generationApi, type ProviderInfo } from "@/lib/generation/api";
-import { startSongUrl } from "@/lib/handoff";
+import { type SplitDepth, splitParams, startSongUrl } from "@/lib/handoff";
 import { EditorEngine, playsCarrier } from "@/lib/editor/engine";
 import { type ProcessStep, favouriteStore } from "@/lib/editor/favourites";
 import { MediaStore } from "@/lib/editor/media";
@@ -388,7 +388,15 @@ const EXPORT_ITEMS: { kind: ExportKind; label: string; needsRange?: boolean }[] 
   { kind: "studio", label: "Start an AI song from the mix →" }
 ];
 
-export function EditorApp({ projectId, splitAssetId = null }: { projectId: string; splitAssetId?: string | null }) {
+export function EditorApp({
+  projectId,
+  splitAssetId = null,
+  splitDepth = "auto"
+}: {
+  projectId: string;
+  splitAssetId?: string | null;
+  splitDepth?: SplitDepth;
+}) {
   const router = useRouter();
   const [engine] = useState(() => new EditorEngine(emptyProjectState()));
   const [media] = useState(() => new MediaStore(engine, projectId));
@@ -936,7 +944,11 @@ export function EditorApp({ projectId, splitAssetId = null }: { projectId: strin
       setNotice("The song to split into stems is not on the timeline. Select it and use Separate stems.");
       return;
     }
-    void runJob("separate", { stems: 4 }, `Separating ${clip.name}`, [clip.id]);
+    const options = capabilities?.separation.stem_options ?? [2, 4];
+    const fine = Boolean(capabilities?.separation.detail);
+    // Without the AI separators a "full" split falls back to the most stems available.
+    const params = splitParams(splitDepth === "full" && !fine ? "auto" : splitDepth, options);
+    void runJob("separate", params, `Separating ${clip.name}`, [clip.id]);
   });
   useEffect(() => {
     if (!ready || !splitAssetId || splitStartedRef.current) return;

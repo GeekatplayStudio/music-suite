@@ -224,7 +224,7 @@ Open it with **Studio Editor** in the workspace (it loads the selected song) or 
 
 Each tool renders a new take beside the original. With several clips selected, the tools run on all of them; **Favourites** saves the last one to three steps as a one-click chain.
 
-- **Separate stems** — 2, 4 or 6 stems on new aligned tracks; the source clip is muted.
+- **Separate stems** — 2, 4 or 6 stems on new aligned tracks; the source clip is muted. With AI stem separation installed (see [Models & engines](#models-and-engines)) two more options appear: **Split the drums into kick, snare, toms, hi-hat, ride and crash** and **Split the vocals into lead and backing**. With both ticked a 6-stem split gives 12 tracks. On a drum or vocal stem you already have, **Split this drum stem into kit pieces** and **Split this vocal stem into lead and backing** do just that part. Parts a song does not have (no piano, no toms) come out nearly silent.
 - **Repair** — Reduce noise (highlight pure noise first to use it as a noise print), Normalise loudness.
 - **Restore** — DeClick, DeHum (finds 50 or 60 Hz itself), DeClip, DeReverb.
 - **Spectral view** — drag a box around a sound; *Attenuate* turns it down, *Heal* replaces it with what surrounds it.
@@ -325,7 +325,7 @@ The **Start from a song** panel at the top of *Create* turns a song you already 
 
 A song can go from any workspace to any other, and it is always added, never swapped in:
 
-- **To the Studio Editor:** **Add to a session** (creator), **Studio Editor** (analyser) and a session link all lead to *Where should this song go?*. Choose **New session**, or **Add here** on any existing session to put it on a new track there. Tick **Split it into stems when it opens** to have it separated as soon as the session opens; the stems go on tracks below the original, which is muted.
+- **To the Studio Editor:** **Add to a session** (creator), **Studio Editor** (analyser) and a session link all lead to *Where should this song go?*. Choose **New session**, or **Add here** on any existing session to put it on a new track there. Tick **Split it into stems when it opens** to have it separated as soon as the session opens, and choose **How far**: 2, 4 or 6 stems, or *Everything* (12 stems with drum kit pieces and lead/backing vocals, when AI stem separation is installed). The stems go on tracks below the original, which is muted.
 - **To the analyser:** **Analyse** (creator) and *Export ▸ Send mix to the analyser and mastering* (editor) copy the audio into a new run, start the analysis and open it.
 - **To the AI Song Studio:** **Make a song from this** (analyser), **Start a song from it** (creator results and history) and *Export ▸ Start an AI song from the mix* (editor) open the studio with that song as the one to start from.
 
@@ -356,6 +356,15 @@ Select a clip; the side panel has an **AI edit** section.
 - **Versions:** ask for up to 4. The first lands in place; the others go on muted tracks so you can compare them.
 - **Generator:** when ElevenLabs is set up, choose it in the panel to regenerate a section (3–120 s) or extend a clip with ElevenLabs. A clip that was not made with ElevenLabs must be uploaded first, which ElevenLabs bills like generating the same length; tick **Allow uploading this clip** to agree. The cost is shown before you press the button, and the same clip is never uploaded twice.
 - Every AI edit is one step in Undo.
+
+## 8e) Models and engines
+
+Open **Models & engines** from any workspace (or go to `/models`). It shows this computer's graphics card and whether PyTorch, which runs the AI models, will use it.
+
+- **AI stem separation**: press **Install AI stem separation**. On Windows with an NVIDIA card it installs PyTorch's CUDA build (about 3 GB); otherwise a smaller CPU or Apple build. The ticked models download afterwards (2.2 GB for all five): Demucs v4 for 4 stems, Demucs v4 6-stem for guitar and piano, BS-RoFormer for vocals and instrumental, DrumSep for drum kit pieces, and Mel-RoFormer Karaoke for lead and backing vocals. A model you leave unticked downloads the first time a split needs it. **Delete downloaded models** frees their space; they download again when needed. Reload any open editor page after installing.
+- **AI music (AI Song Studio)**: the music engine, the editing model, the XL model and the lyrics writer, each with an **Install** button.
+- Nothing already installed is changed: every installed package is pinned while an install runs. If an install cannot fit, it stops and shows pip's explanation under **Install log**.
+- From a terminal in the Music Suite folder: `.venv\Scripts\python -m audioqi.addons list` shows what is installed, and `... install stems` installs the stem pack (`--models none`, `all`, or a list of model files).
 
 ## 9) Troubleshooting
 

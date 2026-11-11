@@ -1,7 +1,7 @@
 PYTHON ?= python
 PIP ?= pip
 
-.PHONY: install dev lint typecheck test run-api run-web install-web install-ai start verify format
+.PHONY: install dev lint typecheck test run-api run-web install-web install-ai install-stems start verify format
 
 install:
 	$(PIP) install -e .
@@ -30,6 +30,10 @@ install-web:
 # Build the local AI music engine and download its models (about 5.3 GB).
 install-ai:
 	$(PYTHON) -m audioqi.generation.setup --yes
+
+# AI stem separation: 6 stems, drum kit pieces, lead/backing vocals (uses the GPU when present).
+install-stems:
+	$(PYTHON) -m audioqi.addons install stems
 
 start:
 	powershell -ExecutionPolicy Bypass -File .\start.ps1

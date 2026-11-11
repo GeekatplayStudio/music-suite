@@ -2358,6 +2358,14 @@ export default function HomePage() {
               <AudioWaveform className="mr-2 h-4 w-4" />
               Studio Editor
             </Button>
+            <Button
+              variant="secondary"
+              title="Install optional engines and AI models: more stems, the music engine, the lyrics writer"
+              onClick={() => router.push("/models")}
+            >
+              <Cpu className="mr-2 h-4 w-4" />
+              Models &amp; engines
+            </Button>
             <Button variant="danger" onClick={() => void onClearHistory()} disabled={isBusy || runs.length === 0}>
               <Trash2 className="mr-2 h-4 w-4" />
               Clear History

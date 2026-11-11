@@ -104,6 +104,12 @@ case "${MUSIC_SUITE_INSTALL_AI:-ask}" in
   *) .venv/bin/python -m audioqi.generation.setup --ask || true ;;
 esac
 
+# --- Optional: AI stem separation (6 stems, drum kit pieces, lead/backing vocals) ---
+# MUSIC_SUITE_INSTALL_STEMS=1 installs it here; it is also in Models & engines in the app.
+if [ "${MUSIC_SUITE_INSTALL_STEMS:-0}" = "1" ]; then
+  .venv/bin/python -m audioqi.addons install stems || echo "AI stem separation was not installed. Try again from Models & engines in the app."
+fi
+
 GIT_REVISION="$(git rev-parse HEAD 2>/dev/null || printf 'no-git-revision')"
 .venv/bin/python -c 'import hashlib, pathlib, sys; files=(pathlib.Path("pyproject.toml"), pathlib.Path("apps/web-next/pnpm-lock.yaml")); print("-".join([*(hashlib.sha256(path.read_bytes()).hexdigest().upper() for path in files), sys.argv[1]]))' "$GIT_REVISION" > .music-suite-install-state
 

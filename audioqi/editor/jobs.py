@@ -90,11 +90,22 @@ def _boolean(params: dict[str, Any], key: str, default: bool) -> bool:
 
 
 def _v_separate(params: dict[str, Any]) -> dict[str, Any]:
-    _reject_unknown(params, {"stems"})
+    _reject_unknown(params, {"stems", "drum_kit", "lead_backing", "part"})
     stems = params.get("stems", 4)
     if isinstance(stems, bool) or stems not in (2, 4, 6):
         raise ParamError("'stems' must be 2, 4 or 6.")
-    return {"stems": int(stems)}
+    part = params.get("part", "mix")
+    if part not in separation.PARTS:
+        raise ParamError("'part' must be mix, drums or vocals.")
+    drum_kit = _boolean(params, "drum_kit", False)
+    if drum_kit and stems == 2 and part == "mix":
+        raise ParamError("Drum pieces need a 4- or 6-stem split.")
+    return {
+        "stems": int(stems),
+        "drum_kit": drum_kit,
+        "lead_backing": _boolean(params, "lead_backing", False),
+        "part": part,
+    }
 
 
 def _v_stretch(params: dict[str, Any]) -> dict[str, Any]:
@@ -483,11 +494,32 @@ _Outcome = tuple[list[dict[str, Any]], dict[str, Any]]
 
 def _op_separate(ctx: _Context) -> _Outcome:
     audio, sr = ctx.load()
-    count = ctx.params["stems"]
+    params = ctx.params
+    count, part = params["stems"], params["part"]
     planned = engines.separation_engines()[0]
-    report = ctx.span("process", 10, 85, f"Separating {count} stems with {planned}.")
+    if part == "drums":
+        what = "Splitting the drums into kit pieces."
+    elif part == "vocals":
+        what = "Splitting lead and backing vocals."
+    else:
+        extra = [
+            label
+            for flag, label in (("drum_kit", "drum kit"), ("lead_backing", "lead/backing vocals"))
+            if params[flag]
+        ]
+        added = " + " + " + ".join(extra) if extra else ""
+        what = f"Separating {count} stems{added} with {planned}."
+    report = ctx.span("process", 10, 85, what)
     report(0.0)
-    stems, engine = separation.separate(audio, sr, count, report)
+    stems, engine = separation.separate(
+        audio,
+        sr,
+        count,
+        report,
+        drum_kit_pass=params["drum_kit"],
+        lead_backing_pass=params["lead_backing"],
+        part=part,
+    )
     ctx.progress("write", 88, "Writing stems.")
     created = [
         ctx.save(stem, sr, name, source="stem", label=name) for name, stem in stems.items()

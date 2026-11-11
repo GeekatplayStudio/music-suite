@@ -3,6 +3,10 @@
 Preference: ``audio-separator`` (BS-RoFormer / htdemucs), then ``demucs``, then the
 built-in ``basic-hpss`` (HPSS plus mid/side centre extraction; approximate, 2 or 4
 stems). Every stem has exactly the input's length, sample rate and channel count.
+
+With ``audio-separator`` installed, two finer passes can follow (or run on a stem on
+its own): drums into kit pieces (MDX23C DrumSep) and vocals into lead and backing
+(Mel-RoFormer Karaoke). A full split is then up to 12 stems.
 """
 
 from __future__ import annotations
@@ -34,6 +38,23 @@ _SEPARATOR_MODELS = {
     6: "htdemucs_6s.yaml",
 }
 _STEM_IN_FILENAME = re.compile(r"_\(([A-Za-z ]+)\)")
+DRUMSEP_MODEL = "MDX23C-DrumSep-aufr33-jarredou.ckpt"
+KARAOKE_MODEL = "mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt"
+# DrumSep's outputs, in kit order, with the names the tracks get.
+DRUM_PIECES = {
+    "kick": "kick",
+    "snare": "snare",
+    "toms": "toms",
+    "hh": "hi-hat",
+    "ride": "ride",
+    "crash": "crash",
+}
+LEAD, BACKING = "lead vocals", "backing vocals"
+PARTS = ("mix", "drums", "vocals")
+NEEDS_PACK = (
+    "Splitting drums into kit pieces and vocals into lead and backing needs AI stem "
+    "separation. Install it from Models & engines."
+)
 Progress = Callable[[float], None]
 
 
@@ -165,7 +186,10 @@ def _demucs(audio: np.ndarray, sr: int, wanted: int, progress: Progress):
 # --------------------------------------------------------------------------- audio-separator
 
 
-def _audio_separator(audio: np.ndarray, sr: int, wanted: int, progress: Progress):
+def _run_separator(
+    audio: np.ndarray, sr: int, model: str, progress: Progress
+) -> tuple[dict[str, np.ndarray], int]:
+    """Run one audio-separator model; returns its stems by lower-case name and their rate."""
     from audio_separator.separator import Separator
 
     models_dir = projects.SETTINGS.data_dir.resolve() / "models" / "audio-separator"
@@ -183,7 +207,7 @@ def _audio_separator(audio: np.ndarray, sr: int, wanted: int, progress: Progress
             output_format="WAV",
             normalization_threshold=1.0,
         )
-        separator.load_model(model_filename=_SEPARATOR_MODELS[wanted])
+        separator.load_model(model_filename=model)
         progress(0.2)
         files = separator.separate(str(src))
         progress(0.9)
@@ -196,20 +220,119 @@ def _audio_separator(audio: np.ndarray, sr: int, wanted: int, progress: Progress
             produced = Path(tmp) / Path(item).name
             data, out_sr = sf.read(str(produced), dtype="float32", always_2d=True)
             stems[found[-1].strip().lower()] = data / np.float32(scale)
-    return _finish(stems, wanted, audio, int(out_sr), sr)
+    return stems, int(out_sr)
+
+
+def _audio_separator(audio: np.ndarray, sr: int, wanted: int, progress: Progress):
+    stems, out_sr = _run_separator(audio, sr, _SEPARATOR_MODELS[wanted], progress)
+    return _finish(stems, wanted, audio, out_sr, sr)
+
+
+def _conform(stem: np.ndarray, sr_in: int, sr: int, like: np.ndarray) -> np.ndarray:
+    stem = _match_channels(_resample(stem, sr_in, sr), like.shape[1])
+    return fit_length(stem.astype(np.float32, copy=False), like.shape[0])
+
+
+def drum_kit(drums: np.ndarray, sr: int, progress: Progress) -> dict[str, np.ndarray]:
+    """A drum stem split into kick, snare, toms, hi-hat, ride and crash."""
+    stems, out_sr = _run_separator(drums, sr, DRUMSEP_MODEL, progress)
+    missing = [name for name in DRUM_PIECES if name not in stems]
+    if missing:
+        raise RuntimeError(f"DrumSep did not return: {', '.join(missing)}")
+    return {label: _conform(stems[name], out_sr, sr, drums) for name, label in DRUM_PIECES.items()}
+
+
+def lead_backing(vocals: np.ndarray, sr: int, progress: Progress) -> dict[str, np.ndarray]:
+    """A vocal stem split into the lead voice and everything behind it."""
+    stems, out_sr = _run_separator(vocals, sr, KARAOKE_MODEL, progress)
+    if "vocals" not in stems or "instrumental" not in stems:
+        raise RuntimeError("The karaoke model did not return vocals and instrumental.")
+    return {
+        LEAD: _conform(stems["vocals"], out_sr, sr, vocals),
+        BACKING: _conform(stems["instrumental"], out_sr, sr, vocals),
+    }
+
+
+def detail_available() -> bool:
+    return "audio-separator" in engines.separation_engines()
 
 
 _IMPL = {"audio-separator": _audio_separator, "demucs": _demucs, "basic-hpss": _basic_hpss}
 
 
+def _span(report: Progress, start: float, end: float) -> Progress:
+    return lambda fraction: report(start + (end - start) * min(1.0, max(0.0, fraction)))
+
+
+def _replace(
+    stems: dict[str, np.ndarray], key: str, parts: dict[str, np.ndarray]
+) -> dict[str, np.ndarray]:
+    """``stems`` with ``key`` swapped for ``parts`` at the same position."""
+    out: dict[str, np.ndarray] = {}
+    for name, value in stems.items():
+        if name == key:
+            out.update(parts)
+        else:
+            out[name] = value
+    return out
+
+
 def separate(
-    audio: np.ndarray, sample_rate: int, stems: int = 4, progress: Progress | None = None
+    audio: np.ndarray,
+    sample_rate: int,
+    stems: int = 4,
+    progress: Progress | None = None,
+    *,
+    drum_kit_pass: bool = False,
+    lead_backing_pass: bool = False,
+    part: str = "mix",
 ) -> tuple[dict[str, np.ndarray], str]:
-    """Split ``(frames, channels)`` audio into named stems. Returns ``(stems, engine)``."""
+    """Split ``(frames, channels)`` audio into named stems. Returns ``(stems, engine)``.
+
+    ``part`` "drums" or "vocals" treats the audio as that stem already and only runs the
+    finer pass on it. Otherwise ``drum_kit_pass`` and ``lead_backing_pass`` follow the
+    main split.
+    """
+    if part not in PARTS:
+        raise EditorError("Part must be mix, drums or vocals.")
     if stems not in STEM_NAMES:
         raise EditorError("Stems must be 2, 4 or 6.")
+    if drum_kit_pass and stems == 2 and part == "mix":
+        raise EditorError("Drum pieces need a 4- or 6-stem split (2 stems has no drum stem).")
     require_min_length(audio)
     report = progress or (lambda _fraction: None)
+    finer = part != "mix" or drum_kit_pass or lead_backing_pass
+    if finer and not detail_available():
+        raise EditorError(NEEDS_PACK)
+    if part == "drums":
+        return drum_kit(audio, sample_rate, report), "audio-separator (DrumSep)"
+    if part == "vocals":
+        return lead_backing(audio, sample_rate, report), "audio-separator (Karaoke)"
+
+    passes = int(drum_kit_pass) + int(lead_backing_pass)
+    main_end = 1.0 if passes == 0 else 0.55
+    result, engine = _separate_main(audio, sample_rate, stems, _span(report, 0.0, main_end))
+    step = (1.0 - main_end) / max(1, passes)
+    at = main_end
+    if drum_kit_pass:
+        result = _replace(
+            result, "drums", drum_kit(result["drums"], sample_rate, _span(report, at, at + step))
+        )
+        engine += " + DrumSep"
+        at += step
+    if lead_backing_pass:
+        result = _replace(
+            result,
+            "vocals",
+            lead_backing(result["vocals"], sample_rate, _span(report, at, at + step)),
+        )
+        engine += " + Karaoke"
+    return result, engine
+
+
+def _separate_main(
+    audio: np.ndarray, sample_rate: int, stems: int, report: Progress
+) -> tuple[dict[str, np.ndarray], str]:
     candidates = engines.separation_engines()
     for name in candidates:
         try:

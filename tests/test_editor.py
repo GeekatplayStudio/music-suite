@@ -119,6 +119,8 @@ def test_capabilities_report_fallback_engines(client: TestClient) -> None:
         "engine": "basic-hpss",
         "engines": ["basic-hpss"],
         "stem_options": [2, 4],
+        "detail": False,
+        "accelerator": "none",
     }
     assert caps["stretch"] == {"engine": "librosa"}
     assert caps["pitch"] == {"engine": "librosa"}

@@ -17,6 +17,16 @@ export interface ClipRef {
   name: string;
 }
 
+/** How far a split on arrival goes: "full" is 6 stems plus drum kit pieces and lead/backing vocals. */
+export type SplitDepth = "auto" | "2" | "4" | "6" | "full";
+
+/** The separate-job parameters for a depth; "auto" is the most stems the engines offer. */
+export function splitParams(depth: SplitDepth, stemOptions: number[]): Record<string, unknown> {
+  if (depth === "full") return { stems: 6, drum_kit: true, lead_backing: true };
+  const wanted = depth === "auto" ? Math.max(...stemOptions, 4) : Number(depth);
+  return { stems: stemOptions.includes(wanted) ? wanted : 4 };
+}
+
 /** What is being brought into a session: an analysed file or a clip from another session. */
 export type Incoming = { kind: "run"; runId: string; name: string } | ({ kind: "clip" } & ClipRef);
 

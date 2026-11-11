@@ -104,6 +104,25 @@ def torch_device() -> str:
     return "cpu"
 
 
+def accelerator() -> str:
+    """What PyTorch would run on, read from its build tag so PyTorch is not imported here."""
+    if force_fallback() or not has_module("torch"):
+        return "none"
+    import importlib.metadata
+
+    try:
+        version = importlib.metadata.version("torch")
+    except importlib.metadata.PackageNotFoundError:
+        return "none"
+    if "+cu" in version:
+        return "cuda"
+    if sys.platform == "darwin":
+        return "mps"
+    if sys.platform.startswith("linux") and "+cpu" not in version:
+        return "cuda-if-present"
+    return "cpu"
+
+
 def _transcription_engine() -> str:
     from audioqi.editor import composition
 
@@ -119,6 +138,9 @@ def capabilities() -> dict[str, Any]:
             "engine": separation[0],
             "engines": separation,
             "stem_options": stem_options(),
+            # Drum kit pieces and lead/backing vocals (audio-separator's finer models).
+            "detail": "audio-separator" in separation,
+            "accelerator": accelerator(),
         },
         "stretch": {"engine": stretch},
         "pitch": {"engine": stretch},

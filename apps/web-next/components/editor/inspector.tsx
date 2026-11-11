@@ -207,6 +207,8 @@ function JobList({ jobs, onDismiss }: { jobs: JobEntry[]; onDismiss: (id: string
 export function Inspector(props: InspectorProps) {
   const { state, clip, track, capabilities } = props;
   const [stems, setStems] = useState(4);
+  const [drumKit, setDrumKit] = useState(false);
+  const [leadBacking, setLeadBacking] = useState(false);
   const [strength, setStrength] = useState(0.6);
   const [targetLufs, setTargetLufs] = useState(-14);
   const [semitones, setSemitones] = useState(0);
@@ -256,6 +258,13 @@ export function Inspector(props: InspectorProps) {
   const meta = clip ? state.assetMeta[clip.assetId] : undefined;
   const stemOptions = capabilities?.separation.stem_options ?? [2, 4];
   const stemChoice = stemOptions.includes(stems) ? stems : (stemOptions[stemOptions.length - 1] ?? 4);
+  // Kit pieces and lead/backing vocals need the AI stem separation pack.
+  const fineSplit = Boolean(capabilities?.separation.detail);
+  const clipLabel = clip ? (props.assets.get(clip.assetId)?.label ?? "").toLowerCase() : "";
+  const drumsOn = fineSplit && drumKit && stemChoice !== 2;
+  const leadOn = fineSplit && leadBacking;
+  const stemTotal = stemChoice + (drumsOn ? 5 : 0) + (leadOn ? 1 : 0);
+  const accelerator = capabilities?.separation.accelerator;
 
   const noisePrint = (() => {
     if (!clip || !props.range || clip.reversed) return null;
@@ -459,7 +468,9 @@ export function Inspector(props: InspectorProps) {
             title="Separate stems"
             hint={
               capabilities
-                ? `Engine: ${capabilities.separation.engine}. Each stem lands on its own track, aligned with this clip.`
+                ? `Engine: ${capabilities.separation.engine}${
+                    accelerator === "cuda" ? " on the GPU" : accelerator === "mps" ? " on the Apple GPU" : ""
+                  }. Each stem lands on its own track, aligned with this clip; the original is muted, not removed.`
                 : undefined
             }
           >
@@ -477,14 +488,67 @@ export function Inspector(props: InspectorProps) {
                 ))}
               </select>
             </div>
+            <label className={`flex items-start gap-2 text-[11px] ${fineSplit && stemChoice !== 2 ? "text-slate-300" : "text-slate-500"}`}>
+              <input
+                type="checkbox"
+                className="mt-0.5 accent-cyan-400"
+                checked={drumsOn}
+                disabled={!fineSplit || stemChoice === 2}
+                onChange={(event) => setDrumKit(event.target.checked)}
+              />
+              <span>Split the drums into kick, snare, toms, hi-hat, ride and crash</span>
+            </label>
+            <label className={`flex items-start gap-2 text-[11px] ${fineSplit ? "text-slate-300" : "text-slate-500"}`}>
+              <input
+                type="checkbox"
+                className="mt-0.5 accent-cyan-400"
+                checked={leadOn}
+                disabled={!fineSplit}
+                onChange={(event) => setLeadBacking(event.target.checked)}
+              />
+              <span>Split the vocals into lead and backing</span>
+            </label>
+            {!fineSplit ? (
+              <p className="text-[11px] leading-snug text-slate-400">
+                6 stems, drum kit pieces and lead/backing vocals need AI stem separation.{" "}
+                <a href="/models" target="_blank" rel="noreferrer" className="font-semibold text-cyan-300 underline-offset-2 hover:underline">
+                  Install it from Models &amp; engines
+                </a>
+                , then reload this page.
+              </p>
+            ) : null}
             <ActionButton
               variant="primary"
               className="w-full"
               disabled={busy}
-              onClick={() => props.onRunJob("separate", { stems: stemChoice }, `Separating ${clip.name}`)}
+              onClick={() =>
+                props.onRunJob(
+                  "separate",
+                  { stems: stemChoice, drum_kit: drumsOn, lead_backing: leadOn },
+                  `Separating ${clip.name} into ${stemTotal} stems`
+                )
+              }
             >
-              Separate into stems
+              Separate into {stemTotal} stems
             </ActionButton>
+            {fineSplit && clipLabel === "drums" ? (
+              <ActionButton
+                className="w-full"
+                disabled={busy}
+                onClick={() => props.onRunJob("separate", { part: "drums" }, `Splitting ${clip.name} into kit pieces`)}
+              >
+                Split this drum stem into kit pieces
+              </ActionButton>
+            ) : null}
+            {fineSplit && clipLabel === "vocals" ? (
+              <ActionButton
+                className="w-full"
+                disabled={busy}
+                onClick={() => props.onRunJob("separate", { part: "vocals" }, `Splitting ${clip.name} into lead and backing`)}
+              >
+                Split this vocal stem into lead and backing
+              </ActionButton>
+            ) : null}
           </PanelSection>
 
           <PanelSection

@@ -609,9 +609,14 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
             Describe a song, edit the lyrics, and generate it on this computer. Results open in the Studio Editor.
           </p>
         </div>
-        <Link href={projectId ? `/editor?project=${projectId}` : "/"} className={quietButton}>
-          {projectId ? "Back to the editor" : "Back to Music Suite"}
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/models" className={quietButton}>
+            Models &amp; engines
+          </Link>
+          <Link href={projectId ? `/editor?project=${projectId}` : "/"} className={quietButton}>
+            {projectId ? "Back to the editor" : "Back to Music Suite"}
+          </Link>
+        </div>
       </header>
 
       <div role="tablist" aria-label="AI Song Studio sections" className="flex gap-1 rounded-2xl bg-slate-900/80 p-1">
