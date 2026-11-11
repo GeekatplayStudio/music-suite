@@ -58,20 +58,36 @@ def _job(client: TestClient, pid: str, op: str, params: dict[str, Any]) -> dict[
 
 
 class FakeInstrument:
-    """Behaves like a Pedalboard instrument: a sine per held note."""
+    """Behaves like a Pedalboard instrument: a sine per held note.
+
+    Like Surge XT, a restored sound takes effect on the next audio block, and that
+    block is silent.
+    """
 
     is_instrument = True
 
     def __init__(self) -> None:
-        self.raw_state = b"factory"
+        self._state = b"factory"
+        self._pending: bytes | None = None
         self.parameters: dict[str, Any] = {}
         self.shown = False
+
+    @property
+    def raw_state(self) -> bytes:
+        return self._state
+
+    @raw_state.setter
+    def raw_state(self, value: bytes) -> None:
+        self._pending = bytes(value)
 
     def __call__(self, messages, duration, sample_rate, num_channels=2, reset=True):
         frames = int(duration * sample_rate)
         out = np.zeros((num_channels, frames), dtype=np.float32)
+        if self._pending is not None:
+            self._state, self._pending = self._pending, None
+            return out
         held: dict[int, float] = {}
-        level = 0.5 if self.raw_state == b"loud" else 0.1
+        level = 0.5 if self._state == b"loud" else 0.1
         for message, at in messages:
             status, pitch = message[0] & 0xF0, message[1]
             if status == 0x90:
@@ -85,7 +101,8 @@ class FakeInstrument:
 
     def show_editor(self) -> None:
         self.shown = True
-        self.raw_state = b"tweaked in the window"
+        self.shown_with = self._state
+        self._state = b"tweaked in the window"
 
 
 def test_midi_events_put_note_offs_before_note_ons_at_the_same_time() -> None:
@@ -143,6 +160,7 @@ def test_worker_window_mode_returns_the_sound_set_in_the_window(monkeypatch) -> 
     monkeypatch.setattr(plugin_worker, "_load", lambda _path: fake)
     outcome = plugin_worker.open_editor({"plugin": "x", "state": base64.b64encode(b"a").decode()})
     assert fake.shown and outcome["ok"] and outcome["is_instrument"]
+    assert fake.shown_with == b"a"  # The window opened on the saved sound, not the default.
     assert base64.b64decode(outcome["state"]) == b"tweaked in the window"
 
 

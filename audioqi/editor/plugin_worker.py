@@ -22,6 +22,10 @@ from pathlib import Path
 from typing import Any
 
 MAX_DESCRIBED_PARAMETERS = 512
+#: Silence run through an instrument after its sound is restored. Some plugins (Surge XT)
+#: load a restored sound on their next audio block, so without this the first render is
+#: silent and the plugin's window shows the default sound.
+PRIME_SECONDS = 0.25
 
 
 def _load(path: str) -> Any:
@@ -78,6 +82,8 @@ def _restore(plugin: Any, state: Any) -> None:
     except (binascii.Error, ValueError) as exc:
         raise ValueError("the saved sound is damaged") from exc
     plugin.raw_state = raw
+    if getattr(plugin, "is_instrument", False):
+        plugin([], duration=PRIME_SECONDS, sample_rate=48000.0, num_channels=2, reset=True)
 
 
 def midi_events(notes: list[dict[str, Any]]) -> list[tuple[bytes, float]]:
