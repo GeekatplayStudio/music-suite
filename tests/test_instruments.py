@@ -8,10 +8,12 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import itertools
 import json
 import stat
 import tarfile
 import threading
+import time
 import zipfile
 from collections.abc import Iterator
 from dataclasses import replace
@@ -42,6 +44,12 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     plugins.reset_cache()
 
 
+@pytest.fixture(autouse=True)
+def no_speakers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests never open the computer's audio output."""
+    monkeypatch.setattr(plugin_worker, "_output_stream", lambda: None)
+
+
 def _project(client: TestClient) -> str:
     response = client.post("/editor/projects", json={"name": "Synths"})
     assert response.status_code == 200
@@ -61,8 +69,8 @@ def _job(client: TestClient, pid: str, op: str, params: dict[str, Any]) -> dict[
 class FakeInstrument:
     """Behaves like a Pedalboard instrument: a sine per held note.
 
-    Like Surge XT, a restored sound takes effect on the next audio block, and that
-    block is silent.
+    Like Surge XT, a restored sound, or one picked in the window, takes effect on
+    the next audio block, and that block is silent.
     """
 
     is_instrument = True
@@ -70,6 +78,7 @@ class FakeInstrument:
     def __init__(self) -> None:
         self._state = b"factory"
         self._pending: bytes | None = None
+        self.held: dict[int, int] = {}  # pitch -> samples played so far
         self.parameters: dict[str, Any] = {}
         self.shown = False
 
@@ -81,23 +90,36 @@ class FakeInstrument:
     def raw_state(self, value: bytes) -> None:
         self._pending = bytes(value)
 
-    def __call__(self, messages, duration, sample_rate, num_channels=2, reset=True):
+    def __call__(self, messages, duration, sample_rate, num_channels=2, buffer_size=0, reset=True):
         frames = int(duration * sample_rate)
         out = np.zeros((num_channels, frames), dtype=np.float32)
+        if reset:
+            self.held = {}
         if self._pending is not None:
             self._state, self._pending = self._pending, None
             return out
-        held: dict[int, float] = {}
         level = 0.5 if self._state == b"loud" else 0.1
-        for message, at in messages:
-            status, pitch = message[0] & 0xF0, message[1]
-            if status == 0x90:
-                held[pitch] = at
-            elif status == 0x80 and pitch in held:
-                start, end = int(held.pop(pitch) * sample_rate), int(at * sample_rate)
-                t = np.arange(end - start) / sample_rate
+        # Notes stay held across blocks, like a real instrument.
+        cuts = sorted({0, frames, *(min(frames, int(at * sample_rate)) for _, at in messages)})
+        queue = sorted(messages, key=lambda e: e[1])
+        for begin, end in itertools.pairwise(cuts):
+            while queue and int(queue[0][1] * sample_rate) <= begin:
+                message, _ = queue.pop(0)
+                status, pitch = message[0] & 0xF0, message[1]
+                if status == 0x90:
+                    self.held[pitch] = 0
+                elif status == 0x80 or (status == 0xB0 and pitch in (120, 123)):
+                    for key in [pitch] if status == 0x80 else list(self.held):
+                        self.held.pop(key, None)
+            for pitch, played in self.held.items():
+                t = (played + np.arange(end - begin)) / sample_rate
                 freq = 440.0 * 2 ** ((pitch - 69) / 12)
-                out[:, start:end] += level * np.sin(2 * np.pi * freq * t)
+                out[:, begin:end] += level * np.sin(2 * np.pi * freq * t)
+                self.held[pitch] = played + end - begin
+        while queue:  # Messages exactly at the end of the block.
+            message, _ = queue.pop(0)
+            if message[0] & 0xF0 == 0x80:
+                self.held.pop(message[1], None)
         return out
 
     def show_editor(self, close_event=None) -> None:
@@ -106,7 +128,8 @@ class FakeInstrument:
             # Like a real window: stays open until the app asks it to close.
             assert close_event is not None and close_event.wait(5)
         self.shown_with = self._state
-        self._state = b"tweaked in the window"
+        # Like Surge XT, a sound picked in the window loads on the next audio block.
+        self._pending = b"tweaked in the window"
 
 
 def test_midi_events_put_note_offs_before_note_ons_at_the_same_time() -> None:
@@ -172,17 +195,122 @@ def test_the_app_can_close_the_window_and_keep_the_sound(tmp_path: Path, monkeyp
     fake = FakeInstrument()
     fake.wait_for_close = True  # type: ignore[attr-defined]
     monkeypatch.setattr(plugin_worker, "_load", lambda _path: fake)
-    close_file = tmp_path / "close"
-    plugins._windows["job-1"] = close_file
+    plugins._windows["job-1"] = tmp_path
     try:
         timer = threading.Timer(0.3, lambda: plugins.close_plugin_window("job-1"))
         timer.start()
-        outcome = plugin_worker.open_editor({"plugin": "x", "close_file": str(close_file)})
+        outcome = plugin_worker.open_editor({"plugin": "x", "control_dir": str(tmp_path)})
         timer.join()
     finally:
         plugins._windows.pop("job-1", None)
     assert outcome["ok"] and base64.b64decode(outcome["state"]) == b"tweaked in the window"
     assert plugins.close_plugin_window("job-1") is False  # Nothing open any more.
+
+
+def test_live_preview_loops_the_notes_in_blocks() -> None:
+    preview = plugin_worker.LivePreview(
+        [{"t": 0.0, "d": 0.5, "p": 60, "v": 1.0}, {"t": 0.75, "d": 0.5, "p": 64, "v": 1.0}], 1.0
+    )
+    assert preview.block(0.5) == []  # Silent until asked to play.
+    preview.play()
+    first = preview.block(0.5)
+    assert [(m[0], m[1], t) for m, t in first] == [(0x90, 60, 0.0)]
+    second = preview.block(0.75)  # Crosses the loop end at 0.5 s into this block.
+    starts = [(m[0], m[1], round(t, 3)) for m, t in second if m[0] in (0x80, 0x90)]
+    assert (0x80, 60, 0.0) in starts and (0x90, 64, 0.25) in starts
+    assert (0x80, 64, 0.5) in starts  # Cut at the loop end...
+    assert any(m[0] == 0xB0 and m[1] == 123 for m, _ in second)  # ...then all notes off,
+    assert (0x90, 60, 0.5) in starts  # and the loop starts again.
+    preview.stop()
+    assert [m[1] for m, _ in preview.block(0.1)] == [123, 120]
+    assert preview.block(0.1) == []
+
+
+def test_the_window_plays_the_preview_through_the_speakers(tmp_path: Path, monkeypatch) -> None:
+    class Speakers:
+        sample_rate = 48000.0
+        num_output_channels = 2
+
+        def __init__(self) -> None:
+            self.written: list[np.ndarray] = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def write(self, audio, rate):
+            assert rate == self.sample_rate and audio.shape[0] == 2
+            self.written.append(np.array(audio))
+            time.sleep(audio.shape[1] / rate / 4)
+
+    speakers = Speakers()
+    monkeypatch.setattr(plugin_worker, "_output_stream", lambda: speakers)
+    fake = FakeInstrument()
+    fake.wait_for_close = True  # type: ignore[attr-defined]
+    monkeypatch.setattr(plugin_worker, "_load", lambda _path: fake)
+
+    def drive() -> None:
+        time.sleep(0.2)
+        (tmp_path / "play").touch()
+        time.sleep(0.5)
+        (tmp_path / "close").touch()
+
+    threading.Thread(target=drive).start()
+    request = {
+        "plugin": "x",
+        "control_dir": str(tmp_path),
+        "notes": [{"t": 0.0, "d": 2.0, "p": 69, "v": 1.0}],
+        "seconds": 2.0,
+    }
+    outcome = plugin_worker.open_editor(request)
+    assert outcome["ok"] and outcome["preview"] == "speakers"
+    heard = np.concatenate(speakers.written, axis=1)
+    assert np.abs(heard[:, :2048]).max() == 0.0  # Silence before Play.
+    assert np.abs(heard).max() > 0.05  # The note was heard after Play.
+    assert not (tmp_path / "play").exists()  # The command was taken.
+
+
+def test_preview_commands_reach_only_an_open_window(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr(engines, "plugin_hosting_available", lambda: True)
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(plugins, "window_command", lambda key, cmd: sent.append((key, cmd)) or True)
+    seen: dict[str, Any] = {}
+
+    def fake_window(plugin_id, state, key, notes, seconds):
+        seen.update(notes=notes, seconds=seconds)
+        # While the window is "open", the job is running: send commands then.
+        pid_ = seen["pid"]
+        assert (
+            client.post(
+                f"/editor/projects/{pid_}/jobs/{key}/preview", json={"play": True}
+            ).status_code
+            == 200
+        )
+        assert (
+            client.post(
+                f"/editor/projects/{pid_}/jobs/{key}/preview", json={"play": "x"}
+            ).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                f"/editor/projects/{pid_}/jobs/{key}/preview", json={"play": False}
+            ).status_code
+            == 200
+        )
+        return {"plugin": "Surge XT", "state": base64.b64encode(b"s").decode()}
+
+    monkeypatch.setattr(plugins, "open_plugin_window", fake_window)
+    pid = seen["pid"] = _project(client)
+    job = _job(client, pid, "plugin_window", {"plugin_id": PLUGIN_ID, "notes": NOTES, "seconds": 2})
+    assert job["status"] == "completed", job["error"]
+    assert [cmd for _, cmd in sent] == ["play", "stop"] and seen["seconds"] == 2.0
+    assert [n["p"] for n in seen["notes"]] == [60, 64]
+    # Once the window has closed, commands are accepted but go nowhere.
+    client.post(f"/editor/projects/{pid}/jobs/{job['id']}/preview", json={"play": True})
+    assert len(sent) == 2
 
 
 def test_close_window_is_only_for_plugin_window_jobs(client: TestClient, monkeypatch) -> None:
@@ -275,7 +403,7 @@ def test_plugin_window_job_returns_the_saved_sound(client: TestClient, monkeypat
     monkeypatch.setattr(
         plugins,
         "open_plugin_window",
-        lambda plugin_id, state, key: {"plugin": "Surge XT", "state": saved, "is_instrument": True},
+        lambda *_args: {"plugin": "Surge XT", "state": saved, "is_instrument": True},
     )
     job = _job(client, _project(client), "plugin_window", {"plugin_id": PLUGIN_ID})
     assert job["status"] == "completed" and job["result_assets"] == []

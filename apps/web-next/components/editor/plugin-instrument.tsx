@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Loader2, Play, Square } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { ActionButton, PanelSection, fieldClass } from "@/components/editor/controls";
@@ -27,6 +27,8 @@ export function PluginInstrumentSection({
   onSet,
   onOpenWindow,
   onCloseWindow,
+  onPreview,
+  hasNotes,
   onRender,
   onRefreshPlugins
 }: {
@@ -39,10 +41,20 @@ export function PluginInstrumentSection({
   onSet: (instrument: Track["pluginInstrument"]) => void;
   onOpenWindow: () => void;
   onCloseWindow: () => void;
+  /** Play (true) or stop (false) the clip through the plugin while its window is open. */
+  onPreview: (play: boolean) => void;
+  hasNotes: boolean;
   onRender: () => void;
   onRefreshPlugins: () => void;
 }) {
   const [check, setCheck] = useState<Check>({ status: "idle" });
+  const [previewing, setPreviewing] = useState(false);
+  // A new window starts silent.
+  const [seenWindow, setSeenWindow] = useState(windowOpen);
+  if (seenWindow !== windowOpen) {
+    setSeenWindow(windowOpen);
+    setPreviewing(false);
+  }
   const request = useRef(0);
   const current = track.pluginInstrument;
   // Plugins already known to be effects are left out; unknown ones are checked when chosen.
@@ -118,6 +130,35 @@ export function PluginInstrumentSection({
               <p className="rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-2 py-1.5 text-[11px] leading-snug text-cyan-100" role="status">
                 {current.name}&apos;s window is open on this computer (it may be behind this one). Pick or shape a sound there, then
                 keep it here or close the window.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <ActionButton
+                  disabled={!hasNotes || previewing}
+                  title={hasNotes ? "Loops this clip through the plugin on this computer's speakers" : "Add notes to the clip first"}
+                  onClick={() => {
+                    onPreview(true);
+                    setPreviewing(true);
+                  }}
+                >
+                  <Play className="h-3.5 w-3.5" aria-hidden /> Play
+                </ActionButton>
+                <ActionButton
+                  disabled={!previewing}
+                  title="Stops the preview"
+                  onClick={() => {
+                    onPreview(false);
+                    setPreviewing(false);
+                  }}
+                >
+                  <Square className="h-3.5 w-3.5" aria-hidden /> Stop
+                </ActionButton>
+              </div>
+              <p className="text-[11px] leading-snug text-slate-400" role="status">
+                {!hasNotes
+                  ? "Add notes to this clip to hear sounds while you choose."
+                  : previewing
+                    ? "Playing this clip in a loop through your speakers. Pick sounds in the plugin's window to hear each one."
+                    : "Play loops this clip through the plugin, so each sound you pick is heard straight away."}
               </p>
               <ActionButton variant="primary" className="w-full" onClick={onCloseWindow}>
                 Keep this sound and close the window

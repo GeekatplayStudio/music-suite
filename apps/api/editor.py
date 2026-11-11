@@ -299,6 +299,17 @@ def close_plugin_window(project_id: str, job_id: str) -> dict[str, Any]:
     return _guard(lambda: editor_jobs.close_window(project_id, job_id))
 
 
+@router.post("/projects/{project_id}/jobs/{job_id}/preview")
+def preview_in_plugin_window(
+    project_id: str, job_id: str, payload: dict[str, Any] = Body(...)
+) -> dict[str, Any]:
+    play = payload.get("play")
+    if not isinstance(play, bool):
+        raise HTTPException(status_code=422, detail="'play' must be true or false.")
+    command = "play" if play else "stop"
+    return _guard(lambda: editor_jobs.window_command(project_id, job_id, command))
+
+
 @router.post("/projects/{project_id}/jobs/{job_id}/cancel")
 def cancel_job(project_id: str, job_id: str) -> dict[str, Any]:
     return _guard(lambda: editor_jobs.cancel_job(project_id, job_id))

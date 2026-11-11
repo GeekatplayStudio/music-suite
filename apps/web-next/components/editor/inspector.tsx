@@ -64,6 +64,8 @@ interface InspectorProps {
   /** Open the track's plugin instrument window for a MIDI clip. */
   onOpenPluginWindow: (clipId: string) => void;
   onClosePluginWindow: (jobId: string) => void;
+  /** Start or stop the clip playing through the plugin while its window is open. */
+  onPreviewInPluginWindow: (jobId: string, play: boolean) => void;
   onRefreshPlugins: () => void;
   generation: GenerationStatus | null;
   /** Generators that can edit the selected clip (local engine first). */
@@ -476,6 +478,8 @@ export function Inspector(props: InspectorProps) {
                   onSet={(pluginInstrument) => props.onPatchTrack({ pluginInstrument }, "")}
                   onOpenWindow={() => props.onOpenPluginWindow(clip.id)}
                   onCloseWindow={() => windowJob && props.onClosePluginWindow(windowJob.job.id)}
+                  onPreview={(play) => windowJob && props.onPreviewInPluginWindow(windowJob.job.id, play)}
+                  hasNotes={Boolean(clip.notes?.length)}
                   onRender={() => props.onRenderWithPlugin(clip.id)}
                   onRefreshPlugins={props.onRefreshPlugins}
                 />

@@ -286,25 +286,7 @@ def _v_render_instrument(params: dict[str, Any]) -> dict[str, Any]:
     _reject_unknown(params, {"plugin_id", "state", "notes", "seconds", "name", "sample_rate"})
     limit = projects.SETTINGS.max_audio_duration_seconds
     seconds = _number(params, "seconds", 0.1, limit, None, required=True)
-    raw = params.get("notes")
-    if not isinstance(raw, list) or not raw:
-        raise ParamError("'notes' must be a non-empty list of notes.")
-    if len(raw) > MAX_RENDER_NOTES:
-        raise ParamError(f"A clip can hold at most {MAX_RENDER_NOTES} notes.")
-    notes: list[dict[str, float]] = []
-    for item in raw:
-        if not isinstance(item, dict):
-            raise ParamError("Each note must be an object with t, d, p and v.")
-        _reject_unknown(item, {"t", "d", "p", "v"})
-        start = _number(item, "t", 0.0, limit, None, required=True)
-        length = _number(item, "d", 0.001, limit, None, required=True)
-        pitch = item.get("p")
-        if isinstance(pitch, bool) or not isinstance(pitch, int) or not 0 <= pitch <= 127:
-            raise ParamError("Each note's 'p' must be a MIDI pitch from 0 to 127.")
-        velocity = _number(item, "v", 0.0, 1.0, 0.8)
-        assert start is not None and length is not None and velocity is not None
-        if start < (seconds or 0.0):
-            notes.append({"t": start, "d": length, "p": pitch, "v": velocity})
+    notes = _notes(params.get("notes"), seconds or 0.0)
     if not notes:
         raise ParamError("Every note starts after the end of the render.")
     name = params.get("name", "Instrument")
@@ -323,9 +305,43 @@ def _v_render_instrument(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _notes(raw: Any, seconds: float, *, required: bool = True) -> list[dict[str, float]]:
+    """Validated notes that start before ``seconds``."""
+    limit = projects.SETTINGS.max_audio_duration_seconds
+    if raw is None and not required:
+        return []
+    if not isinstance(raw, list) or (required and not raw):
+        raise ParamError("'notes' must be a non-empty list of notes.")
+    if len(raw) > MAX_RENDER_NOTES:
+        raise ParamError(f"A clip can hold at most {MAX_RENDER_NOTES} notes.")
+    notes: list[dict[str, float]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ParamError("Each note must be an object with t, d, p and v.")
+        _reject_unknown(item, {"t", "d", "p", "v"})
+        start = _number(item, "t", 0.0, limit, None, required=True)
+        length = _number(item, "d", 0.001, limit, None, required=True)
+        pitch = item.get("p")
+        if isinstance(pitch, bool) or not isinstance(pitch, int) or not 0 <= pitch <= 127:
+            raise ParamError("Each note's 'p' must be a MIDI pitch from 0 to 127.")
+        velocity = _number(item, "v", 0.0, 1.0, 0.8)
+        assert start is not None and length is not None and velocity is not None
+        if start < seconds:
+            notes.append({"t": start, "d": length, "p": pitch, "v": velocity})
+    return notes
+
+
 def _v_plugin_window(params: dict[str, Any]) -> dict[str, Any]:
-    _reject_unknown(params, {"plugin_id", "state"})
-    return {"plugin_id": _plugin_id(params), "state": _plugin_state(params)}
+    """Open the plugin's window; ``notes`` (a loop of ``seconds``) can be previewed live."""
+    _reject_unknown(params, {"plugin_id", "state", "notes", "seconds"})
+    seconds = _number(params, "seconds", 0.25, 600.0, 4.0)
+    assert seconds is not None
+    return {
+        "plugin_id": _plugin_id(params),
+        "state": _plugin_state(params),
+        "notes": _notes(params.get("notes"), seconds, required=False),
+        "seconds": seconds,
+    }
 
 
 def _v_declick(params: dict[str, Any]) -> dict[str, Any]:
@@ -750,7 +766,11 @@ def _op_plugin_window(ctx: _Context) -> _Outcome:
         raise EditorError(plugins.UNAVAILABLE_MESSAGE)
     ctx.progress("process", 10, "The plugin's window is open. Close it to keep the sound.")
     outcome = plugins.open_plugin_window(
-        ctx.params["plugin_id"], ctx.params["state"], str(ctx.record["id"])
+        ctx.params["plugin_id"],
+        ctx.params["state"],
+        str(ctx.record["id"]),
+        ctx.params.get("notes") or [],
+        ctx.params.get("seconds"),
     )
     return [], outcome
 
@@ -988,14 +1008,21 @@ def cancel_job(project_id: str, job_id: str) -> dict[str, Any]:
     return _public(record)
 
 
-def close_window(project_id: str, job_id: str) -> dict[str, Any]:
-    """Close the plugin window a ``plugin_window`` job opened, keeping its sound."""
+def window_command(project_id: str, job_id: str, command: str) -> dict[str, Any]:
+    """Close the window a ``plugin_window`` job opened (keeping its sound), or play or
+    stop the clip's notes through the plugin while it is open."""
     record = _load(project_id, job_id)
     if record.get("op") != "plugin_window":
         raise ParamError("This job did not open a plugin window.")
+    if command not in plugins.WINDOW_COMMANDS:
+        raise ParamError("The command must be close, play or stop.")
     if record.get("status") in ("queued", "running"):
-        plugins.close_plugin_window(job_id)
+        plugins.window_command(job_id, command)
     return _public(record)
+
+
+def close_window(project_id: str, job_id: str) -> dict[str, Any]:
+    return window_command(project_id, job_id, "close")
 
 
 def _fail(project_id: str, record: dict[str, Any], message: str) -> None:

@@ -40,8 +40,9 @@ _cache_time = 0.0
 _parameters: dict[str, list[dict[str, Any]]] = {}
 #: Whether each plugin used so far turned out to be an instrument.
 _instruments: dict[str, bool] = {}
-#: Open plugin windows: key -> the file whose creation asks the worker to close it.
+#: Open plugin windows: key -> the folder where the app leaves commands for the worker.
 _windows: dict[str, Path] = {}
+WINDOW_COMMANDS = ("close", "play", "stop")
 #: How long a plugin's own window may stay open before the worker gives up.
 EDITOR_TIMEOUT_SECONDS = 3600
 MAX_STATE_BYTES = 16 * 1024 * 1024
@@ -202,8 +203,10 @@ def _run_worker(
         if audio_in is not None:
             sf.write(str(src), audio_in[0], audio_in[1], subtype="FLOAT")
         if window_key:
-            request = {**request, "close_file": str(Path(tmp) / "close")}
-            _windows[window_key] = Path(tmp) / "close"
+            control = Path(tmp) / "control"
+            control.mkdir()
+            request = {**request, "control_dir": str(control)}
+            _windows[window_key] = control
         request_path, report = Path(tmp) / "request.json", Path(tmp) / "report.json"
         request_path.write_text(
             json.dumps({**request, "plugin": str(item["path"])}), encoding="utf-8"
@@ -258,15 +261,22 @@ def render_instrument(
     return audio, str(item["name"])
 
 
-def open_plugin_window(plugin_id: str, state: str | None, key: str | None = None) -> dict[str, Any]:
+def open_plugin_window(
+    plugin_id: str,
+    state: str | None,
+    key: str | None = None,
+    notes: list[dict[str, float]] | None = None,
+    seconds: float | None = None,
+) -> dict[str, Any]:
     """Show the plugin's own window; returns its sound once it is closed.
 
-    With ``key``, :func:`close_plugin_window` can close the window from the app.
+    With ``key``, :func:`window_command` can close the window from the app, or play
+    and stop ``notes`` (a loop of ``seconds``) through the speakers while it is open.
     """
     item = _require(plugin_id)
     outcome, _ = _run_worker(
         item,
-        {"mode": "editor", "state": state},
+        {"mode": "editor", "state": state, "notes": notes or [], "seconds": seconds},
         EDITOR_TIMEOUT_SECONDS,
         audio_out=False,
         window_key=key,
@@ -275,7 +285,10 @@ def open_plugin_window(plugin_id: str, state: str | None, key: str | None = None
     if not isinstance(saved, str) or len(saved) > MAX_STATE_BYTES * 4 // 3 + 4:
         raise EditorError(f"Plugin '{item['name']}' returned no usable sound.")
     _instruments[plugin_id] = bool(outcome.get("is_instrument"))
-    return {"plugin": str(item["name"]), "state": saved, "is_instrument": _instruments[plugin_id]}
+    result = {"plugin": str(item["name"]), "state": saved, "is_instrument": _instruments[plugin_id]}
+    if isinstance(outcome.get("preview"), str):
+        result["preview"] = outcome["preview"][:80]
+    return result
 
 
 def apply_plugin(
@@ -298,13 +311,18 @@ def apply_plugin(
     return out, str(item["name"])
 
 
-def close_plugin_window(key: str) -> bool:
-    """Ask an open plugin window to close and hand back its sound. False if none is open."""
-    path = _windows.get(key)
-    if path is None:
+def window_command(key: str, command: str) -> bool:
+    """Pass ``close``, ``play`` or ``stop`` to an open plugin window. False if none is open."""
+    control = _windows.get(key)
+    if control is None or command not in WINDOW_COMMANDS:
         return False
     try:
-        path.touch()
+        (control / command).touch()
     except OSError:
         return False
     return True
+
+
+def close_plugin_window(key: str) -> bool:
+    """Ask an open plugin window to close and hand back its sound. False if none is open."""
+    return window_command(key, "close")

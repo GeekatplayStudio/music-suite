@@ -69,6 +69,8 @@ export const editorApi = {
   deleteAsset: (id: string, assetId: string) =>
     request<{ deleted: boolean }>(`/projects/${id}/assets/${assetId}`, { method: "DELETE" }),
   assetAudioUrl: (id: string, assetId: string) => `${BASE}/projects/${id}/assets/${assetId}/audio`,
+  previewInPluginWindow: (id: string, jobId: string, play: boolean) =>
+    request<Job>(`/projects/${id}/jobs/${jobId}/preview`, json({ play })),
   closePluginWindow: (id: string, jobId: string) =>
     request<Job>(`/projects/${id}/jobs/${jobId}/close-window`, { method: "POST" }),
   startJob: (id: string, op: JobOp, assetId: string | null, params: Record<string, unknown>) =>

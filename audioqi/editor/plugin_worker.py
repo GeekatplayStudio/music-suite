@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
 import json
 import math
 import sys
@@ -28,6 +29,10 @@ MAX_DESCRIBED_PARAMETERS = 512
 #: load a restored sound on their next audio block, so without this the first render is
 #: silent and the plugin's window shows the default sound.
 PRIME_SECONDS = 0.25
+#: While an instrument's window is open, audio is rendered in blocks of this many frames
+#: into an output buffer twice that size.
+PREVIEW_BLOCK_FRAMES = 1024
+PREVIEW_BUFFER_FRAMES = 2048
 
 
 def _load(path: str) -> Any:
@@ -136,6 +141,132 @@ def render_instrument(request: dict[str, Any], dst: Path) -> dict[str, Any]:
     return {"ok": True, "is_instrument": True}
 
 
+class LivePreview:
+    """Loops a clip's notes in short blocks while a plugin's window is open."""
+
+    #: Sent when the loop wraps or playing stops: all notes off, all sound off (channel 1).
+    SILENCE = (bytes([0xB0, 123, 0]), bytes([0xB0, 120, 0]))
+
+    def __init__(self, notes: list[dict[str, Any]], seconds: float) -> None:
+        self.length = max(0.25, float(seconds))
+        self.events = [(t, m) for m, t in midi_events(notes) if t < self.length]
+        # Notes cut by the end of the loop are released there.
+        self.events += [(self.length - 1e-6, bytes([0x80, int(n["p"]), 0])) for n in notes]
+        self.events.sort(key=lambda e: e[0])
+        self.playing = False
+        self.position = 0.0
+        self._stop_pending = False
+
+    def play(self) -> None:
+        self.playing, self.position = True, 0.0
+
+    def stop(self) -> None:
+        if self.playing:
+            self.playing, self._stop_pending = False, True
+
+    def block(self, duration: float) -> list[tuple[bytes, float]]:
+        """MIDI messages for the next ``duration`` seconds, with times inside the block."""
+        if self._stop_pending:
+            self._stop_pending = False
+            return [(message, 0.0) for message in self.SILENCE]
+        if not self.playing or not self.events:
+            return []
+        out: list[tuple[bytes, float]] = []
+        offset, remaining = 0.0, duration
+        while remaining > 1e-9:
+            end = min(self.length, self.position + remaining)
+            for at, message in self.events:
+                if self.position <= at < end:
+                    out.append((message, offset + at - self.position))
+            step = end - self.position
+            offset, remaining = offset + step, remaining - step
+            self.position = end
+            if self.position >= self.length - 1e-9:
+                self.position = 0.0
+                out.extend((message, offset) for message in self.SILENCE)
+        return out
+
+
+def _output_stream() -> Any:
+    """The default speakers or headphones, or None when there is no output device."""
+    try:
+        from pedalboard.io import AudioStream
+
+        name = AudioStream.default_output_device_name
+        if not name:
+            return None
+        # A roomy buffer leaves time to render each block without gaps.
+        return AudioStream(output_device_name=name, buffer_size=PREVIEW_BUFFER_FRAMES)
+    except Exception:
+        return None
+
+
+def _pump(
+    plugin: Any, close: threading.Event, preview: LivePreview, status: dict[str, Any]
+) -> None:
+    """Keep the plugin's audio engine running, playing the preview through the speakers.
+
+    Like a DAW does: some instruments (Surge XT) load a sound picked in their browser
+    on the next audio block, so without this the pick would never take effect.
+    """
+    import numpy as np
+
+    stream = _output_stream()
+    status["preview"] = "speakers" if stream is not None else "no output device"
+    rate = float(stream.sample_rate) if stream is not None else 48000.0
+    frames = PREVIEW_BLOCK_FRAMES
+    seconds = frames / rate
+    # Pedalboard's write() spins while its buffer is full, so stay at most one block
+    # ahead of what the device has played and sleep the rest of the time.
+    started, sent = time.monotonic(), 0
+    try:
+        if stream is not None:
+            stream.__enter__()
+        while not close.is_set():
+            ahead = sent - (time.monotonic() - started) * rate
+            if ahead > frames:
+                time.sleep((ahead - frames) / rate)
+            elif ahead < -frames:
+                started, sent = time.monotonic(), 0  # Fell behind (system busy): resync.
+            out = plugin(
+                preview.block(seconds),
+                duration=seconds,
+                sample_rate=rate,
+                num_channels=2,
+                buffer_size=frames,
+                reset=False,
+            )
+            sent += frames
+            if stream is None:
+                continue
+            out = np.asarray(out, dtype=np.float32)[:, :frames]
+            if out.shape[0] < stream.num_output_channels:
+                out = np.repeat(out[:1], stream.num_output_channels, axis=0)
+            stream.write(np.clip(out[: stream.num_output_channels], -1.0, 1.0), rate)
+    except Exception as exc:
+        status["preview"] = f"stopped: {type(exc).__name__}"
+        return
+    finally:
+        if stream is not None:
+            with contextlib.suppress(Exception):
+                stream.__exit__(None, None, None)
+
+
+def _watch(control: Path, close: threading.Event, preview: LivePreview) -> None:
+    """Follow the app's commands: files named close, play or stop appear in ``control``."""
+    while not close.is_set():
+        for command in ("play", "stop"):
+            flag = control / command
+            if flag.exists():
+                with contextlib.suppress(OSError):
+                    flag.unlink()
+                preview.play() if command == "play" else preview.stop()
+        if (control / "close").exists():
+            close.set()
+            return
+        time.sleep(0.1)
+
+
 def open_editor(request: dict[str, Any]) -> dict[str, Any]:
     try:
         plugin = _load(str(request["plugin"]))
@@ -146,17 +277,19 @@ def open_editor(request: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         return {"ok": False, "error": "the saved sound could not be loaded into the plugin"}
     close = threading.Event()
-    close_file = request.get("close_file")
-    if close_file:
-        # The app asks for the window to close by creating this file.
-        def watch() -> None:
-            while not close.is_set():
-                if Path(str(close_file)).exists():
-                    close.set()
-                    return
-                time.sleep(0.2)
-
-        threading.Thread(target=watch, daemon=True).start()
+    preview = LivePreview(list(request.get("notes") or []), float(request.get("seconds") or 4.0))
+    control = request.get("control_dir")
+    if control:
+        threading.Thread(
+            target=_watch, args=(Path(str(control)), close, preview), daemon=True
+        ).start()
+    pump_thread = None
+    status: dict[str, Any] = {}
+    if getattr(plugin, "is_instrument", False):
+        pump_thread = threading.Thread(
+            target=_pump, args=(plugin, close, preview, status), daemon=True
+        )
+        pump_thread.start()
     try:
         # Blocks until the window is closed, by the user or through ``close``.
         plugin.show_editor(close)
@@ -166,10 +299,15 @@ def open_editor(request: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": "the plugin's window could not be opened"}
     finally:
         close.set()
+    if pump_thread is not None:
+        pump_thread.join(timeout=5)
+        # One more block so a sound picked just before closing is in the saved state.
+        plugin([], duration=PRIME_SECONDS, sample_rate=48000.0, num_channels=2, reset=False)
     return {
         "ok": True,
         "state": base64.b64encode(bytes(plugin.raw_state)).decode("ascii"),
         "is_instrument": bool(getattr(plugin, "is_instrument", False)),
+        **status,
     }
 
 

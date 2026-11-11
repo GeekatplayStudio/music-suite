@@ -281,6 +281,19 @@ function capitalize(value: string): string {
 }
 
 /** Fold a finished backend job into the project as a single undoable edit. */
+/** A MIDI clip's notes as a plugin instrument plays them: from the clip's start, cut at its end. */
+function pluginNotes(clip: Clip): Note[] {
+  const end = clip.offset + clip.duration;
+  return (clip.notes ?? [])
+    .filter((note) => note.t >= clip.offset - 1e-6 && note.t < end)
+    .map((note) => ({
+      t: Math.max(0, note.t - clip.offset),
+      d: Math.max(0.005, Math.min(note.d, end - note.t)),
+      p: clamp(Math.round(note.p), 0, 127),
+      v: clamp(note.v, 0, 1)
+    }));
+}
+
 function applyJob(state: ProjectState, job: Job, clipId: string): ProjectState {
   const source = state.clips.find((c) => c.id === clipId);
   if (job.op === "plugin_window" && source) {
@@ -986,15 +999,7 @@ export function EditorApp({
     const track = clip ? stateRef.current.tracks.find((t) => t.id === clip.trackId) : undefined;
     const instrument = track?.pluginInstrument;
     if (!clip?.notes || !instrument) return;
-    const end = clip.offset + clip.duration;
-    const notes = clip.notes
-      .filter((note) => note.t >= clip.offset - 1e-6 && note.t < end)
-      .map((note) => ({
-        t: Math.max(0, note.t - clip.offset),
-        d: Math.max(0.005, Math.min(note.d, end - note.t)),
-        p: clamp(Math.round(note.p), 0, 127),
-        v: clamp(note.v, 0, 1)
-      }));
+    const notes = pluginNotes(clip);
     if (!notes.length) {
       setNotice("This clip has no notes to play.");
       return;
@@ -1015,7 +1020,8 @@ export function EditorApp({
     const clip = stateRef.current.clips.find((c) => c.id === clipId);
     const instrument = clip ? stateRef.current.tracks.find((t) => t.id === clip.trackId)?.pluginInstrument : undefined;
     if (!clip || !instrument) return;
-    const params = { plugin_id: instrument.id, state: instrument.state ?? null };
+    // The clip's notes come along so they can be played live while the window is open.
+    const params = { plugin_id: instrument.id, state: instrument.state ?? null, notes: pluginNotes(clip), seconds: clamp(clip.duration, 0.25, 600) };
     void runJob("plugin_window", params, `${instrument.name} window open: close it to keep the sound`, [clip.id]);
   };
 
@@ -1971,6 +1977,9 @@ export function EditorApp({
           onOpenWam={(trackId) => setWamWindow(trackId)}
           onRenderWithPlugin={renderWithPlugin}
           onOpenPluginWindow={openPluginWindow}
+          onPreviewInPluginWindow={(jobId, play) =>
+            void editorApi.previewInPluginWindow(projectId, jobId, play).catch((err: unknown) => setNotice(errorMessage(err, "The preview could not start.")))
+          }
           onClosePluginWindow={(jobId) =>
             void editorApi.closePluginWindow(projectId, jobId).catch((err: unknown) => setNotice(errorMessage(err, "The window could not be closed.")))
           }
