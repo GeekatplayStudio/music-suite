@@ -351,3 +351,52 @@ def load_sound_in_window(key: str, state: str) -> bool:
 def close_plugin_window(key: str) -> bool:
     """Ask an open plugin window to close and hand back its sound. False if none is open."""
     return window_command(key, "close")
+
+
+# --------------------------------------------------------------------------- auditions
+# Hearing an instrument outside any project (Synth Studio): one at a time, no window.
+
+_audition: dict[str, Any] = {"key": None, "error": None}
+
+
+def start_audition(
+    plugin_id: str, state: str | None, notes: list[dict[str, float]], seconds: float
+) -> str:
+    """Loop ``notes`` through an instrument on the speakers; returns the audition's key."""
+    _require(plugin_id)
+    stop_audition()
+    key = projects.new_id()
+    _audition.update(key=key, error=None)
+
+    def work() -> None:
+        try:
+            open_plugin_window(plugin_id, state, key, notes, seconds, window=False, play=True)
+        except EditorError as exc:
+            if _audition["key"] == key:
+                _audition["error"] = str(exc)
+        except Exception as exc:
+            if _audition["key"] == key:
+                _audition["error"] = f"Playing failed ({type(exc).__name__})."
+        finally:
+            if _audition["key"] == key:
+                _audition["key"] = None
+
+    threading.Thread(target=work, name="plugin-audition", daemon=True).start()
+    return key
+
+
+def audition_status(key: str) -> dict[str, Any]:
+    running = _audition["key"] == key
+    return {"id": key, "running": running, "error": None if running else _audition["error"]}
+
+
+def stop_audition(key: str | None = None) -> None:
+    """Stop the running audition (only if it is ``key``, when one is given)."""
+    current = _audition["key"]
+    if current is None or (key is not None and key != current):
+        return
+    # The worker may still be starting: keep asking until its control folder exists.
+    for _ in range(50):
+        if window_command(current, "close") or _audition["key"] != current:
+            return
+        time.sleep(0.1)

@@ -104,6 +104,27 @@ def plugin_sound_state(plugin_id: str, sound_id: str) -> dict[str, Any]:
     return _guard(lambda: sounds.sound_state(name, sound_id))
 
 
+@router.post("/audition")
+def start_audition(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return _guard(lambda: editor_jobs.start_audition(payload))
+
+
+@router.get("/audition/{key}")
+def audition_status(key: str) -> dict[str, Any]:
+    return plugins.audition_status(key)
+
+
+@router.post("/audition/{key}/load")
+def load_in_audition(key: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    return _guard(lambda: editor_jobs.load_in_audition(key, payload.get("state")))
+
+
+@router.post("/audition/{key}/stop")
+def stop_audition(key: str) -> dict[str, Any]:
+    plugins.stop_audition(key)
+    return plugins.audition_status(key)
+
+
 @router.get("/instruments")
 def list_instruments() -> list[dict[str, Any]]:
     return instruments.list_instruments()

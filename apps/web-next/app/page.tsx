@@ -5,6 +5,7 @@ import {
   AudioWaveform,
   CircleHelp,
   Cpu,
+  Piano,
   Download,
   FileAudio2,
   Network,
@@ -2357,6 +2358,10 @@ export default function HomePage() {
             >
               <AudioWaveform className="mr-2 h-4 w-4" />
               Studio Editor
+            </Button>
+            <Button variant="secondary" title="Design and play synth sounds, and browse Surge XT's library" onClick={() => router.push("/synth")}>
+              <Piano className="mr-2 h-4 w-4" />
+              Synth Studio
             </Button>
             <Button
               variant="secondary"

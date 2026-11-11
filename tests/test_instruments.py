@@ -736,3 +736,47 @@ def test_command_line_lists_and_installs(monkeypatch, capsys) -> None:
     assert "no disk space" in capsys.readouterr().err
     monkeypatch.setattr(instruments, "_installed_bundle", lambda _item: Path("/x"))
     assert instruments.main(["install", "surge-xt"]) == 0  # Already there: nothing to do.
+
+
+def test_audition_plays_outside_a_project_and_stops(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr(engines, "plugin_hosting_available", lambda: True)
+    monkeypatch.setattr(plugins, "_require", lambda _pid: {"name": "Surge XT"})
+    release = threading.Event()
+    seen: dict[str, Any] = {}
+
+    def fake_window(plugin_id, state, key, notes, seconds, **options):
+        seen.update(key=key, notes=notes, options=options)
+        plugins._windows[key] = Path("/nonexistent-control")
+        release.wait(5)
+        plugins._windows.pop(key, None)
+        return {}
+
+    def fake_command(key, command):
+        seen.setdefault("commands", []).append(command)
+        release.set()
+        return True
+
+    monkeypatch.setattr(plugins, "open_plugin_window", fake_window)
+    monkeypatch.setattr(plugins, "window_command", fake_command)
+    loaded: list[str] = []
+    monkeypatch.setattr(plugins, "load_sound_in_window", lambda key, st: loaded.append(st) or True)
+    body = {"plugin_id": PLUGIN_ID, "notes": NOTES, "seconds": 2}
+    started = client.post("/editor/audition", json=body).json()
+    assert started["running"] is True
+    key = started["id"]
+    sound = base64.b64encode(b"pad").decode()
+    assert client.post(f"/editor/audition/{key}/load", json={"state": sound}).json()["running"]
+    assert loaded == [sound]
+    assert client.post(f"/editor/audition/{key}/load", json={"state": "x"}).status_code == 422
+    client.post(f"/editor/audition/{key}/stop")
+    for _ in range(50):
+        if not client.get(f"/editor/audition/{key}").json()["running"]:
+            break
+        time.sleep(0.05)
+    assert client.get(f"/editor/audition/{key}").json() == {
+        "id": key,
+        "running": False,
+        "error": None,
+    }
+    assert seen["options"] == {"window": False, "play": True} and seen["commands"] == ["close"]
+    assert client.post("/editor/audition", json={**body, "notes": []}).status_code == 422

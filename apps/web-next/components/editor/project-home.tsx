@@ -102,6 +102,12 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
           AI Song Studio
         </Link>
         <Link
+          href="/synth"
+          className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
+        >
+          Synth Studio
+        </Link>
+        <Link
           href="/models"
           className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
         >

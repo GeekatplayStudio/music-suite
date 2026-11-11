@@ -145,6 +145,9 @@ export function ModelsPage() {
           <Link href="/generate" className={quiet}>
             AI Song Studio
           </Link>
+          <Link href="/synth" className={quiet}>
+            Synth Studio
+          </Link>
           <Link href="/" className={quiet}>
             Back to Music Suite
           </Link>
@@ -429,7 +432,11 @@ export function ModelsPage() {
             <Link href="/editor" className="font-semibold text-cyan-300 underline-offset-2 hover:underline">
               Studio Editor
             </Link>{" "}
-            and open its Plugin instrument section.
+            and open its Plugin instrument section, or try the sounds in{" "}
+            <Link href="/synth" className="font-semibold text-cyan-300 underline-offset-2 hover:underline">
+              Synth Studio
+            </Link>
+            .
           </p>
         </section>
       ) : null}

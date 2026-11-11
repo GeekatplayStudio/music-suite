@@ -194,7 +194,18 @@ export function PluginInstrumentSection({
 }
 
 /** Searchable list of the plugin's own sounds (Surge XT's patch library). */
-function SoundBrowser({ pluginId, current, onPick }: { pluginId: string; current?: string; onPick: (sound: PluginSound) => void }) {
+export function SoundBrowser({
+  pluginId,
+  current,
+  onPick,
+  tall
+}: {
+  pluginId: string;
+  current?: string;
+  onPick: (sound: PluginSound) => void;
+  /** A longer list, for pages with room. */
+  tall?: boolean;
+}) {
   const [sounds, setSounds] = useState<PluginSound[] | null>(null);
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState("");
@@ -238,8 +249,8 @@ function SoundBrowser({ pluginId, current, onPick }: { pluginId: string; current
         onChange={(event) => setQuery(event.target.value)}
       />
       <select
-        className={`${fieldClass} h-36`}
-        size={8}
+        className={`${fieldClass} ${tall ? "h-[min(60vh,34rem)] text-sm" : "h-36"}`}
+        size={tall ? 20 : 8}
         aria-label="Sounds"
         value={picked}
         onChange={(event) => {

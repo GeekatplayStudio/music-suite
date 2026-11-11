@@ -6,6 +6,7 @@ import type {
   Job,
   PluginSound,
   JobOp,
+  Note,
   PluginInfo,
   ProjectDetail,
   ProjectState,
@@ -13,6 +14,12 @@ import type {
 } from "@/lib/editor/types";
 
 const BASE = "/suite-api/editor";
+
+export interface Audition {
+  id: string;
+  running: boolean;
+  error: string | null;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
@@ -47,6 +54,12 @@ export const editorApi = {
   describePlugin: (pluginId: string, instrument = false) =>
     request<PluginInfo>(`/plugins/${pluginId}${instrument ? "?instrument=true" : ""}`),
   instruments: () => request<InstrumentOffer[]>("/instruments"),
+  /** Hear an instrument outside any project (Synth Studio). */
+  startAudition: (body: { plugin_id: string; state: string | null; notes: Note[]; seconds: number }) =>
+    request<Audition>("/audition", json(body)),
+  audition: (key: string) => request<Audition>(`/audition/${key}`),
+  loadInAudition: (key: string, state: string) => request<Audition>(`/audition/${key}/load`, json({ state })),
+  stopAudition: (key: string) => request<Audition>(`/audition/${key}/stop`, { method: "POST" }),
   pluginSounds: (pluginId: string) => request<{ sounds: PluginSound[] }>(`/plugins/${pluginId}/sounds`),
   pluginSoundState: (pluginId: string, soundId: string) =>
     request<{ name: string; state: string }>(`/plugins/${pluginId}/sounds/${soundId}`, { method: "POST" }),

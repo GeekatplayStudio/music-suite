@@ -1030,6 +1030,30 @@ def window_command(project_id: str, job_id: str, command: str) -> dict[str, Any]
     return _public(record)
 
 
+def start_audition(params: Any) -> dict[str, Any]:
+    """Hear an instrument outside any project: loops the notes until stopped."""
+    if not engines.plugin_hosting_available():
+        raise EditorError(plugins.UNAVAILABLE_MESSAGE)
+    if not isinstance(params, dict):
+        raise ParamError("The request must be an object.")
+    cleaned = _v_plugin_window({**params, "window": False, "play": True})
+    if not cleaned["notes"]:
+        raise ParamError("'notes' must be a non-empty list of notes.")
+    key = plugins.start_audition(
+        cleaned["plugin_id"], cleaned["state"], cleaned["notes"], cleaned["seconds"]
+    )
+    return plugins.audition_status(key)
+
+
+def load_in_audition(key: str, state: Any) -> dict[str, Any]:
+    cleaned = _plugin_state({"state": state})
+    if cleaned is None:
+        raise ParamError("'state' must be the sound saved from the plugin.")
+    if plugins.audition_status(key)["running"]:
+        plugins.load_sound_in_window(key, cleaned)
+    return plugins.audition_status(key)
+
+
 def load_in_window(project_id: str, job_id: str, state: Any) -> dict[str, Any]:
     """Switch a running plugin session (window or listening) to a saved sound."""
     record = _load(project_id, job_id)

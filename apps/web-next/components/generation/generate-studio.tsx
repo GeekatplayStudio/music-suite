@@ -610,6 +610,9 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link href="/synth" className={quietButton}>
+            Synth Studio
+          </Link>
           <Link href="/models" className={quietButton}>
             Models &amp; engines
           </Link>

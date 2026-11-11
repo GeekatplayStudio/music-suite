@@ -284,6 +284,14 @@ The keyboard at the top of the editor plays the sound. **Save as my sound** keep
 
 *Export* offers the mixdown as WAV 24-bit, WAV 32-bit float, FLAC or MP3, the highlighted range, every track separately, *Send mix to the analyser and mastering* (adds the mix to the workspace as a new run, starts its analysis and opens it), or *Start an AI song from the mix* (opens AI Song Studio with the mix as the song to start from).
 
+## 8c-2) Synth Studio
+
+Open **Synth Studio** from the workspace or from any studio's header. It is a page for designing and trying sounds, with two tabs.
+
+**Music Suite synth.** The suite's own synth with every control on one page: oscillators, filter, noise and FM, envelopes, LFOs and modulation routes. Play it on the piano with the mouse, by touch (slide across keys), or by typing `A`–`L` (black keys on the row above; `Z` and `X` move the typing octave). The piano shows more octaves on a wide screen and fewer on a phone. *Load a preset* starts from a factory sound or one of yours, *Save as my sound* keeps the sound in this browser, and *New sound* starts again. Sounds saved here appear under **My sounds** on instrument tracks in the Studio Editor. The page remembers the sound you were working on.
+
+**Surge XT and plugins.** Choose an installed instrument, press **Play** to loop a short phrase through your speakers, and click through Surge XT's 3,000 sounds (search or arrow keys) to hear each one. **Stop** ends it. To use a sound in a song, pick it on a MIDI clip in the Studio Editor. If no instrument is installed, the tab links to Models & engines.
+
 ## 8d) AI Song Studio
 
 Open **AI Song Studio** from the workspace. It has three tabs.
