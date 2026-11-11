@@ -18,6 +18,8 @@ import binascii
 import json
 import math
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -143,10 +145,27 @@ def open_editor(request: dict[str, Any]) -> dict[str, Any]:
         _restore(plugin, request.get("state"))
     except Exception:
         return {"ok": False, "error": "the saved sound could not be loaded into the plugin"}
+    close = threading.Event()
+    close_file = request.get("close_file")
+    if close_file:
+        # The app asks for the window to close by creating this file.
+        def watch() -> None:
+            while not close.is_set():
+                if Path(str(close_file)).exists():
+                    close.set()
+                    return
+                time.sleep(0.2)
+
+        threading.Thread(target=watch, daemon=True).start()
     try:
-        plugin.show_editor()  # Blocks until the user closes the plugin's window.
+        # Blocks until the window is closed, by the user or through ``close``.
+        plugin.show_editor(close)
+    except KeyboardInterrupt:
+        pass  # Interrupted: keep whatever sound the window holds.
     except Exception:
         return {"ok": False, "error": "the plugin's window could not be opened"}
+    finally:
+        close.set()
     return {
         "ok": True,
         "state": base64.b64encode(bytes(plugin.raw_state)).decode("ascii"),

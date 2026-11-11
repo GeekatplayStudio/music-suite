@@ -294,6 +294,11 @@ def get_job(project_id: str, job_id: str) -> dict[str, Any]:
     return _guard(lambda: editor_jobs.get_job(project_id, job_id))
 
 
+@router.post("/projects/{project_id}/jobs/{job_id}/close-window")
+def close_plugin_window(project_id: str, job_id: str) -> dict[str, Any]:
+    return _guard(lambda: editor_jobs.close_window(project_id, job_id))
+
+
 @router.post("/projects/{project_id}/jobs/{job_id}/cancel")
 def cancel_job(project_id: str, job_id: str) -> dict[str, Any]:
     return _guard(lambda: editor_jobs.cancel_job(project_id, job_id))

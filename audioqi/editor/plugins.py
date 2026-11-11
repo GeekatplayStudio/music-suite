@@ -40,6 +40,8 @@ _cache_time = 0.0
 _parameters: dict[str, list[dict[str, Any]]] = {}
 #: Whether each plugin used so far turned out to be an instrument.
 _instruments: dict[str, bool] = {}
+#: Open plugin windows: key -> the file whose creation asks the worker to close it.
+_windows: dict[str, Path] = {}
 #: How long a plugin's own window may stay open before the worker gives up.
 EDITOR_TIMEOUT_SECONDS = 3600
 MAX_STATE_BYTES = 16 * 1024 * 1024
@@ -192,12 +194,16 @@ def _run_worker(
     *,
     audio_out: bool,
     audio_in: tuple[np.ndarray, int] | None = None,
+    window_key: str | None = None,
 ) -> tuple[dict[str, Any], np.ndarray | None]:
     """Run one worker request; returns its report and, if asked, the audio it wrote."""
     with tempfile.TemporaryDirectory(dir=projects.scratch_dir()) as tmp:
         src, dst = Path(tmp) / "in.wav", Path(tmp) / "out.wav"
         if audio_in is not None:
             sf.write(str(src), audio_in[0], audio_in[1], subtype="FLOAT")
+        if window_key:
+            request = {**request, "close_file": str(Path(tmp) / "close")}
+            _windows[window_key] = Path(tmp) / "close"
         request_path, report = Path(tmp) / "request.json", Path(tmp) / "report.json"
         request_path.write_text(
             json.dumps({**request, "plugin": str(item["path"])}), encoding="utf-8"
@@ -214,6 +220,9 @@ def _run_worker(
             )
         except subprocess.TimeoutExpired as exc:
             raise EditorError(f"Plugin '{item['name']}' timed out.") from exc
+        finally:
+            if window_key:
+                _windows.pop(window_key, None)
         outcome = projects.read_json_safe(report) or {}
         if proc.returncode != 0 or not outcome.get("ok") or (audio_out and not dst.is_file()):
             reason = outcome.get("error")
@@ -249,11 +258,18 @@ def render_instrument(
     return audio, str(item["name"])
 
 
-def open_plugin_window(plugin_id: str, state: str | None) -> dict[str, Any]:
-    """Show the plugin's own window; returns its sound once the user closes it."""
+def open_plugin_window(plugin_id: str, state: str | None, key: str | None = None) -> dict[str, Any]:
+    """Show the plugin's own window; returns its sound once it is closed.
+
+    With ``key``, :func:`close_plugin_window` can close the window from the app.
+    """
     item = _require(plugin_id)
     outcome, _ = _run_worker(
-        item, {"mode": "editor", "state": state}, EDITOR_TIMEOUT_SECONDS, audio_out=False
+        item,
+        {"mode": "editor", "state": state},
+        EDITOR_TIMEOUT_SECONDS,
+        audio_out=False,
+        window_key=key,
     )
     saved = outcome.get("state")
     if not isinstance(saved, str) or len(saved) > MAX_STATE_BYTES * 4 // 3 + 4:
@@ -280,3 +296,15 @@ def apply_plugin(
     if isinstance(described, list):
         _parameters[plugin_id] = described
     return out, str(item["name"])
+
+
+def close_plugin_window(key: str) -> bool:
+    """Ask an open plugin window to close and hand back its sound. False if none is open."""
+    path = _windows.get(key)
+    if path is None:
+        return False
+    try:
+        path.touch()
+    except OSError:
+        return False
+    return True

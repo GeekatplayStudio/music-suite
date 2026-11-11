@@ -63,6 +63,7 @@ interface InspectorProps {
   onRenderWithPlugin: (clipId: string) => void;
   /** Open the track's plugin instrument window for a MIDI clip. */
   onOpenPluginWindow: (clipId: string) => void;
+  onClosePluginWindow: (jobId: string) => void;
   onRefreshPlugins: () => void;
   generation: GenerationStatus | null;
   /** Generators that can edit the selected clip (local engine first). */
@@ -266,6 +267,9 @@ export function Inspector(props: InspectorProps) {
 
   const busy = clip ? props.jobs.some((j) => j.clipId === clip.id && j.job.status !== "completed" && j.job.status !== "failed") : false;
   const meta = clip ? state.assetMeta[clip.assetId] : undefined;
+  const windowJob = clip
+    ? props.jobs.find((j) => j.clipId === clip.id && j.job.op === "plugin_window" && (j.job.status === "queued" || j.job.status === "running"))
+    : undefined;
   const stemOptions = capabilities?.separation.stem_options ?? [2, 4];
   const stemChoice = stemOptions.includes(stems) ? stems : (stemOptions[stemOptions.length - 1] ?? 4);
   // Kit pieces and lead/backing vocals need the AI stem separation pack.
@@ -468,8 +472,10 @@ export function Inspector(props: InspectorProps) {
                   available={Boolean(capabilities?.plugins.available)}
                   plugins={props.plugins}
                   busy={busy}
+                  windowOpen={Boolean(windowJob)}
                   onSet={(pluginInstrument) => props.onPatchTrack({ pluginInstrument }, "")}
                   onOpenWindow={() => props.onOpenPluginWindow(clip.id)}
+                  onCloseWindow={() => windowJob && props.onClosePluginWindow(windowJob.job.id)}
                   onRender={() => props.onRenderWithPlugin(clip.id)}
                   onRefreshPlugins={props.onRefreshPlugins}
                 />

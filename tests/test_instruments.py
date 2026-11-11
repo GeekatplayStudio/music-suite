@@ -11,6 +11,7 @@ import io
 import json
 import stat
 import tarfile
+import threading
 import zipfile
 from collections.abc import Iterator
 from dataclasses import replace
@@ -99,8 +100,11 @@ class FakeInstrument:
                 out[:, start:end] += level * np.sin(2 * np.pi * freq * t)
         return out
 
-    def show_editor(self) -> None:
+    def show_editor(self, close_event=None) -> None:
         self.shown = True
+        if getattr(self, "wait_for_close", False):
+            # Like a real window: stays open until the app asks it to close.
+            assert close_event is not None and close_event.wait(5)
         self.shown_with = self._state
         self._state = b"tweaked in the window"
 
@@ -162,6 +166,41 @@ def test_worker_window_mode_returns_the_sound_set_in_the_window(monkeypatch) -> 
     assert fake.shown and outcome["ok"] and outcome["is_instrument"]
     assert fake.shown_with == b"a"  # The window opened on the saved sound, not the default.
     assert base64.b64decode(outcome["state"]) == b"tweaked in the window"
+
+
+def test_the_app_can_close_the_window_and_keep_the_sound(tmp_path: Path, monkeypatch) -> None:
+    fake = FakeInstrument()
+    fake.wait_for_close = True  # type: ignore[attr-defined]
+    monkeypatch.setattr(plugin_worker, "_load", lambda _path: fake)
+    close_file = tmp_path / "close"
+    plugins._windows["job-1"] = close_file
+    try:
+        timer = threading.Timer(0.3, lambda: plugins.close_plugin_window("job-1"))
+        timer.start()
+        outcome = plugin_worker.open_editor({"plugin": "x", "close_file": str(close_file)})
+        timer.join()
+    finally:
+        plugins._windows.pop("job-1", None)
+    assert outcome["ok"] and base64.b64decode(outcome["state"]) == b"tweaked in the window"
+    assert plugins.close_plugin_window("job-1") is False  # Nothing open any more.
+
+
+def test_close_window_is_only_for_plugin_window_jobs(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr(engines, "plugin_hosting_available", lambda: True)
+    monkeypatch.setattr(plugins, "render_instrument", lambda *a: (np.zeros((SR, 2)), "Surge XT"))
+    pid = _project(client)
+    job = _job(
+        client, pid, "render_instrument", {"plugin_id": PLUGIN_ID, "notes": NOTES, "seconds": 1}
+    )
+    response = client.post(f"/editor/projects/{pid}/jobs/{job['id']}/close-window")
+    assert response.status_code == 422
+    saved = base64.b64encode(b"s").decode()
+    monkeypatch.setattr(
+        plugins, "open_plugin_window", lambda *a: {"plugin": "Surge XT", "state": saved}
+    )
+    window = _job(client, pid, "plugin_window", {"plugin_id": PLUGIN_ID})
+    response = client.post(f"/editor/projects/{pid}/jobs/{window['id']}/close-window")
+    assert response.status_code == 200 and response.json()["status"] == "completed"
 
 
 def test_worker_process_reports_an_unloadable_plugin(tmp_path: Path, client) -> None:
@@ -236,7 +275,7 @@ def test_plugin_window_job_returns_the_saved_sound(client: TestClient, monkeypat
     monkeypatch.setattr(
         plugins,
         "open_plugin_window",
-        lambda plugin_id, state: {"plugin": "Surge XT", "state": saved, "is_instrument": True},
+        lambda plugin_id, state, key: {"plugin": "Surge XT", "state": saved, "is_instrument": True},
     )
     job = _job(client, _project(client), "plugin_window", {"plugin_id": PLUGIN_ID})
     assert job["status"] == "completed" and job["result_assets"] == []

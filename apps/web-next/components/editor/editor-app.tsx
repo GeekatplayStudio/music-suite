@@ -1971,6 +1971,9 @@ export function EditorApp({
           onOpenWam={(trackId) => setWamWindow(trackId)}
           onRenderWithPlugin={renderWithPlugin}
           onOpenPluginWindow={openPluginWindow}
+          onClosePluginWindow={(jobId) =>
+            void editorApi.closePluginWindow(projectId, jobId).catch((err: unknown) => setNotice(errorMessage(err, "The window could not be closed.")))
+          }
           onRefreshPlugins={refreshPlugins}
           generation={generation}
           onCheckGeneration={checkGeneration}

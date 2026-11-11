@@ -749,7 +749,9 @@ def _op_plugin_window(ctx: _Context) -> _Outcome:
     if not engines.plugin_hosting_available():
         raise EditorError(plugins.UNAVAILABLE_MESSAGE)
     ctx.progress("process", 10, "The plugin's window is open. Close it to keep the sound.")
-    outcome = plugins.open_plugin_window(ctx.params["plugin_id"], ctx.params["state"])
+    outcome = plugins.open_plugin_window(
+        ctx.params["plugin_id"], ctx.params["state"], str(ctx.record["id"])
+    )
     return [], outcome
 
 
@@ -983,6 +985,16 @@ def cancel_job(project_id: str, job_id: str) -> dict[str, Any]:
     record = _load(project_id, job_id)
     if record.get("op") == "generate_song" and record.get("status") in ("queued", "running"):
         song_service.cancel(job_id)
+    return _public(record)
+
+
+def close_window(project_id: str, job_id: str) -> dict[str, Any]:
+    """Close the plugin window a ``plugin_window`` job opened, keeping its sound."""
+    record = _load(project_id, job_id)
+    if record.get("op") != "plugin_window":
+        raise ParamError("This job did not open a plugin window.")
+    if record.get("status") in ("queued", "running"):
+        plugins.close_plugin_window(job_id)
     return _public(record)
 
 

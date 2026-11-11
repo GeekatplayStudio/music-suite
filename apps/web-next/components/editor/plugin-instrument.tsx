@@ -23,8 +23,10 @@ export function PluginInstrumentSection({
   available,
   plugins,
   busy,
+  windowOpen,
   onSet,
   onOpenWindow,
+  onCloseWindow,
   onRender,
   onRefreshPlugins
 }: {
@@ -32,8 +34,11 @@ export function PluginInstrumentSection({
   available: boolean;
   plugins: PluginInfo[];
   busy: boolean;
+  /** The plugin's window is open on this computer. */
+  windowOpen: boolean;
   onSet: (instrument: Track["pluginInstrument"]) => void;
   onOpenWindow: () => void;
+  onCloseWindow: () => void;
   onRender: () => void;
   onRefreshPlugins: () => void;
 }) {
@@ -108,13 +113,27 @@ export function PluginInstrumentSection({
       ) : null}
       {current ? (
         <>
-          <ActionButton className="w-full" disabled={busy} onClick={onOpenWindow}>
-            Open {current.name}&apos;s window
-          </ActionButton>
-          <p className="text-[11px] leading-snug text-slate-400">
-            Pick or shape a sound in the plugin&apos;s own window, then close it: the sound is kept with this track.
-            {current.state ? " A sound is saved." : " Until then the plugin's default sound plays."}
-          </p>
+          {windowOpen ? (
+            <>
+              <p className="rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-2 py-1.5 text-[11px] leading-snug text-cyan-100" role="status">
+                {current.name}&apos;s window is open on this computer (it may be behind this one). Pick or shape a sound there, then
+                keep it here or close the window.
+              </p>
+              <ActionButton variant="primary" className="w-full" onClick={onCloseWindow}>
+                Keep this sound and close the window
+              </ActionButton>
+            </>
+          ) : (
+            <>
+              <ActionButton className="w-full" disabled={busy} onClick={onOpenWindow}>
+                Open {current.name}&apos;s window
+              </ActionButton>
+              <p className="text-[11px] leading-snug text-slate-400">
+                Pick or shape a sound in the plugin&apos;s own window; it is kept with this track when the window closes.
+                {current.state ? " A sound is saved." : " Until then the plugin's default sound plays."}
+              </p>
+            </>
+          )}
           <ActionButton variant="primary" className="w-full" disabled={busy} onClick={onRender}>
             Render this clip with {current.name}
           </ActionButton>
