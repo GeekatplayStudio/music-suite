@@ -261,6 +261,8 @@ Select a track and press the microphone button. With a range highlighted it beco
 
 ### Composing with MIDI
 
+**Sheet music.** Select a MIDI clip and press *Show as sheet music* to read it as written music on a piano's two staves (notes from middle C up on the treble staff), with the project's key signature and time signature, rests, beams and ties across barlines. Timing is rounded to sixteenth notes of the project tempo, so set the tempo first for a tidy page. Click a bar to move the playhead to it. It is a reading view that redraws as the clip changes; notes are edited in the piano roll. Clips longer than 96 bars show their first 96.
+
 **On-screen piano.** The piano button in the header (next to the MIDI keyboard button) docks a piano under the timeline. It plays the selected instrument track with the mouse or by touch, slide included, exactly as a MIDI keyboard would: through the built-in synth, or through Surge XT while that is switched on for the track. With the piano open, the record button captures what you play as notes.
 
 *Add an instrument (MIDI) track* in the project panel creates a four-bar clip and opens the piano roll. Click to add notes, drag to move, drag the right edge to resize, right-click to delete, shift-drag to select several. *Note input* lets the keys `A W S E D F T G Y H U J K` or a MIDI keyboard add notes at the playhead. Switch the instrument type to **Drum kit** for a labelled drum grid.

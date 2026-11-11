@@ -83,6 +83,8 @@ interface InspectorProps {
   /** Sound one note on a track's instrument. */
   onPreviewNote: (trackId: string, pitch: number) => void;
   onOpenPianoRoll: () => void;
+  /** Show the selected MIDI clip as sheet music. */
+  onOpenSheet: () => void;
   onExportMidi: () => void;
   getPosition: () => number;
   getBusLevel: (busId: string) => number;
@@ -423,6 +425,9 @@ export function Inspector(props: InspectorProps) {
               >
                 <ActionButton variant="primary" className="w-full" onClick={props.onOpenPianoRoll} title="P">
                   Open the piano roll
+                </ActionButton>
+                <ActionButton className="w-full" onClick={props.onOpenSheet} title="Read this clip as written music on a piano's two staves">
+                  Show as sheet music
                 </ActionButton>
                 <div className="grid grid-cols-4 gap-1.5">
                   {[-12, -1, 1, 12].map((shift) => (

@@ -31,6 +31,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useEffectEvent, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 
 import { ActionButton, IconButton } from "@/components/editor/controls";
+import { SheetMusic } from "@/components/editor/sheet-music";
 import { Piano } from "@/components/synth/piano";
 import { Inspector, type JobEntry } from "@/components/editor/inspector";
 import { MidiControl } from "@/components/editor/midi-control";
@@ -483,6 +484,7 @@ export function EditorApp({
   const [, setTransportTick] = useState(0);
   const [mediaVersion, setMediaVersion] = useState(0);
   const [showKeys, setShowKeys] = useState(false);
+  const [showSheet, setShowSheet] = useState(false);
   const [jobs, setJobs] = useState<JobEntry[]>([]);
   // Event handlers read the latest jobs without being re-created for each update.
   const jobsRef = useRef(jobs);
@@ -2037,6 +2039,15 @@ export function EditorApp({
               onPreview={(pitch) => engine.previewNote(primaryClip.trackId, pitch)}
               onClose={() => setShowPiano(false)}
             />
+          ) : showSheet && primaryClip?.notes ? (
+            <SheetMusic
+              clip={primaryClip}
+              bpm={state.bpm}
+              beatsPerBar={state.beatsPerBar}
+              keyLabel={state.keyLabel}
+              onSeek={seek}
+              onClose={() => setShowSheet(false)}
+            />
           ) : showSpectral ? (
             <SpectralPanel
               clip={primaryClip}
@@ -2139,7 +2150,14 @@ export function EditorApp({
           songProviders={songProviders}
           projectId={projectId}
           onAddMidiTrack={addInstrumentTrack}
-          onOpenPianoRoll={() => setShowPiano(true)}
+          onOpenPianoRoll={() => {
+            setShowSheet(false);
+            setShowPiano(true);
+          }}
+          onOpenSheet={() => {
+            setShowPiano(false);
+            setShowSheet(true);
+          }}
           onExportMidi={() => {
             if (!primaryClip?.notes) return;
             const inside = primaryClip.notes
