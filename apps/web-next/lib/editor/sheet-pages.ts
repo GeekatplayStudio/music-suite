@@ -3,7 +3,7 @@
  * Pages are drawn at print resolution on canvases with the same engraving as the screen.
  */
 import type { Sheet } from "@/lib/editor/notation";
-import { LINE_HEIGHT, drawSheet, loadVex } from "@/lib/editor/sheet-render";
+import { LINE_HEIGHT, type SheetLine, drawLines, layoutSheet, loadVex } from "@/lib/editor/sheet-render";
 
 export type PaperSize = "a4" | "letter";
 
@@ -15,7 +15,6 @@ const PAPER: Record<PaperSize, { width: number; height: number }> = {
 /** The page is laid out 820 units wide, whatever the paper: that sets the size of the notes. */
 const PAGE_UNITS = 820;
 const MARGIN = 44;
-const BARS_PER_LINE = 4;
 const TITLE_SPACE = 84;
 /** Dots per inch of the drawn pages: sharp on paper without huge files. */
 const PRINT_DPI = 200;
@@ -37,15 +36,15 @@ function linesPerPage(pageHeight: number, first: boolean): number {
   return Math.max(1, Math.floor(room / LINE_HEIGHT));
 }
 
-/** How many pages the sheet takes. */
-export function pageCount(sheet: Sheet, paper: PaperSize): number {
-  const height = (PAGE_UNITS * PAPER[paper].height) / PAPER[paper].width;
-  let left = Math.ceil(sheet.measures.length / BARS_PER_LINE) - linesPerPage(height, true);
-  let pages = 1;
-  while (left > 0) {
-    left -= linesPerPage(height, false);
-    pages += 1;
-  }
+/** Share the lines out over pages: fewer on the first, which carries the title. */
+function paginate(lines: SheetLine[], pageHeight: number): SheetLine[][] {
+  const pages: SheetLine[][] = [];
+  let at = 0;
+  do {
+    const count = linesPerPage(pageHeight, pages.length === 0);
+    pages.push(lines.slice(at, at + count));
+    at += count;
+  } while (at < lines.length);
   return pages;
 }
 
@@ -55,9 +54,9 @@ export async function renderPages(sheet: Sheet, heading: SheetTitle, paper: Pape
   const size = PAPER[paper];
   const pageHeight = (PAGE_UNITS * size.height) / size.width;
   const scale = ((size.width / 25.4) * PRINT_DPI) / PAGE_UNITS;
-  const total = pageCount(sheet, paper);
+  const layout = paginate(layoutSheet(vex, sheet, PAGE_UNITS - 2 * MARGIN), pageHeight);
+  const total = layout.length;
   const pages: HTMLCanvasElement[] = [];
-  let bar = 0;
   for (let page = 0; page < total; page++) {
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(PAGE_UNITS * scale);
@@ -83,17 +82,8 @@ export async function renderPages(sheet: Sheet, heading: SheetTitle, paper: Pape
     raw.fillText(total > 1 ? `${heading.title}  ·  ${page + 1} / ${total}` : "", PAGE_UNITS / 2, pageHeight - MARGIN + 18);
     raw.textAlign = "start";
 
-    const bars = linesPerPage(pageHeight, page === 0) * BARS_PER_LINE;
     const context = new vex.Renderer(canvas, vex.Renderer.Backends.CANVAS).getContext();
-    drawSheet(vex, context, sheet, {
-      left: MARGIN,
-      top,
-      barWidth: (PAGE_UNITS - 2 * MARGIN) / BARS_PER_LINE,
-      perLine: BARS_PER_LINE,
-      from: bar,
-      to: bar + bars
-    });
-    bar += bars;
+    drawLines(vex, context, sheet, layout[page], MARGIN, top);
     pages.push(canvas);
   }
   return pages;

@@ -4,11 +4,10 @@ import { FileDown, Loader2, Printer, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { toSheet } from "@/lib/editor/notation";
-import { type PaperSize, defaultPaper, exportPdf, pageCount, printSheet } from "@/lib/editor/sheet-pages";
-import { LINE_HEIGHT, drawSheet, loadVex } from "@/lib/editor/sheet-render";
+import { type PaperSize, defaultPaper, exportPdf, printSheet } from "@/lib/editor/sheet-pages";
+import { LINE_HEIGHT, type SheetLine, drawLines, layoutSheet, loadVex } from "@/lib/editor/sheet-render";
 import type { Clip } from "@/lib/editor/types";
 
-const MIN_BAR_WIDTH = 230;
 /** Room at the sides, for the brace that joins the two staves. */
 const MARGIN = 30;
 
@@ -42,7 +41,8 @@ export function SheetMusic({
     () => toSheet(clip.notes ?? [], { bpm, beatsPerBar, offset: clip.offset, duration: clip.duration, keyLabel }),
     [clip.notes, clip.offset, clip.duration, bpm, beatsPerBar, keyLabel]
   );
-  const perLine = Math.max(1, Math.floor((width - 2 * MARGIN) / MIN_BAR_WIDTH));
+  // Where each line's bars were drawn, for finding the bar under a click.
+  const drawn = useRef<SheetLine[]>([]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -64,17 +64,11 @@ export function SheetMusic({
         const vex = await loadVex();
         if (cancelled) return;
         paper.replaceChildren();
-        const lines = Math.ceil(sheet.measures.length / perLine);
+        const lines = layoutSheet(vex, sheet, width - 2 * MARGIN);
+        drawn.current = lines;
         const renderer = new vex.Renderer(paper, vex.Renderer.Backends.SVG);
-        renderer.resize(width, lines * LINE_HEIGHT + 20);
-        drawSheet(vex, renderer.getContext(), sheet, {
-          left: MARGIN,
-          top: 20,
-          barWidth: (width - 2 * MARGIN) / perLine,
-          perLine,
-          from: 0,
-          to: sheet.measures.length
-        });
+        renderer.resize(width, lines.length * LINE_HEIGHT + 20);
+        drawLines(vex, renderer.getContext(), sheet, lines, MARGIN, 20);
         setFailure(null);
       } catch (err) {
         if (!cancelled) setFailure(err instanceof Error ? err.message : "The sheet music could not be drawn.");
@@ -83,19 +77,26 @@ export function SheetMusic({
     return () => {
       cancelled = true;
     };
-  }, [sheet, width, perLine]);
+  }, [sheet, width]);
 
   /** A click on the paper jumps to the start of the bar under it. */
   const seekTo = (event: React.MouseEvent<HTMLDivElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
-    const column = Math.min(perLine - 1, Math.max(0, Math.floor((event.clientX - box.left - MARGIN) / ((width - 2 * MARGIN) / perLine))));
-    const row = Math.max(0, Math.floor((event.clientY - box.top - 10) / LINE_HEIGHT));
-    const bar = row * perLine + column;
-    if (bar < sheet.measures.length) onSeek(clip.start + bar * sheet.barSeconds);
+    const line = drawn.current[Math.max(0, Math.floor((event.clientY - box.top - 10) / LINE_HEIGHT))];
+    if (!line) return;
+    let edge = MARGIN;
+    let bar = line.to - 1;
+    for (let index = line.from; index < line.to; index++) {
+      edge += line.widths[index - line.from];
+      if (event.clientX - box.left < edge) {
+        bar = index;
+        break;
+      }
+    }
+    onSeek(clip.start + bar * sheet.barSeconds);
   };
 
   const count = (clip.notes ?? []).length;
-  const pages = pageCount(sheet, paper);
   /** Print, or save a PDF: the same pages either way. */
   const produce = async (kind: "print" | "pdf") => {
     if (working) return;
@@ -133,10 +134,10 @@ export function SheetMusic({
           <option value="a4">A4</option>
           <option value="letter">US Letter</option>
         </select>
-        <button type="button" className={tool} disabled={working !== null} onClick={() => void produce("print")} title={`Print ${pages} page${pages === 1 ? "" : "s"}`}>
+        <button type="button" className={tool} disabled={working !== null} onClick={() => void produce("print")} title="Print this sheet music">
           {working === "print" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Printer className="h-3.5 w-3.5" aria-hidden />} Print
         </button>
-        <button type="button" className={tool} disabled={working !== null} onClick={() => void produce("pdf")} title={`Save a PDF of ${pages} page${pages === 1 ? "" : "s"}`}>
+        <button type="button" className={tool} disabled={working !== null} onClick={() => void produce("pdf")} title="Save this sheet music as a PDF file">
           {working === "pdf" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <FileDown className="h-3.5 w-3.5" aria-hidden />} PDF
         </button>
         <button
