@@ -33,6 +33,11 @@ export interface Sheet {
   measures: SheetMeasure[];
   /** Sixteenths in a bar. */
   barLength: number;
+  /** The time signature: beats in a bar, and 4 or 8 for what a beat is. */
+  beats: number;
+  beatUnit: 4 | 8;
+  /** Beats come in threes (6/8, 9/8, 12/8): notes are grouped by dotted quarters. */
+  compound: boolean;
   /** Seconds in a bar. */
   barSeconds: number;
   /** VexFlow key signature, such as "C", "F#m" or "Bb". */
@@ -118,11 +123,32 @@ function spans(notes: { start: number; end: number; pitch: number }[], total: nu
   return out;
 }
 
+/** Note values of a compound metre, where the pulse is a dotted quarter (six sixteenths). */
+const COMPOUND: { length: number; duration: string; dotted: boolean; fits: (inGroup: number, rest: boolean) => boolean }[] = [
+  { length: 12, duration: "h", dotted: true, fits: (g) => g === 0 },
+  { length: 6, duration: "q", dotted: true, fits: (g) => g === 0 },
+  // A quarter sits at the start of a group, or after its first eighth (as a note).
+  { length: 4, duration: "q", dotted: false, fits: (g, rest) => g === 0 || (g === 2 && !rest) },
+  { length: 3, duration: "8", dotted: true, fits: (g, rest) => g === 0 && !rest },
+  { length: 2, duration: "8", dotted: false, fits: (g) => g % 2 === 0 },
+  { length: 1, duration: "16", dotted: false, fits: () => true }
+];
+
 /** Cut a stretch inside one bar (in sixteenths) into note values that sit on the beat grid. */
-function pieces(start: number, length: number, rest: boolean): (typeof VALUES)[number][] {
-  const out: (typeof VALUES)[number][] = [];
+function pieces(start: number, length: number, rest: boolean, compound = false): { length: number; duration: string; dotted: boolean }[] {
+  const out: { length: number; duration: string; dotted: boolean }[] = [];
   let at = start;
   let left = length;
+  while (compound && left > 0) {
+    // A value may not run past the end of its group of three eighths, bar a two-group note.
+    const inGroup = at % 6;
+    const value =
+      COMPOUND.find((v) => v.length <= left && v.fits(inGroup, rest) && (v.length === 12 ? at % 12 === 0 : inGroup + v.length <= 6)) ??
+      COMPOUND[COMPOUND.length - 1];
+    out.push(value);
+    at += value.length;
+    left -= value.length;
+  }
   while (left > 0) {
     // Rests are written plain (no dots) and each starts on a multiple of its own length.
     const fits = (v: (typeof VALUES)[number]) => v.length <= left && at % (rest ? v.length : v.grid) === 0 && !(rest && v.dotted);
@@ -140,11 +166,13 @@ function staff(
   bars: number,
   barLength: number,
   flats: boolean,
-  restKey: string
+  restKey: string,
+  compound: boolean
 ): SheetEvent[][] {
   const barTicks = (barLength / 4) * TPQ;
   const total = bars * barTicks;
-  const triplet = tripletBeats(raw.map((note) => note.on));
+  // A compound metre already divides its pulse in three: no triplets there.
+  const triplet = compound ? new Set<number>() : tripletBeats(raw.map((note) => note.on));
   /** Snap a time to the grid of its beat: thirds in a triplet beat, sixteenths elsewhere. */
   const tick = (time: number) => {
     const beat = Math.floor(time + EARLY);
@@ -196,7 +224,7 @@ function staff(
           break;
         }
       }
-      const cut = pieces(Math.round((at - bar * barTicks) / 3), Math.max(1, Math.round((stop - at) / 3)), rest);
+      const cut = pieces(Math.round((at - bar * barTicks) / 3), Math.max(1, Math.round((stop - at) / 3)), rest, compound);
       cut.forEach((value, index) => push(bar, value.duration, value.dotted, value.length * 3, index === cut.length - 1 && stop === to));
       at = stop;
     }
@@ -221,11 +249,14 @@ function staff(
  */
 export function toSheet(
   notes: Note[],
-  options: { bpm: number; beatsPerBar: number; offset: number; duration: number; keyLabel: string | null }
+  options: { bpm: number; beatsPerBar: number; beatUnit?: 4 | 8; offset: number; duration: number; keyLabel: string | null }
 ): Sheet {
   const beat = 60 / options.bpm;
   const step = beat / 4;
-  const barLength = Math.max(1, Math.round(options.beatsPerBar)) * 4;
+  const beats = Math.max(1, Math.round(options.beatsPerBar));
+  const beatUnit = options.beatUnit ?? 4;
+  const barLength = (beats * 16) / beatUnit;
+  const compound = beatUnit === 8 && beats % 3 === 0 && beats > 3;
   const allBars = Math.max(1, Math.ceil(options.duration / step / barLength - 1e-6));
   const bars = Math.min(allBars, MAX_BARS);
   const signature = keySignature(options.keyLabel);
@@ -234,11 +265,14 @@ export function toSheet(
   const raw = notes
     .filter((note) => note.t >= options.offset - 1e-6 && note.t < options.offset + options.duration)
     .map((note) => ({ on: Math.max(0, (note.t - options.offset) / beat), off: (note.t - options.offset + note.d) / beat, pitch: Math.round(note.p) }));
-  const treble = staff(raw.filter((n) => n.pitch >= 60), bars, barLength, flats, "b/4");
-  const bass = staff(raw.filter((n) => n.pitch < 60), bars, barLength, flats, "d/3");
+  const treble = staff(raw.filter((n) => n.pitch >= 60), bars, barLength, flats, "b/4", compound);
+  const bass = staff(raw.filter((n) => n.pitch < 60), bars, barLength, flats, "d/3", compound);
   return {
     measures: treble.map((events, index) => ({ treble: events, bass: bass[index] })),
     barLength,
+    beats,
+    beatUnit,
+    compound,
     barSeconds: step * barLength,
     keySignature: signature,
     hiddenBars: allBars - bars

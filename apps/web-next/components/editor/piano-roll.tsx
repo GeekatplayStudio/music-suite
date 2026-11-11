@@ -36,6 +36,8 @@ interface PianoRollProps {
   color: string;
   bpm: number;
   beatsPerBar: number;
+  /** 4 when a beat is a quarter note, 8 when it is an eighth (6/8). */
+  beatUnit?: 4 | 8;
   snap: boolean;
   drums: boolean;
   getPosition: () => number;
@@ -56,7 +58,7 @@ function pitchName(pitch: number, drums: boolean): string {
 }
 
 export function PianoRoll(props: PianoRollProps) {
-  const { clip, color, bpm, beatsPerBar, snap, drums, getPosition, onNotes, onPreview, onSeek, onClose } = props;
+  const { clip, color, bpm, beatsPerBar, beatUnit = 4, snap, drums, getPosition, onNotes, onPreview, onSeek, onClose } = props;
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [width, setWidth] = useState(600);
@@ -92,9 +94,9 @@ export function PianoRoll(props: PianoRollProps) {
   const visible = width / pxPerSec;
   const viewStart = clip.offset + Math.min(scroll, Math.max(0, clip.duration - visible));
 
-  const view = useRef({ notes, low, high, rowH, pxPerSec, selected, clip, step, beatsPerBar, color, getPosition, viewStart, drums, marquee });
+  const view = useRef({ notes, low, high, rowH, pxPerSec, selected, clip, step, beatsPerBar, beatUnit, color, getPosition, viewStart, drums, marquee });
   useEffect(() => {
-    view.current = { notes, low, high, rowH, pxPerSec, selected, clip, step, beatsPerBar, color, getPosition, viewStart, drums, marquee };
+    view.current = { notes, low, high, rowH, pxPerSec, selected, clip, step, beatsPerBar, beatUnit, color, getPosition, viewStart, drums, marquee };
   });
 
   useEffect(() => {
@@ -147,8 +149,10 @@ export function PianoRoll(props: PianoRollProps) {
       const gridStep = fine ? v.step : v.step * 4;
       for (let i = Math.ceil(v.viewStart / gridStep - 1e-6); i * gridStep < v.viewStart + width / v.pxPerSec; i++) {
         const sixteenths = fine ? i : i * 4;
-        const isBar = sixteenths % (4 * v.beatsPerBar) === 0;
-        const isBeat = sixteenths % 4 === 0;
+        // A beat is four sixteenths, or two when the signature counts eighths (6/8).
+        const beatSixteenths = 16 / v.beatUnit;
+        const isBar = sixteenths % (beatSixteenths * v.beatsPerBar) === 0;
+        const isBeat = sixteenths % beatSixteenths === 0;
         ctx.fillStyle = isBar ? "rgba(226, 232, 240, 0.4)" : isBeat ? "rgba(148, 163, 184, 0.22)" : "rgba(148, 163, 184, 0.09)";
         ctx.fillRect(Math.round(xOf(i * gridStep)), 0, 1, HEIGHT);
       }

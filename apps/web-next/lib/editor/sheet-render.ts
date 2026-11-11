@@ -78,7 +78,7 @@ function buildVoices(vex: Vex, sheet: Sheet, measure: SheetMeasure) {
     });
     return [...groups.values()].map((group) => new vex.Tuplet(group, { numNotes: 3, notesOccupied: 2 }));
   });
-  const voices = [treble, bass].map((notes) => new vex.Voice({ numBeats: sheet.barLength / 4, beatValue: 4 }).setStrict(false).addTickables(notes));
+  const voices = [treble, bass].map((notes) => new vex.Voice({ numBeats: sheet.beats, beatValue: sheet.beatUnit }).setStrict(false).addTickables(notes));
   vex.Accidental.applyAccidentals(voices, sheet.keySignature);
   const formatter = new vex.Formatter();
   for (const voice of voices) formatter.joinVoices([voice]);
@@ -89,7 +89,7 @@ function buildVoices(vex: Vex, sheet: Sheet, measure: SheetMeasure) {
 function headWidth(vex: Vex, sheet: Sheet, withTime: boolean): number {
   const widths = (["treble", "bass"] as const).map((clef) => {
     const stave = new vex.Stave(0, 0, 400).addClef(clef).addKeySignature(sheet.keySignature);
-    if (withTime) stave.addTimeSignature(`${sheet.barLength / 4}/4`);
+    if (withTime) stave.addTimeSignature(`${sheet.beats}/${sheet.beatUnit}`);
     return stave.getNoteStartX();
   });
   return Math.max(...widths);
@@ -157,8 +157,8 @@ export function drawLines(vex: Vex, context: RenderContext, sheet: Sheet, lines:
         treble.setMeasure(index + 1);
       }
       if (index === 0) {
-        treble.addTimeSignature(`${sheet.barLength / 4}/4`);
-        bass.addTimeSignature(`${sheet.barLength / 4}/4`);
+        treble.addTimeSignature(`${sheet.beats}/${sheet.beatUnit}`);
+        bass.addTimeSignature(`${sheet.beats}/${sheet.beatUnit}`);
       }
       const noteStart = Math.max(treble.getNoteStartX(), bass.getNoteStartX());
       treble.setNoteStartX(noteStart);
@@ -179,7 +179,9 @@ export function drawLines(vex: Vex, context: RenderContext, sheet: Sheet, lines:
         { name: "bass" as const, stave: bass, events: measure.bass, notes: built.bass }
       ];
       // Given the rests too, so a beam ends at a rest instead of reaching over it.
-      const beams = staves.flatMap(({ notes }) => Beam.generateBeams(notes));
+      // In 6/8 and its kin, eighths are beamed in threes.
+      const groups = sheet.compound ? { groups: [new vex.Fraction(3, 8)] } : undefined;
+      const beams = staves.flatMap(({ notes }) => Beam.generateBeams(notes, groups));
       built.voices.forEach((voice, i) => voice.draw(context, staves[i].stave));
       for (const beam of beams) beam.setContext(context).draw();
       for (const tuplet of built.tuplets) tuplet.setContext(context).draw();

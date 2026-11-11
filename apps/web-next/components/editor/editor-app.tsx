@@ -109,7 +109,9 @@ import {
   normalizeBus,
   normalizeClip,
   normalizeTrack,
-  projectDuration
+  projectDuration,
+  barSeconds,
+  timeSignature
 } from "@/lib/editor/types";
 import { downloadBlob, encodeWav } from "@/lib/editor/wav";
 import { cn } from "@/lib/utils";
@@ -392,7 +394,7 @@ function applyJob(state: ProjectState, job: Job, clipId: string): ProjectState {
       const downbeat = analysis.first_downbeat;
       next = updateClips(next, [clipId], (c) => {
         if (c.reversed || downbeat === null || downbeat < c.offset || downbeat > c.offset + c.duration) return c;
-        const bar = (60 / next.bpm) * next.beatsPerBar;
+        const bar = barSeconds(next);
         const onTimeline = c.start + downbeat - c.offset;
         const start = c.start + Math.round(onTimeline / bar) * bar - onTimeline;
         return start >= 0 ? { ...c, start } : c;
@@ -693,7 +695,7 @@ export function EditorApp({
       if (timeRef.current) {
         timeRef.current.textContent =
           current.rulerMode === "bars"
-            ? formatBars(position, current.bpm, current.beatsPerBar)
+            ? formatBars(position, current.bpm, current.beatsPerBar, current.beatUnit ?? 4)
             : formatTime(position);
       }
       for (const [id, element] of meterEls.current) paint(element, id, engine.trackLevel(id));
@@ -1237,7 +1239,7 @@ export function EditorApp({
     }
     if (current.snap) {
       // With snapping on, the new clip covers whole bars.
-      const bar = (60 / current.bpm) * current.beatsPerBar;
+      const bar = barSeconds(current);
       start = Math.floor(start / bar + 1e-6) * bar;
       stop = Math.max(start + bar, Math.ceil(stop / bar - 1e-6) * bar);
     }
@@ -1260,7 +1262,7 @@ export function EditorApp({
   /** A track with an empty four-bar MIDI clip at the playhead, opened in the piano roll. */
   const addInstrumentTrack = () => {
     const added = addTrack(state, `Instrument ${state.tracks.length + 1}`);
-    const bar = (60 / state.bpm) * state.beatsPerBar;
+    const bar = barSeconds(state);
     const start = Math.floor(engine.position() / bar + 1e-6) * bar;
     const clip = makeMidiClip(added.track.id, start, bar * 4, []);
     commit({ ...added.state, clips: [...added.state.clips, clip] });
@@ -1787,7 +1789,7 @@ export function EditorApp({
         {/* A fixed width: tempo, key and loudness readings changing must never shift the buttons beside them. */}
         <div className="hidden w-60 shrink-0 flex-col overflow-hidden text-[11px] leading-tight text-slate-400 xl:flex">
           <span className="truncate tabular-nums">
-            {formatBpm(state.bpm)} BPM · {state.beatsPerBar}/4{state.keyLabel ? ` · ${state.keyLabel}` : ""}
+            {formatBpm(state.bpm)} BPM · {timeSignature(state)}{state.keyLabel ? ` · ${state.keyLabel}` : ""}
           </span>
           <span
             ref={statsRef}
@@ -2023,6 +2025,7 @@ export function EditorApp({
               color={state.tracks.find((t) => t.id === primaryClip.trackId)?.color ?? "#22d3ee"}
               bpm={state.bpm}
               beatsPerBar={state.beatsPerBar}
+              beatUnit={state.beatUnit ?? 4}
               snap={state.snap}
               drums={state.tracks.find((t) => t.id === primaryClip.trackId)?.synth.kind === "drums"}
               onSeek={seek}
@@ -2044,6 +2047,7 @@ export function EditorApp({
               clip={primaryClip}
               bpm={state.bpm}
               beatsPerBar={state.beatsPerBar}
+              beatUnit={state.beatUnit ?? 4}
               keyLabel={state.keyLabel}
               onSeek={seek}
               onClose={() => setShowSheet(false)}

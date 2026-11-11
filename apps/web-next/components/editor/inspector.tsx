@@ -1168,6 +1168,19 @@ export function Inspector(props: InspectorProps) {
             onChange={(beatsPerBar) => props.onPatchState({ beatsPerBar: Math.round(beatsPerBar) }, "beats")}
           />
           <label className="flex items-center gap-2 text-[11px] text-slate-400">
+            <span className="w-16 shrink-0">Beat is</span>
+            <select
+              className={fieldClass}
+              value={state.beatUnit ?? 4}
+              aria-label="Beat unit of the time signature"
+              title="6 beats of an eighth note is 6/8. The tempo always counts quarter notes."
+              onChange={(event) => props.onPatchState({ beatUnit: event.target.value === "8" ? 8 : 4 }, "")}
+            >
+              <option value={4}>a quarter note: {state.beatsPerBar}/4</option>
+              <option value={8}>an eighth note: {state.beatsPerBar}/8</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-[11px] text-slate-400">
             <span className="w-16 shrink-0">Key</span>
             <select
               className={fieldClass}

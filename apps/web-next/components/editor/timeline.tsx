@@ -33,7 +33,8 @@ import {
   fadeShape,
   formatLaneValue,
   laneDefault,
-  lanePoints
+  lanePoints,
+  beatSeconds
 } from "@/lib/editor/types";
 
 export const RULER_HEIGHT = 44;
@@ -169,7 +170,7 @@ function hexToRgba(hex: string, alpha: number): string {
 
 function rulerLabel(state: ProjectState, time: number, step: number): string {
   if (state.rulerMode === "bars") {
-    const beats = (time * state.bpm) / 60;
+    const beats = time / beatSeconds(state);
     const bar = Math.floor(beats / state.beatsPerBar + 1e-6) + 1;
     const beat = Math.floor((beats % state.beatsPerBar) + 1e-6) + 1;
     return beat === 1 ? `${bar}` : `${bar}.${beat}`;

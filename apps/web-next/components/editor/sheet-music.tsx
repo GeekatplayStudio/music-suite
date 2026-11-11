@@ -19,6 +19,7 @@ export function SheetMusic({
   clip,
   bpm,
   beatsPerBar,
+  beatUnit = 4,
   keyLabel,
   onSeek,
   onClose
@@ -26,6 +27,8 @@ export function SheetMusic({
   clip: Clip;
   bpm: number;
   beatsPerBar: number;
+  /** 4 when a beat is a quarter note, 8 when it is an eighth (6/8). */
+  beatUnit?: 4 | 8;
   keyLabel: string | null;
   /** Jump to a time on the timeline (a bar was clicked). */
   onSeek: (time: number) => void;
@@ -38,8 +41,8 @@ export function SheetMusic({
   const [paper, setPaper] = useState<PaperSize>(defaultPaper);
   const [working, setWorking] = useState<"print" | "pdf" | null>(null);
   const sheet = useMemo(
-    () => toSheet(clip.notes ?? [], { bpm, beatsPerBar, offset: clip.offset, duration: clip.duration, keyLabel }),
-    [clip.notes, clip.offset, clip.duration, bpm, beatsPerBar, keyLabel]
+    () => toSheet(clip.notes ?? [], { bpm, beatsPerBar, beatUnit, offset: clip.offset, duration: clip.duration, keyLabel }),
+    [clip.notes, clip.offset, clip.duration, bpm, beatsPerBar, beatUnit, keyLabel]
   );
   // Where each line's bars were drawn, for finding the bar under a click.
   const drawn = useRef<SheetLine[]>([]);

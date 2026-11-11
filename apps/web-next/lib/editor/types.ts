@@ -392,6 +392,12 @@ export interface ProjectState {
   version: 1;
   bpm: number;
   beatsPerBar: number;
+  /**
+   * What one beat of the time signature is: 4 for a quarter note (4/4, 3/4), 8 for an
+   * eighth (6/8, 12/8). Absent in older projects, which count quarters. The tempo is
+   * always in quarter notes per minute.
+   */
+  beatUnit?: 4 | 8;
   keyLabel: string | null;
   masterDb: number;
   limiter: boolean;
@@ -573,8 +579,23 @@ export function formatTime(seconds: number): string {
   return `${minutes}:${rest.toFixed(3).padStart(6, "0")}`;
 }
 
-export function formatBars(seconds: number, bpm: number, beatsPerBar: number): string {
-  const beats = (Math.max(0, seconds) * bpm) / 60;
+/** Seconds one beat of the time signature lasts: a quarter note, or an eighth in x/8. */
+export function beatSeconds(state: { bpm: number; beatUnit?: 4 | 8 }): number {
+  return (60 / state.bpm) * (4 / (state.beatUnit ?? 4));
+}
+
+/** Seconds one bar lasts. */
+export function barSeconds(state: { bpm: number; beatsPerBar: number; beatUnit?: 4 | 8 }): number {
+  return beatSeconds(state) * state.beatsPerBar;
+}
+
+/** "6/8", "4/4"... */
+export function timeSignature(state: { beatsPerBar: number; beatUnit?: 4 | 8 }): string {
+  return `${state.beatsPerBar}/${state.beatUnit ?? 4}`;
+}
+
+export function formatBars(seconds: number, bpm: number, beatsPerBar: number, beatUnit: 4 | 8 = 4): string {
+  const beats = ((Math.max(0, seconds) * bpm) / 60) * (beatUnit / 4);
   const bar = Math.floor(beats / beatsPerBar) + 1;
   const beat = Math.floor(beats % beatsPerBar) + 1;
   const tick = Math.floor((beats % 1) * 100);

@@ -19,7 +19,8 @@ import {
   defaultSynth,
   lanePoints,
   newId,
-  withLane
+  withLane,
+  beatSeconds
 } from "@/lib/editor/types";
 
 const HISTORY_LIMIT = 200;
@@ -486,7 +487,7 @@ export function rescaleClip(clip: Clip, rate: number, assetId: string): Clip {
 
 export function gridStep(state: ProjectState, pxPerSec: number, minPx = 14): number {
   if (state.rulerMode === "bars") {
-    const beat = 60 / state.bpm;
+    const beat = beatSeconds(state);
     const bar = beat * state.beatsPerBar;
     const steps = [beat / 4, beat / 2, beat, bar, bar * 2, bar * 4, bar * 8, bar * 16, bar * 32];
     return steps.find((s) => s * pxPerSec >= minPx) ?? bar * 64;
