@@ -729,6 +729,8 @@ interface LiveNote {
   voice: Voice | null;
   /** Released while the sustain pedal was down; ends when the pedal comes up. */
   sustained: boolean;
+  /** How hard the key was played, to restart the note if the mixer is rebuilt. */
+  velocity?: number;
 }
 
 /** Voice modes whose carrier a MIDI keyboard plays instead of the track's synth. */
@@ -1183,10 +1185,21 @@ export class EditorEngine {
       void this.loadWorklets(ctx).then((ok) => {
         if (!ok || this.workletsReady) return;
         this.workletsReady = true;
+        // The rebuild replaces the mixer, which would cut off keys still held: start them again.
+        const held = [...this.live.entries()].filter(([, note]) => note.voice);
         this.rebuild();
+        for (const [pitch, note] of held) {
+          this.live.delete(pitch);
+          this.liveNoteOn(note.trackId, pitch, note.velocity ?? 0.8);
+        }
       });
     }
     return { ctx, mixer: this.mixer };
+  }
+
+  /** Get the audio ready for live playing, so the first key is heard like any other. */
+  prepareLive(): void {
+    this.liveMixer();
   }
 
   private postCarrier(trackId: string, mixer = this.mixer): void {
@@ -1237,7 +1250,7 @@ export class EditorEngine {
       bendCents: this.bendCents,
       glideFrom,
     });
-    this.live.set(pitch, { trackId, voice, sustained: false });
+    this.live.set(pitch, { trackId, voice, sustained: false, velocity });
     return true;
   }
 

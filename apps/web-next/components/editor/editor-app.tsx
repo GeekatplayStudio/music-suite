@@ -1757,7 +1757,11 @@ export function EditorApp({
           <IconButton
             label={showKeys ? "Hide the piano" : "Show a piano to play the selected instrument track"}
             active={showKeys}
-            onClick={() => setShowKeys((open) => !open)}
+            onClick={() => {
+              // Opening the piano gets the audio ready, so its first key sounds.
+              if (!showKeys) engine.prepareLive();
+              setShowKeys((open) => !open);
+            }}
           >
             <PianoIcon className="h-4 w-4" />
           </IconButton>
