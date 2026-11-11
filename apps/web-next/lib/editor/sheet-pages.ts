@@ -3,7 +3,7 @@
  * Pages are drawn at print resolution on canvases with the same engraving as the screen.
  */
 import type { Sheet } from "@/lib/editor/notation";
-import { LINE_HEIGHT, type SheetLine, drawLines, layoutSheet, loadVex } from "@/lib/editor/sheet-render";
+import { type SheetLine, drawLines, layoutSheet, lineHeight, loadVex } from "@/lib/editor/sheet-render";
 
 export type PaperSize = "a4" | "letter";
 
@@ -31,20 +31,22 @@ export function defaultPaper(): PaperSize {
   return ["US", "CA", "MX", "PH", "CL", "CO"].includes(region) ? "letter" : "a4";
 }
 
-function linesPerPage(pageHeight: number, first: boolean): number {
-  const room = pageHeight - 2 * MARGIN - (first ? TITLE_SPACE : 0) - 24;
-  return Math.max(1, Math.floor(room / LINE_HEIGHT));
-}
 
 /** Share the lines out over pages: fewer on the first, which carries the title. */
 function paginate(lines: SheetLine[], pageHeight: number): SheetLine[][] {
-  const pages: SheetLine[][] = [];
-  let at = 0;
-  do {
-    const count = linesPerPage(pageHeight, pages.length === 0);
-    pages.push(lines.slice(at, at + count));
-    at += count;
-  } while (at < lines.length);
+  const pages: SheetLine[][] = [[]];
+  let room = pageHeight - 2 * MARGIN - TITLE_SPACE - 24;
+  for (const line of lines) {
+    const current = pages[pages.length - 1];
+    // A line that does not fit starts a new page; a page always takes at least one line.
+    if (current.length > 0 && lineHeight(line) > room) {
+      pages.push([line]);
+      room = pageHeight - 2 * MARGIN - 24 - lineHeight(line);
+    } else {
+      current.push(line);
+      room -= lineHeight(line);
+    }
+  }
   return pages;
 }
 

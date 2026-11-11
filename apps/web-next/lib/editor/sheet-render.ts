@@ -11,8 +11,13 @@ import type { Sheet, SheetEvent, SheetMeasure } from "@/lib/editor/notation";
 
 export type Vex = typeof import("vexflow");
 
-/** Distance from the top of one grand staff to the next. */
+/** Distance from the top of one grand staff to the next, before room for extreme notes. */
 export const LINE_HEIGHT = 230;
+/** Height one semitone takes on a staff, near enough: used to make room for ledger lines. */
+const SEMITONE = 3;
+/** Notes beyond these sit far enough outside the staves to need extra room. */
+const TREBLE_COMFORT = 84;
+const BASS_COMFORT = 36;
 /** Room after the last note of a bar, before its barline. */
 const BAR_PADDING = 22;
 /**
@@ -33,6 +38,14 @@ export interface SheetLine {
   to: number;
   /** Width of each bar, clef and key signature included for the first. */
   widths: number[];
+  /** Extra room above and below the line for very high and very low notes. */
+  above: number;
+  below: number;
+}
+
+/** Space a line takes, top of its treble staff area to the top of the next line's. */
+export function lineHeight(line: SheetLine): number {
+  return LINE_HEIGHT + line.above + line.below;
 }
 
 /** The engraving library, loaded on first use: it is large. */
@@ -44,6 +57,7 @@ export async function loadVex(): Promise<Vex> {
 
 function buildNotes(vex: Vex, events: SheetEvent[], clef: "treble" | "bass"): VexStaveNote[] {
   return events.map((event) => {
+    if (event.wholeBar) return new vex.StaveNote({ keys: [clef === "treble" ? "d/5" : "f/3"], duration: "wr", clef, alignCenter: true });
     const note = new vex.StaveNote({ keys: event.keys, duration: `${event.duration}${event.rest ? "r" : ""}`, clef, dots: event.dotted ? 1 : 0 });
     if (event.dotted) vex.Dot.buildAndAttach([note], { all: true });
     return note;
@@ -97,7 +111,10 @@ export function layoutSheet(vex: Vex, sheet: Sheet, lineWidth: number): SheetLin
     // Stretch the bars to fill the line; a lone crowded bar is squeezed to fit instead.
     const last = index >= notes.length;
     const factor = total > lineWidth ? lineWidth / total : last ? Math.min(lineWidth / total, MAX_STRETCH) : lineWidth / total;
-    lines.push({ from, to: index, widths: widths.map((width) => width * factor) });
+    const pitches = sheet.measures.slice(from, index).flatMap((measure) => [...measure.treble, ...measure.bass].flatMap((event) => event.pitches));
+    const above = Math.max(0, Math.max(TREBLE_COMFORT, ...pitches) - TREBLE_COMFORT) * SEMITONE;
+    const below = Math.max(0, BASS_COMFORT - Math.min(BASS_COMFORT, ...pitches)) * SEMITONE;
+    lines.push({ from, to: index, widths: widths.map((width) => width * factor), above, below });
   }
   return lines;
 }
@@ -107,8 +124,10 @@ export function drawLines(vex: Vex, context: RenderContext, sheet: Sheet, lines:
   const { Beam, Stave, StaveConnector, StaveTie } = vex;
   const lastOf = (events: SheetEvent[]) => events[events.length - 1];
 
-  lines.forEach((line, row) => {
-    const y = top + row * LINE_HEIGHT;
+  let nextTop = top;
+  lines.forEach((line) => {
+    const y = nextTop + line.above;
+    nextTop += lineHeight(line);
     let x = left;
     // A tie waiting for its second note, per staff. "carry" is one that began on an earlier line.
     const open: Record<"treble" | "bass", VexStaveNote | "carry" | null> = {
@@ -161,12 +180,13 @@ export function drawLines(vex: Vex, context: RenderContext, sheet: Sheet, lines:
           }
           const before = open[name];
           const indexes = events[i].pitches.map((_, k) => k);
-          // Across a line or page break the tie is drawn as two halves.
-          if (before === "carry") new StaveTie({ lastNote: note, lastIndexes: indexes }).setContext(context).draw();
+          // Across a line or page break the tie is drawn as two halves. A half still names
+          // the notes of the chord on both sides, or VexFlow refuses it.
+          if (before === "carry") new StaveTie({ lastNote: note, firstIndexes: indexes, lastIndexes: indexes }).setContext(context).draw();
           else if (before) new StaveTie({ firstNote: before, lastNote: note, firstIndexes: indexes, lastIndexes: indexes }).setContext(context).draw();
           open[name] = events[i].tied ? note : null;
           const endsLine = index === line.to - 1 && i === notes.length - 1;
-          if (events[i].tied && endsLine) new StaveTie({ firstNote: note, firstIndexes: indexes }).setContext(context).draw();
+          if (events[i].tied && endsLine) new StaveTie({ firstNote: note, firstIndexes: indexes, lastIndexes: indexes }).setContext(context).draw();
         });
       }
       x += barWidth;

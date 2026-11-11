@@ -17,6 +17,8 @@ export interface SheetEvent {
   tied: boolean;
   /** Length in sixteenths. */
   length: number;
+  /** A rest that fills its bar: written as one centred whole rest, whatever the metre. */
+  wholeBar?: boolean;
 }
 
 export interface SheetMeasure {
@@ -135,7 +137,11 @@ function staff(line: Span[], bars: number, barLength: number, flats: boolean, re
     cursor = span.end;
   }
   if (cursor < bars * barLength) add(cursor, bars * barLength, []);
-  return measures;
+  return measures.map((events) =>
+    events.every((event) => event.rest)
+      ? [{ keys: [restKey], pitches: [], duration: "w", dotted: false, rest: true, tied: false, length: barLength, wholeBar: true }]
+      : events
+  );
 }
 
 /**

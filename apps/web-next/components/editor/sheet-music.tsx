@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { toSheet } from "@/lib/editor/notation";
 import { type PaperSize, defaultPaper, exportPdf, printSheet } from "@/lib/editor/sheet-pages";
-import { LINE_HEIGHT, type SheetLine, drawLines, layoutSheet, loadVex } from "@/lib/editor/sheet-render";
+import { type SheetLine, drawLines, layoutSheet, lineHeight, loadVex } from "@/lib/editor/sheet-render";
 import type { Clip } from "@/lib/editor/types";
 
 /** Room at the sides, for the brace that joins the two staves. */
@@ -67,7 +67,7 @@ export function SheetMusic({
         const lines = layoutSheet(vex, sheet, width - 2 * MARGIN);
         drawn.current = lines;
         const renderer = new vex.Renderer(paper, vex.Renderer.Backends.SVG);
-        renderer.resize(width, lines.length * LINE_HEIGHT + 20);
+        renderer.resize(width, lines.reduce((sum, line) => sum + lineHeight(line), 0) + 20);
         drawLines(vex, renderer.getContext(), sheet, lines, MARGIN, 20);
         setFailure(null);
       } catch (err) {
@@ -82,7 +82,11 @@ export function SheetMusic({
   /** A click on the paper jumps to the start of the bar under it. */
   const seekTo = (event: React.MouseEvent<HTMLDivElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
-    const line = drawn.current[Math.max(0, Math.floor((event.clientY - box.top - 10) / LINE_HEIGHT))];
+    let below = 10;
+    const line = drawn.current.find((candidate) => {
+      below += lineHeight(candidate);
+      return event.clientY - box.top < below;
+    });
     if (!line) return;
     let edge = MARGIN;
     let bar = line.to - 1;
