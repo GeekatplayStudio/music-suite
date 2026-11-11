@@ -118,6 +118,8 @@ function formatBpm(bpm: number): string {
 }
 const MIN_ZOOM = 2;
 const MAX_ZOOM = 6000;
+/** Seconds rendered after a MIDI clip ends so a plugin instrument's release is not cut off. */
+const PLUGIN_TAIL_SECONDS = 2;
 
 interface MenuState {
   x: number;
@@ -281,7 +283,17 @@ function capitalize(value: string): string {
 /** Fold a finished backend job into the project as a single undoable edit. */
 function applyJob(state: ProjectState, job: Job, clipId: string): ProjectState {
   const source = state.clips.find((c) => c.id === clipId);
-  if (job.op === "analyze") {
+  if (job.op === "plugin_window" && source) {
+    // The sound shaped in the plugin's own window is kept with the track.
+    const sound = typeof job.result.state === "string" ? job.result.state : undefined;
+    return {
+      ...state,
+      tracks: state.tracks.map((t) =>
+        t.id === source.trackId && t.pluginInstrument && sound ? { ...t, pluginInstrument: { ...t.pluginInstrument, state: sound } } : t
+      )
+    };
+  }
+  if (job.op === "analyze" && job.asset_id) {
     return { ...state, assetMeta: { ...state.assetMeta, [job.asset_id]: metaFromAnalysis(job.result as unknown as Analysis) } };
   }
   if (job.op === "generate" && source && job.result_assets.length) {
@@ -320,6 +332,17 @@ function applyJob(state: ProjectState, job: Job, clipId: string): ProjectState {
   if (!source || !job.result_assets.length) return state;
 
   if (job.op === "generate_song") return applySongEdit(state, job, source);
+
+  if (job.op === "render_instrument") {
+    // The rendered audio goes on a new track under the MIDI one, which is muted so it is not heard twice.
+    const asset = job.result_assets[0];
+    const index = state.tracks.findIndex((t) => t.id === source.trackId);
+    const track = makeTrack(state, `${source.name} (${String(job.result.plugin ?? "plugin")})`);
+    const tracks = [...state.tracks.slice(0, index + 1), track, ...state.tracks.slice(index + 1)];
+    const clip = { ...makeClip(asset, track.id, source.start), name: source.name };
+    const clips = state.clips.map((c) => (c.id === clipId ? { ...c, muted: true } : c));
+    return { ...state, tracks, clips: [...clips, clip] };
+  }
 
   if (job.op === "separate") {
     const sourceIndex = state.tracks.findIndex((t) => t.id === source.trackId);
@@ -889,7 +912,8 @@ export function EditorApp({
     if (!clip) return false;
     let job: Job;
     try {
-      job = await editorApi.startJob(projectId, op, clip.assetId, params);
+      // MIDI clips have no audio of their own: their jobs start from the notes.
+      job = await editorApi.startJob(projectId, op, clip.notes ? null : clip.assetId, params);
     } catch (err) {
       setNotice(errorMessage(err, "The job could not be started."));
       return false;
@@ -955,6 +979,52 @@ export function EditorApp({
     splitStartedRef.current = true;
     startSplit();
   }, [ready, splitAssetId]);
+
+  /** Play a MIDI clip's notes through the track's plugin instrument into a new audio track. */
+  const renderWithPlugin = (clipId: string) => {
+    const clip = stateRef.current.clips.find((c) => c.id === clipId);
+    const track = clip ? stateRef.current.tracks.find((t) => t.id === clip.trackId) : undefined;
+    const instrument = track?.pluginInstrument;
+    if (!clip?.notes || !instrument) return;
+    const end = clip.offset + clip.duration;
+    const notes = clip.notes
+      .filter((note) => note.t >= clip.offset - 1e-6 && note.t < end)
+      .map((note) => ({
+        t: Math.max(0, note.t - clip.offset),
+        d: Math.max(0.005, Math.min(note.d, end - note.t)),
+        p: clamp(Math.round(note.p), 0, 127),
+        v: clamp(note.v, 0, 1)
+      }));
+    if (!notes.length) {
+      setNotice("This clip has no notes to play.");
+      return;
+    }
+    const params = {
+      plugin_id: instrument.id,
+      state: instrument.state ?? null,
+      notes,
+      // Room for the last notes to ring out.
+      seconds: clip.duration + PLUGIN_TAIL_SECONDS,
+      name: clip.name.slice(0, 120) || "MIDI"
+    };
+    void runJob("render_instrument", params, `Playing ${clip.name} through ${instrument.name}`, [clip.id]);
+  };
+
+  /** Open the plugin instrument's own window on this computer; its sound is kept when it closes. */
+  const openPluginWindow = (clipId: string) => {
+    const clip = stateRef.current.clips.find((c) => c.id === clipId);
+    const instrument = clip ? stateRef.current.tracks.find((t) => t.id === clip.trackId)?.pluginInstrument : undefined;
+    if (!clip || !instrument) return;
+    const params = { plugin_id: instrument.id, state: instrument.state ?? null };
+    void runJob("plugin_window", params, `${instrument.name} window open: close it to keep the sound`, [clip.id]);
+  };
+
+  const refreshPlugins = () => {
+    editorApi
+      .plugins()
+      .then((list) => aliveRef.current && setPlugins(list.plugins))
+      .catch(() => undefined);
+  };
 
   /** Render a few seconds through a plugin and play them, without changing the session. */
   const auditionPlugin = async (pluginId: string, parameters: Record<string, number>) => {
@@ -1899,6 +1969,9 @@ export function EditorApp({
           onPatchTrack={(patch, key) => selectedTrack && patchTrack(selectedTrack.id, patch, key)}
           onRunJob={runJobs}
           onOpenWam={(trackId) => setWamWindow(trackId)}
+          onRenderWithPlugin={renderWithPlugin}
+          onOpenPluginWindow={openPluginWindow}
+          onRefreshPlugins={refreshPlugins}
           generation={generation}
           onCheckGeneration={checkGeneration}
           onOpenSongStudio={openSongStudio}

@@ -4,6 +4,7 @@ import { Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { ActionButton, PanelSection, Slider, fieldClass, formatDb } from "@/components/editor/controls";
+import { PluginInstrumentSection } from "@/components/editor/plugin-instrument";
 import { SynthEditor } from "@/components/editor/synth-editor";
 import { AiEditSection } from "@/components/generation/ai-edit-section";
 import { FACTORY_PRESETS, loadUserPresets, normalizePatch, type Patch } from "@/lib/editor/synth";
@@ -58,6 +59,11 @@ interface InspectorProps {
   onRunJob: (op: JobOp, params: Record<string, unknown>, title: string) => void;
   onAddMidiTrack: () => void;
   onOpenWam: (trackId: string) => void;
+  /** Render a MIDI clip through its track's plugin instrument. */
+  onRenderWithPlugin: (clipId: string) => void;
+  /** Open the track's plugin instrument window for a MIDI clip. */
+  onOpenPluginWindow: (clipId: string) => void;
+  onRefreshPlugins: () => void;
   generation: GenerationStatus | null;
   /** Generators that can edit the selected clip (local engine first). */
   songProviders: ProviderInfo[];
@@ -454,6 +460,19 @@ export function Inspector(props: InspectorProps) {
                     />
                   ) : null}
                 </PanelSection>
+              ) : null}
+              {track ? (
+                <PluginInstrumentSection
+                  key={track.id}
+                  track={track}
+                  available={Boolean(capabilities?.plugins.available)}
+                  plugins={props.plugins}
+                  busy={busy}
+                  onSet={(pluginInstrument) => props.onPatchTrack({ pluginInstrument }, "")}
+                  onOpenWindow={() => props.onOpenPluginWindow(clip.id)}
+                  onRender={() => props.onRenderWithPlugin(clip.id)}
+                  onRefreshPlugins={props.onRefreshPlugins}
+                />
               ) : null}
             </>
           ) : (

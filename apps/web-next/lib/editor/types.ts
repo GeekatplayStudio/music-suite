@@ -46,7 +46,9 @@ export type JobOp =
   | "to_midi"
   | "structure"
   | "generate"
-  | "generate_song";
+  | "generate_song"
+  | "render_instrument"
+  | "plugin_window";
 
 export interface GenerationStatus {
   available: boolean;
@@ -57,7 +59,7 @@ export interface GenerationStatus {
 export interface Job {
   id: string;
   op: JobOp;
-  asset_id: string;
+  asset_id: string | null;
   status: "queued" | "running" | "completed" | "failed";
   progress: number;
   stage: string;
@@ -93,6 +95,25 @@ export interface PluginInfo {
   name: string;
   format: "vst3" | "au";
   parameters: { name: string; min: number; max: number; default: number }[];
+  /** Known once the plugin has been loaded; null before that. */
+  is_instrument?: boolean | null;
+}
+
+/** A free instrument plugin the editor can download and install in one click. */
+export interface InstrumentOffer {
+  id: string;
+  name: string;
+  version: string;
+  license: string;
+  homepage: string;
+  summary: string;
+  supported: boolean;
+  installed: boolean;
+  download_bytes: number;
+  running: boolean;
+  percent: number;
+  detail: string;
+  error: string | null;
 }
 
 export interface ProjectSummary {
@@ -199,6 +220,8 @@ export interface Track {
   synth: Synth;
   /** An in-browser plugin (Web Audio Module) inserted after the track's own effects. */
   wam?: { url: string; name: string; state?: unknown };
+  /** An installed VST3 / AU instrument that renders this track's MIDI clips to audio. */
+  pluginInstrument?: { id: string; name: string; state?: string };
   fx: TrackFx;
 }
 

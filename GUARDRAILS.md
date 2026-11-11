@@ -89,6 +89,7 @@ These boundaries are enforced in code and covered by automated tests. Defaults a
 - Editor projects, audio, waveform overviews and jobs live under `data/editor/`; every identifier is a canonical UUID checked before any filesystem access.
 - Editor uploads use the same extension, size, duration and streaming limits as analysis uploads.
 - VST3 and Audio Unit plugins are listed by filename only and are loaded in a separate worker process, so a crashing plugin cannot take the API down. Clients refer to them by an opaque id, never a path.
+- The one-click instrument installer (Surge XT) downloads only fixed release files from the plugin project's GitHub releases, rejects any file whose size or SHA-256 differs, extracts only the plugin bundle and its sound library (no links, no paths outside the target), and installs into the current user's folders. It runs nothing: the plugin is first loaded when the user plays notes through it or opens its window, and then only in the worker process. A plugin's saved sound is stored in the project as base64 and passed back to that same plugin only.
 - ComfyUI generation contacts a loopback ComfyUI only; a non-loopback `MUSIC_SUITE_COMFYUI_URL` is refused.
 - MP3 and FLAC export encodes a rendered mix and deletes both the upload and the result once the response has been sent.
 

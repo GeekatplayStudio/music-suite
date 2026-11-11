@@ -2,6 +2,7 @@ import type {
   Asset,
   Capabilities,
   GenerationStatus,
+  InstrumentOffer,
   Job,
   JobOp,
   PluginInfo,
@@ -42,7 +43,11 @@ export const editorApi = {
   generation: () => request<GenerationStatus>("/generation"),
   plugins: () => request<{ available: boolean; plugins: PluginInfo[] }>("/plugins"),
   /** Loads the plugin on the server (in an isolated process) to read its parameters. */
-  describePlugin: (pluginId: string) => request<PluginInfo>(`/plugins/${pluginId}`),
+  describePlugin: (pluginId: string, instrument = false) =>
+    request<PluginInfo>(`/plugins/${pluginId}${instrument ? "?instrument=true" : ""}`),
+  instruments: () => request<InstrumentOffer[]>("/instruments"),
+  installInstrument: (instrumentId: string) =>
+    request<InstrumentOffer>(`/instruments/${instrumentId}/install`, { method: "POST" }),
   listProjects: () => request<ProjectSummary[]>("/projects"),
   createProject: (name: string) => request<ProjectDetail>("/projects", json({ name })),
   getProject: (id: string) => request<ProjectDetail>(`/projects/${id}`),
@@ -64,7 +69,7 @@ export const editorApi = {
   deleteAsset: (id: string, assetId: string) =>
     request<{ deleted: boolean }>(`/projects/${id}/assets/${assetId}`, { method: "DELETE" }),
   assetAudioUrl: (id: string, assetId: string) => `${BASE}/projects/${id}/assets/${assetId}/audio`,
-  startJob: (id: string, op: JobOp, assetId: string, params: Record<string, unknown>) =>
+  startJob: (id: string, op: JobOp, assetId: string | null, params: Record<string, unknown>) =>
     request<Job>(`/projects/${id}/jobs`, json({ op, asset_id: assetId, params })),
   getJob: (id: string, jobId: string) => request<Job>(`/projects/${id}/jobs/${jobId}`),
   /** Encode a rendered WAV to MP3 or FLAC with the suite's FFmpeg. */

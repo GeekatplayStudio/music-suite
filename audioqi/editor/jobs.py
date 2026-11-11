@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,8 +49,10 @@ JOB_FIELDS = (
     "updated_at",
 )
 MAX_PLUGIN_PARAMETERS = 256
+MAX_RENDER_NOTES = 20_000
+_BASE64_RE = re.compile(r"^[A-Za-z0-9+/]*={0,2}$")
 #: Jobs that can start from nothing, so they need no source asset.
-ASSETLESS_OPS = frozenset({"generate_song"})
+ASSETLESS_OPS = frozenset({"generate_song", "render_instrument", "plugin_window"})
 
 
 # --------------------------------------------------------------------------- validation
@@ -261,6 +264,70 @@ def _v_plugin_core(params: dict[str, Any]) -> dict[str, Any]:
     return {"plugin_id": plugin_id, "parameters": values}
 
 
+def _plugin_state(params: dict[str, Any]) -> str | None:
+    state = params.get("state")
+    if state is None or state == "":
+        return None
+    if not isinstance(state, str) or len(state) > plugins.MAX_STATE_BYTES * 4 // 3 + 4:
+        raise ParamError("'state' must be the sound saved from the plugin's window.")
+    if len(state) % 4 or not _BASE64_RE.match(state):
+        raise ParamError("'state' must be the sound saved from the plugin's window.")
+    return state
+
+
+def _plugin_id(params: dict[str, Any]) -> str:
+    plugin_id = params.get("plugin_id")
+    if not isinstance(plugin_id, str) or not plugins.PLUGIN_ID_RE.match(plugin_id):
+        raise ParamError("'plugin_id' must be an id from the plugin list.")
+    return plugin_id
+
+
+def _v_render_instrument(params: dict[str, Any]) -> dict[str, Any]:
+    _reject_unknown(params, {"plugin_id", "state", "notes", "seconds", "name", "sample_rate"})
+    limit = projects.SETTINGS.max_audio_duration_seconds
+    seconds = _number(params, "seconds", 0.1, limit, None, required=True)
+    raw = params.get("notes")
+    if not isinstance(raw, list) or not raw:
+        raise ParamError("'notes' must be a non-empty list of notes.")
+    if len(raw) > MAX_RENDER_NOTES:
+        raise ParamError(f"A clip can hold at most {MAX_RENDER_NOTES} notes.")
+    notes: list[dict[str, float]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ParamError("Each note must be an object with t, d, p and v.")
+        _reject_unknown(item, {"t", "d", "p", "v"})
+        start = _number(item, "t", 0.0, limit, None, required=True)
+        length = _number(item, "d", 0.001, limit, None, required=True)
+        pitch = item.get("p")
+        if isinstance(pitch, bool) or not isinstance(pitch, int) or not 0 <= pitch <= 127:
+            raise ParamError("Each note's 'p' must be a MIDI pitch from 0 to 127.")
+        velocity = _number(item, "v", 0.0, 1.0, 0.8)
+        assert start is not None and length is not None and velocity is not None
+        if start < (seconds or 0.0):
+            notes.append({"t": start, "d": length, "p": pitch, "v": velocity})
+    if not notes:
+        raise ParamError("Every note starts after the end of the render.")
+    name = params.get("name", "Instrument")
+    if not isinstance(name, str) or not name.strip() or len(name) > 120:
+        raise ParamError("'name' must be a short label.")
+    rate = params.get("sample_rate", projects.SETTINGS.sample_rate)
+    if rate not in (44100, 48000, 88200, 96000):
+        raise ParamError("'sample_rate' must be 44100, 48000, 88200 or 96000.")
+    return {
+        "plugin_id": _plugin_id(params),
+        "state": _plugin_state(params),
+        "notes": notes,
+        "seconds": seconds,
+        "name": name.strip(),
+        "sample_rate": int(rate),
+    }
+
+
+def _v_plugin_window(params: dict[str, Any]) -> dict[str, Any]:
+    _reject_unknown(params, {"plugin_id", "state"})
+    return {"plugin_id": _plugin_id(params), "state": _plugin_state(params)}
+
+
 def _v_declick(params: dict[str, Any]) -> dict[str, Any]:
     _reject_unknown(params, {"sensitivity"})
     return {"sensitivity": _number(params, "sensitivity", 0.0, 1.0, 0.5)}
@@ -332,6 +399,8 @@ _VALIDATORS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "analyze": _v_analyze,
     "match": _v_match,
     "plugin": _v_plugin,
+    "render_instrument": _v_render_instrument,
+    "plugin_window": _v_plugin_window,
 }
 OPS = tuple(_VALIDATORS)
 
@@ -521,9 +590,7 @@ def _op_separate(ctx: _Context) -> _Outcome:
         part=part,
     )
     ctx.progress("write", 88, "Writing stems.")
-    created = [
-        ctx.save(stem, sr, name, source="stem", label=name) for name, stem in stems.items()
-    ]
+    created = [ctx.save(stem, sr, name, source="stem", label=name) for name, stem in stems.items()]
     return created, {"engine": engine}
 
 
@@ -651,6 +718,39 @@ def _op_plugin(ctx: _Context) -> _Outcome:
     suffix = f"{name}, preview" if preview else name
     result = {"plugin": name, "engine": "pedalboard", "preview": bool(preview)}
     return [ctx.save(out, sr, suffix)], result
+
+
+def _op_render_instrument(ctx: _Context) -> _Outcome:
+    if not engines.plugin_hosting_available():
+        raise EditorError(plugins.UNAVAILABLE_MESSAGE)
+    params = ctx.params
+    ctx.progress("process", 15, f"Playing {len(params['notes'])} notes through the instrument.")
+    out, name = plugins.render_instrument(
+        params["plugin_id"],
+        params["notes"],
+        params["seconds"],
+        params["sample_rate"],
+        params["state"],
+    )
+    ctx.progress("write", 90, "Writing audio.")
+    record = assets.save_audio_asset(
+        ctx.project_id,
+        out,
+        params["sample_rate"],
+        name=f"{params['name']} ({name})",
+        source="process",
+    )
+    peak = float(np.max(np.abs(out))) if out.size else 0.0
+    result = {"plugin": name, "engine": "pedalboard", "silent": peak < 1e-5}
+    return [assets.public(record)], result
+
+
+def _op_plugin_window(ctx: _Context) -> _Outcome:
+    if not engines.plugin_hosting_available():
+        raise EditorError(plugins.UNAVAILABLE_MESSAGE)
+    ctx.progress("process", 10, "The plugin's window is open. Close it to keep the sound.")
+    outcome = plugins.open_plugin_window(ctx.params["plugin_id"], ctx.params["state"])
+    return [], outcome
 
 
 def _warp_outcome(ctx: _Context, audio: np.ndarray, sr: int, markers: list, suffix: str):
@@ -841,6 +941,8 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "analyze": _op_analyze,
     "match": _op_match,
     "plugin": _op_plugin,
+    "render_instrument": _op_render_instrument,
+    "plugin_window": _op_plugin_window,
 }
 
 
@@ -879,7 +981,7 @@ def run_job(project_id: str, job_id: str) -> None:
 def cancel_job(project_id: str, job_id: str) -> dict[str, Any]:
     """Ask a running generation to stop. Other job types cannot be cancelled."""
     record = _load(project_id, job_id)
-    if record.get("op") in ASSETLESS_OPS and record.get("status") in ("queued", "running"):
+    if record.get("op") == "generate_song" and record.get("status") in ("queued", "running"):
         song_service.cancel(job_id)
     return _public(record)
 

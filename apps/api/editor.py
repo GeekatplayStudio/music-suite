@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
 from audioqi.db import SessionLocal
-from audioqi.editor import assets, engines, generation, plugins, projects
+from audioqi.editor import assets, engines, generation, instruments, plugins, projects
 from audioqi.editor import jobs as editor_jobs
 from audioqi.editor.projects import EditorError
 from audioqi.io.decode import ffmpeg_available
@@ -76,8 +76,23 @@ def list_plugins() -> dict[str, Any]:
 
 
 @router.get("/plugins/{plugin_id}")
-def describe_plugin(plugin_id: str) -> dict[str, Any]:
-    return _guard(lambda: plugins.describe_plugin(plugin_id))
+def describe_plugin(plugin_id: str, instrument: bool = False) -> dict[str, Any]:
+    return _guard(lambda: plugins.describe_plugin(plugin_id, instrument=instrument))
+
+
+@router.get("/instruments")
+def list_instruments() -> list[dict[str, Any]]:
+    return instruments.list_instruments()
+
+
+@router.post("/instruments/{instrument_id}/install")
+def install_instrument(instrument_id: str) -> dict[str, Any]:
+    if instrument_id not in instruments.CATALOG:
+        raise HTTPException(status_code=404, detail="Unknown instrument.")
+    try:
+        return instruments.start_background(instrument_id)
+    except instruments.InstallError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/generation")

@@ -842,7 +842,7 @@ def test_plugins_are_listed_by_filename_without_loading(
         ("Shiny Reverb", "vst3"),
     ]
     for item in payload["plugins"]:
-        assert set(item) == {"id", "name", "format", "parameters"}
+        assert set(item) == {"id", "name", "format", "parameters", "is_instrument"}
         assert plugins.PLUGIN_ID_RE.match(item["id"]) and item["parameters"] == []
     assert str(tmp_path) not in json.dumps(payload)
 
