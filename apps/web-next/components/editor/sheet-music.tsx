@@ -1,12 +1,13 @@
 "use client";
 
-import { X } from "lucide-react";
+import { FileDown, Loader2, Printer, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { toSheet, type SheetEvent } from "@/lib/editor/notation";
+import { toSheet } from "@/lib/editor/notation";
+import { type PaperSize, defaultPaper, exportPdf, pageCount, printSheet } from "@/lib/editor/sheet-pages";
+import { LINE_HEIGHT, drawSheet, loadVex } from "@/lib/editor/sheet-render";
 import type { Clip } from "@/lib/editor/types";
 
-const LINE_HEIGHT = 230;
 const MIN_BAR_WIDTH = 230;
 /** Room at the sides, for the brace that joins the two staves. */
 const MARGIN = 30;
@@ -35,6 +36,8 @@ export function SheetMusic({
   const paperRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
+  const [paper, setPaper] = useState<PaperSize>(defaultPaper);
+  const [working, setWorking] = useState<"print" | "pdf" | null>(null);
   const sheet = useMemo(
     () => toSheet(clip.notes ?? [], { bpm, beatsPerBar, offset: clip.offset, duration: clip.duration, keyLabel }),
     [clip.notes, clip.offset, clip.duration, bpm, beatsPerBar, keyLabel]
@@ -58,86 +61,19 @@ export function SheetMusic({
     void (async () => {
       try {
         // The engraving library is large, so it loads only when sheet music is opened.
-        const { Accidental, Beam, Dot, Formatter, Renderer, Stave, StaveConnector, StaveNote, StaveTie, Voice } = await import("vexflow");
-        await document.fonts.ready;
+        const vex = await loadVex();
         if (cancelled) return;
         paper.replaceChildren();
         const lines = Math.ceil(sheet.measures.length / perLine);
-        const renderer = new Renderer(paper, Renderer.Backends.SVG);
+        const renderer = new vex.Renderer(paper, vex.Renderer.Backends.SVG);
         renderer.resize(width, lines * LINE_HEIGHT + 20);
-        const context = renderer.getContext();
-        const left = MARGIN;
-        const barWidth = (width - 2 * left) / perLine;
-        type Drawn = InstanceType<typeof StaveNote>;
-        // A tie waiting for its second note, per staff.
-        const open: { treble: Drawn | null; bass: Drawn | null } = { treble: null, bass: null };
-
-        sheet.measures.forEach((measure, index) => {
-          const column = index % perLine;
-          const row = Math.floor(index / perLine);
-          const x = left + column * barWidth;
-          const y = 20 + row * LINE_HEIGHT;
-          const treble = new Stave(x, y, barWidth);
-          const bass = new Stave(x, y + 90, barWidth);
-          if (column === 0) {
-            treble.addClef("treble").addKeySignature(sheet.keySignature);
-            bass.addClef("bass").addKeySignature(sheet.keySignature);
-            treble.setMeasure(index + 1);
-          }
-          if (index === 0) {
-            treble.addTimeSignature(`${sheet.barLength / 4}/4`);
-            bass.addTimeSignature(`${sheet.barLength / 4}/4`);
-          }
-          const noteStart = Math.max(treble.getNoteStartX(), bass.getNoteStartX());
-          treble.setNoteStartX(noteStart);
-          bass.setNoteStartX(noteStart);
-          treble.setContext(context).draw();
-          bass.setContext(context).draw();
-          if (column === 0) {
-            new StaveConnector(treble, bass).setType("brace").setContext(context).draw();
-            new StaveConnector(treble, bass).setType("singleLeft").setContext(context).draw();
-          }
-          new StaveConnector(treble, bass).setType(index === sheet.measures.length - 1 ? "boldDoubleRight" : "singleRight").setContext(context).draw();
-
-          const build = (events: SheetEvent[], clef: "treble" | "bass") =>
-            events.map((event) => {
-              const note = new StaveNote({ keys: event.keys, duration: `${event.duration}${event.rest ? "r" : ""}`, clef, dots: event.dotted ? 1 : 0 });
-              if (event.dotted) Dot.buildAndAttach([note], { all: true });
-              return note;
-            });
-          const staves = [
-            { name: "treble" as const, stave: treble, events: measure.treble, notes: build(measure.treble, "treble") },
-            { name: "bass" as const, stave: bass, events: measure.bass, notes: build(measure.bass, "bass") }
-          ];
-          const voices = staves.map(({ notes }) => new Voice({ numBeats: sheet.barLength / 4, beatValue: 4 }).setStrict(false).addTickables(notes));
-          Accidental.applyAccidentals(voices, sheet.keySignature);
-          const formatter = new Formatter();
-          for (const voice of voices) formatter.joinVoices([voice]);
-          formatter.format(voices, Math.max(60, x + barWidth - noteStart - 14));
-          // Given the rests too, so a beam ends at a rest instead of reaching over it.
-          const beams = staves.flatMap(({ notes }) => Beam.generateBeams(notes));
-          voices.forEach((voice, i) => voice.draw(context, staves[i].stave));
-          for (const beam of beams) beam.setContext(context).draw();
-
-          for (const { name, events, notes } of staves) {
-            notes.forEach((note, i) => {
-              if (events[i].rest) {
-                open[name] = null;
-                return;
-              }
-              const from = open[name];
-              const indexes = events[i].pitches.map((_, k) => k);
-              if (from) {
-                // Across a line break the tie is drawn as two halves.
-                const sameLine = column !== 0 || i !== 0;
-                if (sameLine) new StaveTie({ firstNote: from, lastNote: note, firstIndexes: indexes, lastIndexes: indexes }).setContext(context).draw();
-                else new StaveTie({ lastNote: note, lastIndexes: indexes }).setContext(context).draw();
-              }
-              open[name] = events[i].tied ? note : null;
-              const endsLine = column === perLine - 1 && i === notes.length - 1;
-              if (events[i].tied && endsLine) new StaveTie({ firstNote: note, firstIndexes: indexes }).setContext(context).draw();
-            });
-          }
+        drawSheet(vex, renderer.getContext(), sheet, {
+          left: MARGIN,
+          top: 20,
+          barWidth: (width - 2 * MARGIN) / perLine,
+          perLine,
+          from: 0,
+          to: sheet.measures.length
         });
         setFailure(null);
       } catch (err) {
@@ -159,6 +95,26 @@ export function SheetMusic({
   };
 
   const count = (clip.notes ?? []).length;
+  const pages = pageCount(sheet, paper);
+  /** Print, or save a PDF: the same pages either way. */
+  const produce = async (kind: "print" | "pdf") => {
+    if (working) return;
+    setWorking(kind);
+    setFailure(null);
+    const heading = {
+      title: clip.name || "Sheet music",
+      subtitle: [`${Math.round(bpm)} BPM`, keyLabel, "Music Suite"].filter(Boolean).join("  ·  ")
+    };
+    try {
+      await (kind === "pdf" ? exportPdf(sheet, heading, paper) : printSheet(sheet, heading, paper));
+    } catch (err) {
+      setFailure(err instanceof Error ? err.message : "The pages could not be made.");
+    }
+    setWorking(null);
+  };
+  const tool =
+    "inline-flex h-7 items-center gap-1.5 rounded-lg bg-slate-800 px-2 text-[11px] font-semibold text-slate-100 hover:bg-slate-700 " +
+    "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:pointer-events-none disabled:opacity-40";
   return (
     <section className="flex max-h-[55vh] shrink-0 flex-col border-t border-white/10 bg-slate-950" aria-label="Sheet music">
       <header className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-400">
@@ -168,6 +124,21 @@ export function SheetMusic({
           Timing is rounded to sixteenths. Click a bar to move the playhead there; edit notes in the piano roll.
           {sheet.hiddenBars ? ` Showing the first ${sheet.measures.length} bars of ${sheet.measures.length + sheet.hiddenBars}.` : ""}
         </span>
+        <select
+          aria-label="Paper size"
+          value={paper}
+          onChange={(event) => setPaper(event.target.value === "letter" ? "letter" : "a4")}
+          className="h-7 rounded-lg border border-white/10 bg-slate-900 px-1.5 text-[11px] text-slate-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
+        >
+          <option value="a4">A4</option>
+          <option value="letter">US Letter</option>
+        </select>
+        <button type="button" className={tool} disabled={working !== null} onClick={() => void produce("print")} title={`Print ${pages} page${pages === 1 ? "" : "s"}`}>
+          {working === "print" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Printer className="h-3.5 w-3.5" aria-hidden />} Print
+        </button>
+        <button type="button" className={tool} disabled={working !== null} onClick={() => void produce("pdf")} title={`Save a PDF of ${pages} page${pages === 1 ? "" : "s"}`}>
+          {working === "pdf" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <FileDown className="h-3.5 w-3.5" aria-hidden />} PDF
+        </button>
         <button
           type="button"
           aria-label="Close the sheet music"
