@@ -67,11 +67,22 @@ function buildNotes(vex: Vex, events: SheetEvent[], clef: "treble" | "bass"): Ve
 function buildVoices(vex: Vex, sheet: Sheet, measure: SheetMeasure) {
   const treble = buildNotes(vex, measure.treble, "treble");
   const bass = buildNotes(vex, measure.bass, "bass");
+  // Triplets are made before the voices, because they change how long their notes last.
+  const tuplets = [
+    { notes: treble, events: measure.treble },
+    { notes: bass, events: measure.bass }
+  ].flatMap(({ notes, events }) => {
+    const groups = new Map<string, VexStaveNote[]>();
+    events.forEach((event, i) => {
+      if (event.tuplet) groups.set(event.tuplet, [...(groups.get(event.tuplet) ?? []), notes[i]]);
+    });
+    return [...groups.values()].map((group) => new vex.Tuplet(group, { numNotes: 3, notesOccupied: 2 }));
+  });
   const voices = [treble, bass].map((notes) => new vex.Voice({ numBeats: sheet.barLength / 4, beatValue: 4 }).setStrict(false).addTickables(notes));
   vex.Accidental.applyAccidentals(voices, sheet.keySignature);
   const formatter = new vex.Formatter();
   for (const voice of voices) formatter.joinVoices([voice]);
-  return { treble, bass, voices, formatter };
+  return { treble, bass, voices, formatter, tuplets };
 }
 
 /** Width the clef, key signature and (for the very first bar) time signature take. */
@@ -171,6 +182,7 @@ export function drawLines(vex: Vex, context: RenderContext, sheet: Sheet, lines:
       const beams = staves.flatMap(({ notes }) => Beam.generateBeams(notes));
       built.voices.forEach((voice, i) => voice.draw(context, staves[i].stave));
       for (const beam of beams) beam.setContext(context).draw();
+      for (const tuplet of built.tuplets) tuplet.setContext(context).draw();
 
       for (const { name, events, notes } of staves) {
         notes.forEach((note, i) => {

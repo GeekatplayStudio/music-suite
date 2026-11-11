@@ -126,7 +126,7 @@ export function SheetMusic({
         <h2 className="display-font text-xs font-semibold uppercase tracking-wider text-slate-200">Sheet music</h2>
         <span className="min-w-0 flex-1 truncate">
           {clip.name}: {count} note{count === 1 ? "" : "s"}, {sheet.measures.length} bar{sheet.measures.length === 1 ? "" : "s"} at {Math.round(bpm)} BPM.
-          Timing is rounded to sixteenths. Click a bar to move the playhead there; edit notes in the piano roll.
+          Timing is rounded to sixteenths or triplets. Click a bar to move the playhead there; edit notes in the piano roll.
           {sheet.hiddenBars ? ` Showing the first ${sheet.measures.length} bars of ${sheet.measures.length + sheet.hiddenBars}.` : ""}
         </span>
         <select
