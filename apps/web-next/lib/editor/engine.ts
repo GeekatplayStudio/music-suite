@@ -19,6 +19,7 @@ import {
 } from "@/lib/editor/types";
 
 import { type Voice, playNote, startVoice } from "@/lib/editor/synth";
+import { type Instrument, currentSoundFont, playSampled, startSampled } from "@/lib/editor/soundfont";
 import { type WamInstance, createWam } from "@/lib/editor/wam";
 
 export const ENGINE_SAMPLE_RATE = 48_000;
@@ -738,6 +739,18 @@ export function playsCarrier(track: Track): boolean {
   return track.fx.voice.on && (track.fx.voice.mode === "vocoder" || track.fx.voice.mode === "synth");
 }
 
+/**
+ * The General MIDI instrument a loaded SoundFont should play for this track, or null when
+ * the track has no instrument chosen and so keeps its own synthesizer sound.
+ */
+function sampledInstrument(synth: Synth): Instrument | null {
+  if (synth.program === undefined) return null;
+  return { program: synth.program, drums: synth.kind === "drums" };
+}
+
+/** A percussion sample rings for its own length; this is only a bound on a looping one. */
+const DRUM_RING_SECONDS = 8;
+
 function scheduleNotes(
   ctx: BaseAudioContext,
   clip: Clip,
@@ -750,7 +763,9 @@ function scheduleNotes(
 ): void {
   const gain = dbToGain(clip.gainDb);
   const clipEnd = clip.start + clip.duration;
-  const mono = synth.kind === "synth" && synth.patch.mode === "mono";
+  const font = currentSoundFont();
+  const instrument = font ? sampledInstrument(synth) : null;
+  const mono = synth.kind === "synth" && synth.patch.mode === "mono" && !instrument;
   // Only notes that begin inside the clip's window sound; they are cut at its end.
   const notes = (clip.notes ?? [])
     .filter((note) => note.t >= clip.offset - 1e-6 && note.t < clip.offset + clip.duration)
@@ -771,9 +786,14 @@ function scheduleNotes(
     const until = contextStart + (end - fromPosition);
     if (synth.kind === "drums") {
       // A drum hit is not resumed part-way through.
-      if (start >= fromPosition - 0.005) playDrum(ctx, output, note.p, note.v * 0.22 * gain, when, sources);
+      if (start < fromPosition - 0.005) return;
+      // Percussion is not cut off at the note's end; the sample rings out as a drum does.
+      const ring = when + DRUM_RING_SECONDS;
+      if (font && instrument && playSampled(ctx, font, output, instrument, note.p, 0.22 * gain, when, ring, note.v, sources)) return;
+      playDrum(ctx, output, note.p, note.v * 0.22 * gain, when, sources);
       return;
     }
+    if (font && instrument && playSampled(ctx, font, output, instrument, note.p, 0.22 * gain, when, until, note.v, sources)) return;
     playNote(ctx, synth.patch, output, note.p, 0.22 * gain, when, until, { velocity: note.v, bpm, glideFrom }, sources);
   });
 }
@@ -975,7 +995,14 @@ export class EditorEngine {
     setParam(mixer.master.gain, dbToGain(next.masterDb), now, false);
     for (const stage of mixer.limiter ?? []) setParam(stage.parameters.get("ceiling"), next.limiterCeiling, now, true);
     const clipsChanged = prev.clips !== next.clips || prev.autoCrossfade !== next.autoCrossfade;
-    if (this.playing && clipsChanged) this.reschedule();
+    // Picking a different instrument has to be heard without stopping first.
+    const instrumentChanged = next.tracks.some((track, index) => prev.tracks[index]?.synth !== track.synth);
+    if (this.playing && (clipsChanged || instrumentChanged)) this.reschedule();
+  }
+
+  /** Re-voice the notes already scheduled, after the SoundFont in use changed. */
+  refreshInstruments(): void {
+    if (this.playing) this.reschedule();
   }
 
   private rebuild(): void {
@@ -1157,6 +1184,10 @@ export class EditorEngine {
     if (!input || !synth) return;
     const voices: AudioScheduledSourceNode[] = [];
     const when = ctx.currentTime + 0.005;
+    const font = currentSoundFont();
+    const instrument = font ? sampledInstrument(synth) : null;
+    const until = when + (synth.kind === "drums" ? DRUM_RING_SECONDS : 0.3);
+    if (font && instrument && playSampled(ctx, font, input, instrument, pitch, 0.22, when, until, 0.8, voices)) return;
     if (synth.kind === "drums") playDrum(ctx, input, pitch, 0.18, when, voices);
     else playNote(ctx, synth.patch, input, pitch, 0.22, when, when + 0.3, { velocity: 0.8, bpm: this.state.bpm }, voices);
   }
@@ -1230,6 +1261,27 @@ export class EditorEngine {
       return true;
     }
     const when = ctx.currentTime + 0.003;
+    const font = currentSoundFont();
+    const instrument = font ? sampledInstrument(track.synth) : null;
+    if (font && instrument) {
+      const sampled = startSampled(
+        ctx,
+        font,
+        nodes.input,
+        instrument,
+        pitch,
+        0.22,
+        when,
+        clamp(velocity, 0.05, 1),
+        this.bendCents
+      );
+      if (sampled) {
+        // A drum hit is one shot: it is not held down and is never released early.
+        if (instrument.drums) sampled.release(when + DRUM_RING_SECONDS);
+        else this.live.set(pitch, { trackId, voice: sampled, sustained: false, velocity });
+        return true;
+      }
+    }
     if (track.synth.kind === "drums") {
       playDrum(ctx, nodes.input, pitch, clamp(velocity, 0.05, 1) * 0.22, when, []);
       return true;

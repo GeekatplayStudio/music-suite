@@ -4,6 +4,8 @@ import { Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { ActionButton, PanelSection, Slider, fieldClass, formatDb } from "@/components/editor/controls";
+import { ArrangeSection } from "@/components/editor/arrange-section";
+import { GmInstrumentSection } from "@/components/editor/gm-instrument";
 import { type PluginSession, PluginInstrumentSection } from "@/components/editor/plugin-instrument";
 import { SynthEditor } from "@/components/editor/synth-editor";
 import { AiEditSection } from "@/components/generation/ai-edit-section";
@@ -80,6 +82,8 @@ interface InspectorProps {
   onCheckGeneration: () => void;
   /** Opens AI Song Studio set to generate into this project. */
   onOpenSongStudio: () => void;
+  /** Write an arrangement as notes; it needs no clip. */
+  onArrange: (params: Record<string, unknown>, title: string) => void;
   /** Sound one note on a track's instrument. */
   onPreviewNote: (trackId: string, pitch: number) => void;
   onOpenPianoRoll: () => void;
@@ -473,6 +477,7 @@ export function Inspector(props: InspectorProps) {
                       <option value="drums">Drum kit (kick 36, snare 38, hat 42…)</option>
                     </select>
                   </label>
+                  <GmInstrumentSection synth={track.synth} onSet={(synth) => props.onPatchTrack({ synth }, "")} />
                   {track.synth.kind === "drums" ? (
                     <p className="text-[11px] text-slate-400">
                       Each row of the grid is a drum: kick, snare, clap, hats, toms and cymbal. Note length is ignored.
@@ -998,6 +1003,23 @@ export function Inspector(props: InspectorProps) {
               Convert to MIDI notes
             </ActionButton>
             <ActionButton
+              variant="primary"
+              className="w-full"
+              disabled={busy}
+              title={
+                capabilities?.song_to_midi
+                  ? `Stems: ${capabilities.song_to_midi.stems}. Piano: ${capabilities.song_to_midi.piano}. Other instruments, bass and vocals: ${capabilities.song_to_midi.poly}. Drums: ${capabilities.song_to_midi.drums}.`
+                  : "Separates the instruments and writes the notes of each onto its own track"
+              }
+              onClick={() => props.onRunJob("song_to_midi", {}, `Writing the notes of ${clip.name}`)}
+            >
+              Whole song to MIDI (every instrument)
+            </ActionButton>
+            <p className="text-[11px] leading-snug text-slate-400">
+              Splits the song into its instruments and writes each one&apos;s notes on its own track: piano, guitar, bass,
+              vocals, drums and the rest. Close on clear parts, approximate on dense ones — check it by ear.
+            </p>
+            <ActionButton
               className="w-full"
               disabled={busy}
               title="Finds where the song changes and labels repeated parts alike"
@@ -1235,6 +1257,17 @@ export function Inspector(props: InspectorProps) {
           </ActionButton>
         </PanelSection>
       )}
+      {!clip ? (
+        <ArrangeSection
+          providers={props.songProviders}
+          busy={props.jobs.some((j) => j.clipId === "" && j.job.status !== "completed" && j.job.status !== "failed")}
+          projectTempo={state.clips.length ? state.bpm : null}
+          projectKey={state.clips.length ? state.keyLabel : null}
+          beatsPerBar={state.beatsPerBar}
+          beatUnit={state.beatUnit ?? 4}
+          onRun={props.onArrange}
+        />
+      ) : null}
       {!clip ? (
         <PanelSection
           title="Create a song"

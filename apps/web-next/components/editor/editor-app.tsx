@@ -47,7 +47,10 @@ import { EditorEngine, playsCarrier } from "@/lib/editor/engine";
 import { type ProcessStep, favouriteStore } from "@/lib/editor/favourites";
 import { MediaStore } from "@/lib/editor/media";
 import { type MidiEvent, midiHub } from "@/lib/editor/midi";
-import { parseMidi, writeMidi } from "@/lib/editor/smf";
+import { type MidiOutTrack, parseMidi, writeMidi, writeMidiFile } from "@/lib/editor/smf";
+import { gmPatch } from "@/lib/editor/gm";
+import { watchSoundFont } from "@/lib/editor/soundfont";
+import { restoreSoundFont } from "@/lib/editor/soundfont-store";
 import {
   addAssetOnNewTrack,
   addBus,
@@ -300,6 +303,59 @@ function pluginNotes(clip: Clip): Note[] {
     }));
 }
 
+interface ArrangedPart {
+  name?: unknown;
+  program?: unknown;
+  drums?: unknown;
+  notes?: unknown;
+}
+
+/**
+ * Notes written by the arranger become one instrument track per part, starting at `at`.
+ * An empty project also takes the arrangement's tempo, key and time signature, and its
+ * sections are marked on the ruler.
+ */
+function applyArrangement(state: ProjectState, job: Job, at: number): ProjectState {
+  const parts = Array.isArray(job.result.tracks) ? (job.result.tracks as ArrangedPart[]) : [];
+  const meta = (job.result.arrangement ?? {}) as Record<string, unknown>;
+  const wasEmpty = state.clips.length === 0;
+  let next = state;
+  const clips: Clip[] = [];
+  for (const part of parts) {
+    const notes = (Array.isArray(part.notes) ? (part.notes as Note[]) : [])
+      .filter((note) => Number.isFinite(note.t) && Number.isFinite(note.d) && Number.isFinite(note.p))
+      .map((note) => ({ t: Math.max(0, note.t), d: Math.max(0.02, note.d), p: clamp(Math.round(note.p), 0, 127), v: clamp(note.v, 0.05, 1) }));
+    if (!notes.length) continue;
+    const name = typeof part.name === "string" && part.name ? part.name.slice(0, 60) : "Part";
+    const added = addTrack(next, name);
+    const program = typeof part.program === "number" ? clamp(Math.round(part.program), 0, 127) : 0;
+    next = updateTrack(added.state, added.track.id, {
+      synth: part.drums === true ? { kind: "drums", patch: added.track.synth.patch, program: 0 } : { kind: "synth", patch: gmPatch(program), program }
+    });
+    const seconds = typeof meta.seconds === "number" && meta.seconds > 0 ? meta.seconds : Math.max(1, ...notes.map((note) => note.t + note.d));
+    clips.push(makeMidiClip(added.track.id, at, seconds, notes, name));
+  }
+  if (!clips.length) return state;
+  next = { ...next, clips: [...next.clips, ...clips] };
+  const sections = Array.isArray(meta.sections) ? (meta.sections as { name?: unknown; start?: unknown; end?: unknown }[]) : [];
+  for (const section of sections) {
+    if (typeof section.start !== "number" || typeof section.end !== "number" || section.end <= section.start) continue;
+    next = addRegion(next, { start: at + section.start, end: at + section.end }, typeof section.name === "string" ? section.name.slice(0, 40) : undefined).state;
+  }
+  if (wasEmpty) {
+    const beatUnit = meta.beat_unit === 8 ? 8 : 4;
+    next = {
+      ...next,
+      bpm: typeof meta.bpm === "number" && meta.bpm > 0 ? Number(meta.bpm.toFixed(1)) : next.bpm,
+      beatsPerBar: typeof meta.beats_per_bar === "number" ? clamp(Math.round(meta.beats_per_bar), 1, 12) : next.beatsPerBar,
+      beatUnit,
+      keyLabel: typeof meta.key === "string" ? meta.key : next.keyLabel,
+      rulerMode: "bars"
+    };
+  }
+  return next;
+}
+
 function applyJob(state: ProjectState, job: Job, clipId: string): ProjectState {
   const source = state.clips.find((c) => c.id === clipId);
   if (job.op === "plugin_window" && source) {
@@ -323,6 +379,35 @@ function applyJob(state: ProjectState, job: Job, clipId: string): ProjectState {
     const tracks = [...state.tracks.slice(0, index + 1), track, ...state.tracks.slice(index + 1)];
     const clip = { ...makeClip(asset, track.id, source.start), name: stripExtension(asset.name) };
     return { ...state, tracks, clips: [...state.clips, clip] };
+  }
+  if (job.op === "song_to_midi" && source) {
+    // One instrument track per part the song was split into, lined up under the audio.
+    const parts = Array.isArray(job.result.tracks) ? (job.result.tracks as ArrangedPart[]) : [];
+    const index = state.tracks.findIndex((t) => t.id === source.trackId);
+    const tracks: Track[] = [];
+    const clips: Clip[] = [];
+    for (const part of parts) {
+      const notes = (Array.isArray(part.notes) ? (part.notes as Note[]) : [])
+        .filter((note) => Number.isFinite(note.t) && Number.isFinite(note.d) && Number.isFinite(note.p))
+        .map((note) => ({ t: Math.max(0, note.t), d: Math.max(0.02, note.d), p: clamp(Math.round(note.p), 0, 127), v: clamp(note.v, 0.05, 1) }));
+      if (!notes.length) continue;
+      const name = typeof part.name === "string" && part.name ? part.name.slice(0, 60) : "Part";
+      const program = typeof part.program === "number" ? clamp(Math.round(part.program), 0, 127) : 0;
+      const made = makeTrack({ ...state, tracks: [...state.tracks, ...tracks] }, `${name} (MIDI)`);
+      const track: Track = {
+        ...made,
+        synth: part.drums === true ? { kind: "drums", patch: made.synth.patch, program: 0 } : { kind: "synth", patch: gmPatch(program), program }
+      };
+      tracks.push(track);
+      // Note times are measured in the clip's audio, so the MIDI clip keeps the same window.
+      clips.push({ ...makeMidiClip(track.id, source.start, source.duration, notes, `${source.name} · ${name}`), offset: source.offset });
+    }
+    if (!tracks.length) return state;
+    return {
+      ...state,
+      tracks: [...state.tracks.slice(0, index + 1), ...tracks, ...state.tracks.slice(index + 1)],
+      clips: [...state.clips, ...clips]
+    };
   }
   if (job.op === "to_midi" && source) {
     const notes = (job.result.notes as Note[] | undefined) ?? [];
@@ -418,15 +503,16 @@ function levelToMeter(peak: number): number {
   return clamp((20 * Math.log10(peak) + 60) / 60, 0, 1);
 }
 
-type ExportKind = "wav24" | "wav32" | "tracks" | "range" | "mp3" | "flac" | "mastering" | "studio";
+type ExportKind = "wav24" | "wav32" | "tracks" | "range" | "mp3" | "flac" | "midi" | "mastering" | "studio";
 
-const EXPORT_ITEMS: { kind: ExportKind; label: string; needsRange?: boolean }[] = [
+const EXPORT_ITEMS: { kind: ExportKind; label: string; needsRange?: boolean; needsNotes?: boolean }[] = [
   { kind: "wav24", label: "Mixdown · WAV 24-bit" },
   { kind: "wav32", label: "Mixdown · WAV 32-bit float" },
   { kind: "flac", label: "Mixdown · FLAC" },
   { kind: "mp3", label: "Mixdown · MP3 320 kbps" },
   { kind: "range", label: "Highlighted range · WAV 24-bit", needsRange: true },
   { kind: "tracks", label: "Each track · WAV 24-bit" },
+  { kind: "midi", label: "Every instrument · MIDI file", needsNotes: true },
   { kind: "mastering", label: "Send mix to the analyser and mastering →" },
   { kind: "studio", label: "Start an AI song from the mix →" }
 ];
@@ -465,7 +551,7 @@ export function EditorApp({
       .then((overview) =>
         setSongProviders(
           overview.providers.filter(
-            (p) => p.id === "acestep_local" || (p.enabled && p.kind === "external" && p.schema.tasks.some((t) => t.source))
+            (p) => p.id === "acestep_local" || p.schema.output === "notes" || (p.enabled && p.kind === "external" && p.schema.tasks.some((t) => t.source))
           )
         )
       )
@@ -590,6 +676,13 @@ export function EditorApp({
       engine.dispose();
     };
   }, [engine]);
+
+  // The SoundFont this browser remembers; loading it tells every watcher, this engine included.
+  useEffect(() => {
+    void restoreSoundFont();
+  }, []);
+
+  useEffect(() => watchSoundFont(() => engine.refreshInstruments()), [engine]);
 
   useEffect(() => {
     const element = scrollerRef.current;
@@ -863,7 +956,13 @@ export function EditorApp({
           const created: Clip[] = [];
           for (const part of midi.tracks) {
             const added = addTrack(current, part.name);
-            current = added.state;
+            // The file says which instrument each part wants; a SoundFont plays it, and
+            // without one the built-in synth takes its nearest sound.
+            current = updateTrack(added.state, added.track.id, {
+              synth: part.drums
+                ? { kind: "drums", patch: added.track.synth.patch, program: 0 }
+                : { kind: "synth", patch: gmPatch(part.program), program: part.program }
+            });
             const length = Math.max(1, ...part.notes.map((note) => note.t + note.d));
             created.push(makeMidiClip(added.track.id, time, length, part.notes, part.name));
           }
@@ -909,13 +1008,13 @@ export function EditorApp({
   /** Run a processing job on every selected clip (one-clip tools: the first only). */
   const runJobs = (op: JobOp, params: Record<string, unknown>, title: string) => {
     const single =
-      op === "spectral_repair" || op === "warp" || op === "match" || op === "generate" || op === "generate_song";
+      op === "spectral_repair" || op === "warp" || op === "match" || op === "generate" || op === "generate_song" || op === "song_to_midi";
     const groups = targetGroups(single);
     const many = selectedClips.length > 1 && !single;
     // A noise print is measured in one clip's audio, so it cannot be shared across a batch.
     const shared = many && op === "denoise" ? { ...params, noise_start: null, noise_end: null } : params;
     const verb = title.split(" ").slice(0, 2).join(" ");
-    if (!["spectral_repair", "warp", "match", "analyze", "separate", "to_midi", "structure", "generate", "generate_song"].includes(op)) {
+    if (!["spectral_repair", "warp", "match", "analyze", "separate", "to_midi", "song_to_midi", "structure", "generate", "generate_song"].includes(op)) {
       setRecentSteps((prev) => [...prev, { op, params: shared, label: verb }].slice(-6));
     }
     for (const ids of groups) void runJob(op, shared, many ? `${verb} (${ids.length} clip${ids.length > 1 ? "s" : ""})` : title, ids);
@@ -985,6 +1084,54 @@ export function EditorApp({
       if (aliveRef.current) setJobs((prev) => prev.filter((j) => j.job.id !== jobId));
     }, 3500);
     return true;
+  };
+
+  /** Write an arrangement: a job with no clip behind it, whose notes become new tracks at the playhead. */
+  const runArrangement = async (params: Record<string, unknown>, title: string): Promise<void> => {
+    const at = stateRef.current.clips.length ? engine.position() : 0;
+    let job: Job;
+    try {
+      job = await editorApi.startJob(projectId, "generate_song", null, params);
+    } catch (err) {
+      setNotice(errorMessage(err, "The arrangement could not be started."));
+      return;
+    }
+    const jobId = job.id;
+    const publish = (latest: Job) =>
+      setJobs((prev) => {
+        const entry = { job: latest, clipId: "", title };
+        return prev.some((j) => j.job.id === jobId) ? prev.map((j) => (j.job.id === jobId ? entry : j)) : [...prev, entry];
+      });
+    publish(job);
+    let failures = 0;
+    while (aliveRef.current && (job.status === "queued" || job.status === "running")) {
+      await delay(400);
+      try {
+        job = await editorApi.getJob(projectId, jobId);
+        failures = 0;
+        publish(job);
+      } catch {
+        failures += 1;
+        if (failures > 8) {
+          publish({ ...job, status: "failed", error: "Lost contact with the Music Suite API." });
+          return;
+        }
+      }
+    }
+    if (!aliveRef.current || job.status !== "completed") return;
+    const wasEmpty = stateRef.current.clips.length === 0;
+    const next = applyArrangement(stateRef.current, job, at);
+    if (next === stateRef.current) setNotice("The arrangement came back without any notes.");
+    else {
+      commit(next);
+      if (wasEmpty) {
+        const length = projectDuration(next);
+        if (length > 0) setView((viewWidthRef.current - 48) / length, 0);
+      }
+    }
+    setTimeout(() => {
+      if (aliveRef.current) setJobs((prev) => prev.filter((j) => j.job.id !== jobId));
+    }, 3500);
   };
 
   // A song sent with "split into stems" is separated once, as soon as the session is open.
@@ -1394,11 +1541,58 @@ export function EditorApp({
 
   /* ---------- Export ---------- */
 
+  /** Every MIDI clip on the timeline, as one part per track with notes where they sound. */
+  const midiParts = (): MidiOutTrack[] => {
+    const parts: MidiOutTrack[] = [];
+    for (const track of state.tracks) {
+      const notes: Note[] = [];
+      for (const clip of state.clips) {
+        if (clip.trackId !== track.id || !clip.notes || clip.muted) continue;
+        for (const note of clip.notes) {
+          // Only what is inside the clip's window sounds, and it moves with the clip.
+          if (note.t < clip.offset - 1e-6 || note.t >= clip.offset + clip.duration) continue;
+          const start = clip.start + note.t - clip.offset;
+          const end = Math.min(clip.start + clip.duration, start + note.d);
+          if (end <= start) continue;
+          notes.push({ ...note, t: start, d: end - start });
+        }
+      }
+      if (!notes.length) continue;
+      notes.sort((a, b) => a.t - b.t);
+      parts.push({
+        name: track.name,
+        notes,
+        drums: track.synth.kind === "drums",
+        program: track.synth.program ?? 0
+      });
+    }
+    return parts;
+  };
+
+  const hasMidiClips = state.clips.some((clip) => clip.notes?.length);
+
   const exportAudio = async (kind: ExportKind) => {
     setExportOpen(false);
     const clean = (value: string) => value.replace(/[^\w .-]+/g, "_");
     const safeName = clean(name || "mix");
     try {
+      if (kind === "midi") {
+        const parts = midiParts();
+        if (!parts.length) {
+          setNotice("This project has no MIDI clips to write.");
+          return;
+        }
+        downloadBlob(
+          writeMidiFile(parts, {
+            bpm: state.bpm,
+            beatsPerBar: state.beatsPerBar,
+            beatUnit: state.beatUnit ?? 4,
+            name: name || "Music Suite project"
+          }),
+          `${safeName}.mid`
+        );
+        return;
+      }
       await captureWamStates();
       if (kind === "tracks") {
         const used = state.tracks.filter((t) => state.clips.some((c) => c.trackId === t.id));
@@ -1902,8 +2096,14 @@ export function EditorApp({
                     key={item.kind}
                     type="button"
                     role="menuitem"
-                    disabled={item.needsRange && !range}
-                    title={item.needsRange && !range ? "Highlight a range with the Range tool first" : undefined}
+                    disabled={(item.needsRange && !range) || (item.needsNotes && !hasMidiClips)}
+                    title={
+                      item.needsRange && !range
+                        ? "Highlight a range with the Range tool first"
+                        : item.needsNotes && !hasMidiClips
+                          ? "This project has no MIDI clips to write"
+                          : undefined
+                    }
                     className="flex h-9 w-full items-center rounded-lg px-3 text-left text-xs text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:text-slate-500 disabled:hover:bg-transparent"
                     onClick={() => void exportAudio(item.kind)}
                   >
@@ -2150,6 +2350,7 @@ export function EditorApp({
           generation={generation}
           onCheckGeneration={checkGeneration}
           onOpenSongStudio={openSongStudio}
+          onArrange={(params, title) => void runArrangement(params, title)}
           onPreviewNote={(trackId, pitch) => engine.previewNote(trackId, pitch)}
           songProviders={songProviders}
           projectId={projectId}
@@ -2167,7 +2368,11 @@ export function EditorApp({
             const inside = primaryClip.notes
               .filter((note) => note.t >= primaryClip.offset && note.t < primaryClip.offset + primaryClip.duration)
               .map((note) => ({ ...note, t: note.t - primaryClip.offset }));
-            downloadBlob(writeMidi(inside, state.bpm, primaryClip.name), `${primaryClip.name.replace(/[^\w .-]+/g, "_")}.mid`);
+            const synth = state.tracks.find((track) => track.id === primaryClip.trackId)?.synth;
+            downloadBlob(
+              writeMidi(inside, state.bpm, primaryClip.name, { program: synth?.program ?? 0, drums: synth?.kind === "drums" }),
+              `${primaryClip.name.replace(/[^\w .-]+/g, "_")}.mid`
+            );
           }}
           getPosition={getPosition}
           getBusLevel={(id) => engine.busLevel(id)}

@@ -25,6 +25,8 @@ DEFAULTS: dict[str, Any] = {
     "providers": {
         "acestep_local": True,
         "comfyui_musicgen": True,
+        # Writes notes from music theory: no model, no download, nothing contacted.
+        "arranger": True,
         # Opt-in: these need software or hardware most machines do not have.
         "acestep_server": False,
         "yue2": False,

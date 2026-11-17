@@ -10,7 +10,7 @@ from typing import Any, Protocol
 
 @dataclass
 class Output:
-    """One generated piece of audio: raw file bytes, or an asset already imported."""
+    """One generated piece: audio (raw file bytes, or an asset already imported), or notes."""
 
     data: bytes = b""
     suffix: str = ".wav"
@@ -18,6 +18,9 @@ class Output:
     meta: dict[str, Any] = field(default_factory=dict)
     #: False when the provider has already set the level (edits keep the source's level).
     normalize: bool = True
+    #: Notes instead of audio: one ``{name, role, program, drums, notes}`` per instrument,
+    #: with notes as ``{t, d, p, v}`` in seconds. The editor makes instrument tracks of them.
+    tracks: list[dict[str, Any]] | None = None
 
 
 @dataclass

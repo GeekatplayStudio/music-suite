@@ -18,6 +18,7 @@ from audioqi.editor.projects import EditorError, NotFoundError, ParamError
 from audioqi.generation import records, remote_songs, resources, schema, settings
 from audioqi.generation.providers.acestep import AceStepProvider
 from audioqi.generation.providers.acestep_server import AceStepServerProvider
+from audioqi.generation.providers.arranger import ArrangerProvider
 from audioqi.generation.providers.base import Output, Provider, RunContext
 from audioqi.generation.providers.cloud import ElevenLabsProvider, FalProvider
 from audioqi.generation.providers.comfyui import ComfyUiProvider
@@ -31,6 +32,7 @@ PROVIDERS: dict[str, Provider] = {
         AceStepServerProvider(),
         YuE2Provider(),
         ComfyUiProvider(),
+        ArrangerProvider(),
         ElevenLabsProvider(),
         FalProvider(),
         LyriaProvider(),
@@ -157,7 +159,8 @@ def run(
         if cancelled():
             raise EditorError("Generation was cancelled.", 409)
     try:
-        if chosen.kind == "local":
+        # A provider that loads no model has nothing to make room for.
+        if chosen.kind == "local" and getattr(chosen, "needs_memory", True):
             progress(5, "Checking memory.")
             resources.ensure_memory(lambda detail: progress(6, detail), cancelled=cancelled)
         progress(10, "Starting the generator.")
@@ -169,10 +172,15 @@ def run(
         with _CANCEL_LOCK:
             _CANCELLED.discard(job_id)
 
-    progress(90, "Importing the audio.")
     title = params["title"]
     created = []
+    # Notes are not imported as audio: they travel in the job's result and the editor
+    # makes instrument tracks of them, as it does for "Convert to MIDI notes".
+    note_outputs = [output for output in outputs if output.tracks is not None]
+    progress(90, "Handing the notes to the editor." if note_outputs else "Importing the audio.")
     for index, output in enumerate(outputs):
+        if output.tracks is not None:
+            continue
         name = title if len(outputs) == 1 else f"{title} (version {index + 1})"
         asset = _import(project_id, output, name, parent_id)
         created.append(asset)
@@ -192,13 +200,17 @@ def run(
             "outputs": [output.meta for output in outputs],
         }
     )
-    return created, {
+    result: dict[str, Any] = {
         "provider": chosen.id,
         "title": title,
         "record_id": record["id"],
         "seconds_taken": taken,
         "outputs": [output.meta for output in outputs],
     }
+    if note_outputs:
+        result["tracks"] = note_outputs[0].tracks
+        result["arrangement"] = note_outputs[0].meta
+    return created, result
 
 
 def estimate(params: Any, project_id: str | None, asset_id: str | None) -> dict[str, Any] | None:

@@ -304,7 +304,8 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
     return () => clearInterval(timer);
   }, [installing, refresh]);
 
-  const usable = useMemo(() => (overview?.providers ?? []).filter((p) => p.enabled), [overview]);
+  // Providers that write notes work in the Studio Editor, where their tracks land; this page plays audio.
+  const usable = useMemo(() => (overview?.providers ?? []).filter((p) => p.enabled && p.schema.output !== "notes"), [overview]);
   const provider: ProviderInfo | null =
     usable.find((p) => p.id === providerId) ?? usable.find((p) => p.status.ready) ?? usable[0] ?? null;
   const values = useMemo(

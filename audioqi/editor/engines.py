@@ -123,6 +123,12 @@ def accelerator() -> str:
     return "cpu"
 
 
+def _song_to_midi_engines() -> dict[str, str]:
+    from audioqi.editor import transcribe
+
+    return transcribe.engines_available()
+
+
 def _transcription_engine() -> str:
     from audioqi.editor import composition
 
@@ -150,4 +156,6 @@ def capabilities() -> dict[str, Any]:
         "restoration": ["declick", "dehum", "declip", "dereverb", "spectral_repair"],
         "warp": True,
         "transcription": {"engine": _transcription_engine()},
+        # Which engine writes each kind of part when a whole song is turned into MIDI.
+        "song_to_midi": _song_to_midi_engines(),
     }

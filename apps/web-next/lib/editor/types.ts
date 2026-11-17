@@ -44,6 +44,7 @@ export type JobOp =
   | "warp"
   | "quantize"
   | "to_midi"
+  | "song_to_midi"
   | "structure"
   | "generate"
   | "generate_song"
@@ -88,6 +89,8 @@ export interface Capabilities {
   beats: { engine: string };
   plugins: { available: boolean; formats: string[] };
   transcription?: { engine: string };
+  /** The engine that writes each kind of part when a whole song is turned into MIDI. */
+  song_to_midi?: { piano: string; poly: string; mono: string; drums: string; stems: string };
 }
 
 export interface PluginInfo {
@@ -343,6 +346,13 @@ export interface Synth {
   kind: "synth" | "drums";
   /** The sound: oscillators, filter, envelopes, LFOs and modulation (see lib/editor/synth). */
   patch: Patch;
+  /**
+   * The General MIDI instrument this track stands for, 0-127, when one was chosen. A loaded
+   * SoundFont plays it; without one the patch above does, which is why both are kept. It is
+   * also the program number written to and read from MIDI files. Absent on a track using its
+   * own synth sound rather than a named instrument.
+   */
+  program?: number;
 }
 
 export function defaultSynth(): Synth {
@@ -353,7 +363,11 @@ export function defaultSynth(): Synth {
 export function normalizeSynth(raw: unknown): Synth {
   const saved = (raw ?? {}) as Record<string, unknown>;
   const kind = saved.kind === "drums" ? "drums" : "synth";
-  return { kind, patch: normalizePatch(saved.patch, saved.patch ? undefined : saved) };
+  const synth: Synth = { kind, patch: normalizePatch(saved.patch, saved.patch ? undefined : saved) };
+  if (typeof saved.program === "number" && Number.isFinite(saved.program)) {
+    synth.program = Math.min(127, Math.max(0, Math.round(saved.program)));
+  }
+  return synth;
 }
 
 export interface Clip {

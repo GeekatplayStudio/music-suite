@@ -61,6 +61,8 @@ export interface ProviderSchema {
   tasks: ProviderTask[];
   groups: string[];
   fields: FieldSpec[];
+  /** "notes" for a provider that writes MIDI notes for the editor instead of audio. */
+  output?: "notes";
 }
 
 export interface ProviderInfo {

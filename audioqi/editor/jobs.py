@@ -28,6 +28,7 @@ from audioqi.editor import (
     projects,
     restoration,
     separation,
+    transcribe,
 )
 from audioqi.editor.projects import EditorError, NotFoundError, ParamError
 from audioqi.generation import service as song_service
@@ -409,6 +410,7 @@ _VALIDATORS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "generate": _v_generate,
     "generate_song": song_service.validate_request,
     "to_midi": _v_analyze,
+    "song_to_midi": _v_analyze,
     "structure": _v_analyze,
     "warp": _v_warp,
     "quantize": _v_quantize,
@@ -845,6 +847,14 @@ def _op_to_midi(ctx: _Context) -> _Outcome:
     return [], {"notes": notes, "engine": used, "polyphonic": used == "basic-pitch"}
 
 
+def _op_song_to_midi(ctx: _Context) -> _Outcome:
+    """Stems, then the best transcriber for each: notes for every instrument in the song."""
+    audio, sr = ctx.load()
+    report = ctx.span("process", 5, 95, "Separating the instruments, then writing their notes.")
+    report(0.0)
+    return [], transcribe.song_to_midi(audio, sr, report)
+
+
 def _op_structure(ctx: _Context) -> _Outcome:
     audio, sr = ctx.load()
     ctx.progress("process", 20, "Finding sections.")
@@ -966,6 +976,7 @@ _HANDLERS: dict[str, Callable[[_Context], _Outcome]] = {
     "generate": _op_generate,
     "generate_song": _op_generate_song,
     "to_midi": _op_to_midi,
+    "song_to_midi": _op_song_to_midi,
     "structure": _op_structure,
     "warp": _op_warp,
     "quantize": _op_quantize,

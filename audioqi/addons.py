@@ -57,6 +57,11 @@ class Pack:
     modules: tuple[str, ...]
     torch: bool = False
     download_note: str = ""
+    #: Installed without their own dependency pins, after ``packages``. For a package whose
+    #: declared requirements are out of date but which runs on what is already installed.
+    unpinned: tuple[str, ...] = ()
+    #: False for a pack whose models ship inside its packages, so nothing more is downloaded.
+    downloads_models: bool = True
 
 
 @dataclass(frozen=True)
@@ -84,6 +89,26 @@ PACKS: dict[str, Pack] = {
         modules=("torch", "demucs", "audio_separator"),
         torch=True,
         download_note="About 3 GB with NVIDIA GPU support, about 1 GB without, plus the models.",
+    ),
+    "notes": Pack(
+        id="notes",
+        label="AI note transcription",
+        summary="Models that write down the notes in a recording: Transkun for piano and "
+        "basic-pitch for every other pitched instrument, bass and voice.",
+        unlocks=(
+            "Whole song to MIDI: every instrument's notes on its own track",
+            "Piano transcribed by a piano-only model, the most accurate there is",
+            "Chords, not just single lines, in Convert to MIDI notes",
+        ),
+        packages=("transkun>=2.0.1",),
+        modules=("torch", "transkun", "basic_pitch"),
+        torch=True,
+        # basic-pitch 0.4 pins an old NumPy and asks for TensorFlow; neither is needed for
+        # its ONNX model, which runs on the NumPy and onnxruntime already here.
+        unpinned=("basic-pitch==0.4.0",),
+        downloads_models=False,
+        download_note="About 120 MB. Both models come inside their packages. Works best with "
+        "AI stem separation installed too.",
     ),
 }
 
@@ -434,7 +459,10 @@ def install(pack_id: str, models: list[str] | None, report: Report) -> None:
     pack = PACKS.get(pack_id)
     if pack is None:
         raise EditorError("Unknown pack.", 404)
-    wanted = [m.file for m in MODELS if m.default] if models is None else models
+    if not pack.downloads_models:
+        wanted = []
+    else:
+        wanted = [m.file for m in MODELS if m.default] if models is None else models
     unknown = [name for name in wanted if name not in MODEL_FILES]
     if unknown:
         raise EditorError("Unknown model.", 404)
@@ -464,6 +492,15 @@ def install(pack_id: str, models: list[str] | None, report: Report) -> None:
             80,
             PIP_TIMEOUT_SECONDS,
         )
+        if pack.unpinned:
+            _stream(
+                pip_command(["--no-deps", *pack.unpinned], constraints),
+                report,
+                "packages",
+                80,
+                85,
+                PIP_TIMEOUT_SECONDS,
+            )
     importlib.invalidate_caches()
     for index, file in enumerate(wanted):
         span = 19 / max(1, len(wanted))

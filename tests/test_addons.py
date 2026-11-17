@@ -80,7 +80,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
 def test_overview_lists_packs_models_and_gpu(client: TestClient) -> None:
     body = client.get("/addons").json()
     assert body["gpu"]["name"] == "Test GPU"
-    assert [pack["id"] for pack in body["packs"]] == ["stems"]
+    assert [pack["id"] for pack in body["packs"]] == ["stems", "notes"]
     assert {model["file"] for model in body["models"]} == addons.MODEL_FILES
     assert body["install"]["running"] is False
 

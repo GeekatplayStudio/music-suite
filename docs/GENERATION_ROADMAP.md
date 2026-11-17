@@ -401,6 +401,31 @@ Its duplicate modules (`audioqi/editor/songs/`, the `song` job and the `/editor/
 - No genre, instrument or vocal detection: the drafted style description says how the song sounds, not what it is.
 - The engine's own reference-audio conditioning for *New song in its style* is not wired in; the song's influence is through the measured values only.
 
+---
+
+### Phase G6 — Notes, not audio: the arranger *(shipped 2026-11-17)*
+
+Every provider up to here returns a waveform. This one returns notes, so the result can be edited, re-voiced and written out as a MIDI file.
+
+**Done**
+
+- `audioqi/generation/arranger.py`: writes drums, bass, chords, a melody, a pad and an arpeggio from music theory. No model is loaded, nothing is downloaded, and the same seed always gives the same notes in a few milliseconds. Twelve styles (pop, rock, ballad, folk, electronic, lo-fi, hip-hop, funk, jazz, cinematic, metal, waltz), each with its own progressions per section, groove, bass line, chord rhythm and General MIDI instruments; seven forms; all 24 keys; any metre from 2 to 12 beats of a quarter or an eighth.
+  - **Sections carry material.** A chorus is written once and reused wherever the form says chorus, with a small variation, so the form is audible. A length longer than the form repeats its body; a shorter one drops sections from the middle, so the piece still opens and ends as the form says.
+  - **Chords are voice-led**: each is voiced in the inversion and octave nearest the one before.
+  - **Grooves follow the pulse**: 6/8, 9/8 and 12/8 are written in threes against the dotted quarter, as the notation view reads them.
+  - **Everything pitched stays in the key**, with one deliberate exception: a walking bass (jazz, lo-fi) approaches the next chord by a semitone on its last beat.
+- `providers/arranger.py`: the provider (`arranger`, local, on by default). Its schema marks it `output: "notes"`. `Output` gained `tracks`, and `service.run` hands those to the job result (`tracks`, `arrangement`) instead of importing audio, as *Convert to MIDI notes* does. It skips the memory guard (`needs_memory = False`), since it loads nothing. Each run is recorded in the history with its seed, so it can be repeated exactly.
+- **An idea in words (optional):** when *Describe it* is filled in, Ollama on loopback is asked for a style, key, tempo and form, constrained by a JSON schema and then checked again against the provider's own lists; an out-of-range tempo or unknown form is dropped. Anything the user set wins. With Ollama absent or unhelpful the job carries on with the defaults: it is not an error.
+- **Studio Editor:** *Write an arrangement* in the project panel (`components/editor/arrange-section.tsx`) builds its form from the provider's schema with the same `SchemaForm` the AI Song Studio uses, pre-filled with the project's tempo, key and metre when the project already has music. The notes land at the playhead as one instrument track per part, each set to its General MIDI instrument, with the sections marked on the ruler; an empty project also takes the arrangement's tempo, key and time signature. AI Song Studio leaves note providers out of its list, because that page plays audio.
+
+**Not done**
+
+- **It is an arranger, not a composer.** The harmony is diatonic triads and sevenths from fixed progressions per style; there are no secondary dominants, modulations, borrowed chords or key changes. Melodies are short motifs over the chords, and nobody has judged them by ear.
+- **No trained symbolic model.** A text-to-MIDI model (text2midi, the Anticipatory Music Transformer) could sit behind the same `tracks` output as a second provider; their licences and whether they install on this Python are unchecked.
+- The idea is read only for style, key, tempo and form. It does not shape the notes themselves, and no lyrics or vocal line are written.
+- Regenerating one part while keeping the others, and arranging around an existing clip's detected chords.
+- The seven forms are fixed lists; there is no editor for a form of one's own.
+
 ## 6. Verification plan
 
 - **Unit tests:**
@@ -428,6 +453,14 @@ Phase G1 went ahead with the recommended defaults (2026-11-10):
 6. **Still open:** the benchmark copies at `~/Projects/ACE-Step-1.5` (about 10 GB) and `~/Projects/acestep.cpp` (about 5.6 GB) are no longer used and can be deleted by the user.
 
 ## 7.1 Verification log
+
+### Phase G6 (2026-11-17, Windows 11)
+
+- **Tests:** 117 in `tests/test_arranger.py`. Every style writes all six parts with pitches, velocities, lengths and start times in range and only General MIDI percussion notes on the drum part; every pitched part stays inside the scale for 12 styles in 6 keys (72 cases); a walking bass leaves the key only on the last beat before a chord change; the same seed gives the same notes and another seed does not; bars last what the time signature says in 4/4, 3/4, 6/8, 12/8 and 7/8; lengths of 8 to 96 bars are filled exactly and keep the intro and outro; a repeated chorus has identical pad voicings and a melody that shares notes with the first; only the parts asked for are written; a chord is voiced to move least; unknown choices fall back. Through the job system: a job returns `tracks` and `arrangement`, imports no audio, matches a direct call with the same seed, and is recorded; the memory guard and the network are both asserted untouched; bad fields give 422 and a switched-off provider 403. The idea: a known style and key are taken while a tempo of 9000 and an unknown form are dropped; four kinds of useless answer change nothing; what the user set beats the model; a refused connection still completes the job.
+- **Bugs the tests found and fixed:** bass notes outside the key (the fifth above vii was written as a perfect fifth, and the walking line added tonic intervals to a chord root); chords inverting only upwards, so the nearest voicing below the previous chord was never tried.
+- **In the browser** (the suite's own built-in page on a dev server against the running API, with a temporary session deleted afterwards): *Write an arrangement* showed its form, and *Write the parts* with the defaults put six instrument tracks and six clips on the timeline, 1:08.571 long, with Intro, Verse, Chorus, Verse and Outro on the ruler and the ruler switched to bars. No console errors.
+- `ruff check` and `mypy` are clean on the new files (the repository's 100 existing `ruff` findings are unchanged), 257 tests pass in `tests/test_arranger.py` and `tests/test_generation.py` and 135 in `tests/test_editor.py`, `tsc --noEmit` and `eslint` are clean and `next build` succeeds.
+- **Not verified:** nobody has listened to an arrangement — the notes were checked for being in key, in range, in time and in form, not for whether they are good. The idea path was tested with a stand-in for Ollama only, never a real model. The form was not tried at phone width, and its two-column layout is tight in the inspector.
 
 ### Phase G5 (2026-11-10, Windows 11)
 

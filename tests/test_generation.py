@@ -215,6 +215,7 @@ def test_settings_round_trip_and_reject_bad_values(client: TestClient) -> None:
     assert body["providers"] == {
         "acestep_local": True,
         "comfyui_musicgen": False,
+        "arranger": True,
         "acestep_server": False,
         "yue2": False,
         "elevenlabs": False,

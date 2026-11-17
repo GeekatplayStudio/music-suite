@@ -76,7 +76,9 @@ Provide studio-grade technical and perceptual analysis in a reproducible local t
 - Multitrack editing of audio and MIDI with non-destructive clips, undo and autosave.
 - Stem separation, restoration, pitch/time, warp and AI tempo/key matching as background jobs that keep the original.
 - Mixing with per-track effects, buses, automation, a true-peak limiter and EBU R 128 metering.
-- Recording with punch-in and take comping; piano roll, drum kit, MIDI import/export, audio-to-MIDI and section detection.
+- Recording with punch-in and take comping; piano roll, drum kit, multi-track MIDI import/export with instruments, audio-to-MIDI and section detection.
+- *Write an arrangement*: drums, bass, chords, melody, pad and arpeggio written as editable notes from music theory, in 12 styles, with no model.
+- All 128 General MIDI instruments per track, played by a SoundFont (`.sf2`) the user loads for recorded instruments, or by the built-in synth's nearest sound without one.
 - Stem separation up to 12 stems with the optional AI separators: 2, 4 or 6 stems, drums into kick, snare, toms, hi-hat, ride and crash, and vocals into lead and backing.
 - Sheet music for a MIDI clip (two staves, key and time signature, triplets, eighth-note metres such as 6/8), printable and exportable as PDF.
 - Live playing from a USB MIDI keyboard or an on-screen piano; voice effects (vocoder, pitch shift, robot, synth voice, distortion).

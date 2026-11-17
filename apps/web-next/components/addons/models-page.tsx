@@ -114,6 +114,7 @@ export function ModelsPage() {
   };
 
   const stems = addons?.packs.find((p) => p.id === "stems") ?? null;
+  const notes = addons?.packs.find((p) => p.id === "notes") ?? null;
   const models = addons?.models ?? [];
   const selected = chosen ?? new Set(models.filter((m) => m.default || m.downloaded).map((m) => m.file));
   const toggle = (file: string) => {
@@ -124,7 +125,7 @@ export function ModelsPage() {
   };
   const plan = addons?.torch.plan;
   const install = addons?.install;
-  const stemsInstalling = Boolean(install?.running && install.pack !== null);
+  const stemsInstalling = Boolean(install?.running && install.pack !== null && install.pack !== "notes");
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-5 px-4 pb-16 pt-8">
@@ -197,6 +198,39 @@ export function ModelsPage() {
         </section>
       ) : null}
 
+      {notes ? (
+        <section className="glass space-y-3 rounded-2xl border border-white/10 p-4" aria-label={notes.label}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="display-font text-base font-semibold text-slate-100">{notes.label}</h2>
+              <p className="mt-1 text-sm text-slate-400">{notes.summary}</p>
+            </div>
+            <Status ok={notes.installed}>{notes.installed ? "Installed" : "Not installed"}</Status>
+          </div>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-300">
+            {notes.unlocks.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          {install?.running && install.pack === "notes" ? (
+            <Progress percent={install.percent} detail={install.detail} label="Install progress" />
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              {!notes.installed ? (
+                <button
+                  type="button"
+                  className={primary}
+                  disabled={busy}
+                  onClick={() => void run(() => addonsApi.installPack("notes", []), "The install could not be started.")}
+                >
+                  <Download className="h-4 w-4" aria-hidden /> Install AI note transcription
+                </button>
+              ) : null}
+              <p className="text-xs text-slate-400">{notes.installed ? "Ready. Reload open editor pages to use it." : notes.download_note}</p>
+            </div>
+          )}
+        </section>
+      ) : null}
       {stems ? (
         <section className="glass space-y-3 rounded-2xl border border-white/10 p-4" aria-label={stems.label}>
           <div className="flex flex-wrap items-start justify-between gap-2">
