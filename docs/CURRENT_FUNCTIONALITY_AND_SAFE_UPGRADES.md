@@ -36,8 +36,15 @@ This document records what the application already does well, which upgrades are
 
 - Multitrack editor at `/editor` with its own API under `/editor/*` and storage under `data/editor/`.
 - Arrange, separate, repair, mix, record, compose (MIDI) and export, as listed in the README and `docs/HELP_GUIDE.md`.
-- Heavy engines are optional extras (`editor`, `editor-ai`) with built-in fallbacks, chosen at runtime and reported in each job result.
+- Heavy engines are optional, with built-in fallbacks, chosen at runtime and reported in each job result. The AI separators are installed from **Models & engines** (`/models`), which pins every installed package during the install and picks PyTorch's CUDA build for NVIDIA cards on Windows.
+- Stem separation reaches 12 stems (drum kit pieces, lead and backing vocals); sheet music, MIDI keyboard and on-screen piano, voice effects, and instrument plugins such as Surge XT with its full interface in the suite's colours.
 - The full feature list, library decisions, phase history and verification log are in `docs/EDITOR_ROADMAP.md`.
+
+### AI Song Studio, Synth Studio and moving songs (November 2026)
+
+- AI Song Studio (`/generate`): local and online song generation, albums, and starting from an existing song (measured tempo, key, metre, length and style). Plan and verification: `docs/GENERATION_ROADMAP.md`.
+- Synth Studio (`/synth`): sound design and playing with the built-in synth or instrument plugins.
+- Songs move between the analyser, the AI Song Studio and the editor in one or two clicks, always added and never replacing work.
 
 ### Stability work already in place
 
@@ -150,8 +157,13 @@ Applied on 2026-11-09 alongside the Studio Editor work.
 ### Still deferred
 
 - TypeScript stays on 6.0: TypeScript 7.0 compiles the project, but `typescript-eslint` does not support it yet.
-- `basic-pitch` (polyphonic transcription) pins an old NumPy and cannot be installed on Python 3.13+.
+- `basic-pitch` (polyphonic transcription) pins an old NumPy: on 2026-11-10 a dry run on Python 3.12 tried to build NumPy from source and failed, so it is not offered in Models & engines.
 - `install.ps1` does not yet install the `editor` extra the way `install.command` does.
+
+### AI stem separation pack (2026-11-10)
+
+- `python -m audioqi.addons install stems` (or Models & engines) added torch 2.14.1+cu130, torchaudio 2.11.0+cu130, demucs 4.1, audio-separator 0.48 and beat-this 1.1 to a working environment with every existing package pinned; NumPy 2.5.3, SciPy 1.18.1 and librosa 1.0.0 were unchanged.
+- A dry run showed that letting pip see PyPI as well as the CUDA index installs PyPI's newer CPU-only torch on Windows, so the CUDA index is used on its own.
 
 ## October 2026 Dependency Pass
 

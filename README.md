@@ -331,13 +331,17 @@ music-suite/
   apps/web-next/                     Next.js interface and Visual AI
     app/editor/, components/editor/  Studio Editor interface
     app/generate/, components/generation/  AI Song Studio interface
+    app/synth/, components/synth/    Synth Studio (sound design, piano, instrument plugins)
+    app/models/, components/addons/  Models & engines (optional engines and AI models)
+    lib/handoff.ts                   moving songs between the analyser, the studio and the editor
     lib/editor/                      editor audio engine, MIDI, waveforms, plugin host
     public/editor-worklets.js        gate, true-peak limiter, loudness meter, recorder
     public/wam-host/                 pinned Web Audio Modules host (MIT)
     public/song-mapper/              integrated Song Geometry Mapper workspace
   audioqi/                           analysis, mastering, update, and integrations
-    editor/                          editor projects, assets and processing jobs
-    generation/                      AI song generation: providers, engine, writer, installer
+    editor/                          editor projects, assets, jobs, stems, plugin host, Surge XT skin
+    generation/                      AI song generation: providers, engine, writer, installer, inspire
+    addons.py                        Models & engines installer (also a CLI: python -m audioqi.addons)
     geometry_mapper/                 mapper deep-analysis and managed cache service
     integrations/comfyui/
       sonic_holodeck/                bundled ComfyUI nodes and workflows

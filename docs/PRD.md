@@ -77,9 +77,25 @@ Provide studio-grade technical and perceptual analysis in a reproducible local t
 - Stem separation, restoration, pitch/time, warp and AI tempo/key matching as background jobs that keep the original.
 - Mixing with per-track effects, buses, automation, a true-peak limiter and EBU R 128 metering.
 - Recording with punch-in and take comping; piano roll, drum kit, MIDI import/export, audio-to-MIDI and section detection.
-- VST3/AU plugins in an isolated process; opt-in in-browser Web Audio Module plugins.
-- Export to WAV, FLAC and MP3, or hand the mix to AI Mastering.
+- Stem separation up to 12 stems with the optional AI separators: 2, 4 or 6 stems, drums into kick, snare, toms, hi-hat, ride and crash, and vocals into lead and backing.
+- Sheet music for a MIDI clip (two staves, key and time signature, triplets, eighth-note metres such as 6/8), printable and exportable as PDF.
+- Live playing from a USB MIDI keyboard or an on-screen piano; voice effects (vocoder, pitch shift, robot, synth voice, distortion).
+- VST3/AU plugins in an isolated process, including instruments such as Surge XT (one-click install, its 3,000 sounds, and its full interface in Music Suite's colours); opt-in in-browser Web Audio Module plugins.
+- Export to WAV, FLAC and MP3, or hand the mix to AI Mastering or the AI Song Studio.
 - Acceptance and verification status: `docs/EDITOR_ROADMAP.md` section 7.
+
+### AI Song Studio (implemented November 2026)
+
+- Full songs with vocals generated on this computer (ACE-Step 1.5), with optional online generators that use the user's own keys and show a cost first.
+- Lyrics and style written by a local language model; albums of up to 20 songs generated in the background.
+- Start from an existing song: its tempo, key, time signature, length and a style description are measured to fill the form; then make a new song in its style, restyle, extend, extract an instrument, add a part, or build a full song around it.
+- Design and verification status: `docs/GENERATION_ROADMAP.md`.
+
+### Synth Studio, Models & engines, and moving songs (implemented November 2026)
+
+- Synth Studio (`/synth`): design and play sounds with the built-in synth or an instrument plugin, with a piano for mouse, touch, computer keys or a MIDI keyboard.
+- Models & engines (`/models`): one page to see the graphics card and install optional engines and models (AI stem separation, the music engine and its models, the lyrics writer). Installs never change a package that is already installed.
+- Any song moves between the analyser, the AI Song Studio and the Studio Editor in one or two clicks, and is always added (to a new or existing session, on a new track), never swapped in; it can be split into stems on arrival.
 
 ## Non-Functional Requirements
 
@@ -91,7 +107,7 @@ Provide studio-grade technical and perceptual analysis in a reproducible local t
 
 ## Out of Scope (MVP)
 
-- Stem separation default path.
+- AI stem separation in the base install (it is an optional pack from Models & engines; the base install has a basic 2/4-stem splitter).
 - Batch folder mode.
 - Codec artifact forensic models.
 - Preset target policy engine (streaming/broadcast/film).

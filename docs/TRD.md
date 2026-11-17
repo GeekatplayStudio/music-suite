@@ -27,8 +27,25 @@
 - `apps/api/editor.py` + `audioqi/editor` (editor backend):
 - projects, canonical-WAV assets and cached waveform overviews,
 - processing jobs on the shared worker pool,
-- VST3/AU hosting in an isolated worker process,
+- stem separation (`separation.py`): basic HPSS fallback, Demucs and audio-separator, plus DrumSep and Karaoke passes for up to 12 stems,
+- VST3/AU hosting in an isolated worker process (`plugins.py`, `plugin_worker.py`): effects, instrument rendering, the plugin's own window, live playing and auditions,
+- instrument installs and sound libraries (`instruments.py`, `sounds.py`), and a Music Suite skin for Surge XT generated from its factory dark skin (`surge_skin.py`),
 - loopback-only ComfyUI generation.
+
+- `apps/web-next` Synth Studio (`/synth`) and Models & engines (`/models`):
+- Synth Studio designs and plays sounds (built-in synth or instrument plugins) with a responsive piano,
+- Models & engines lists the GPU and installs optional packs and models.
+
+- `apps/api/addons.py` + `audioqi/addons.py` (optional engines):
+- installs packs into the suite's virtual environment with every installed package pinned as a pip constraint,
+- on Windows with an NVIDIA driver 580+, PyTorch comes only from the `cu130` index (PyPI has CPU-only builds for Windows),
+- also a CLI: `python -m audioqi.addons list|install stems`.
+
+- `apps/api/generation.py` + `audioqi/generation` (AI Song Studio):
+- providers, settings, the one-step engine install, the lyrics writer, albums and history,
+- `inspire.py` reads a clip into form values (tempo, key, metre, length, style tags).
+
+- `apps/web-next/lib/handoff.ts`: moving songs between the analyser, the AI Song Studio and the editor (always added, never replacing).
 
 - `apps/web` Dash frontend (legacy compatibility UI):
 - basic upload/analyze/report flow.
@@ -131,22 +148,26 @@
 ## 6.1 API Surface (Current)
 
 - Health: `GET /health`
-- Runs: `POST /runs/upload`, `POST /runs/{run_id}/analyze`, `GET /runs`, `GET /runs/{run_id}`, `DELETE /runs`
+- Runs: `POST /runs/upload`, `POST /runs/from-asset` (a run from an editor clip), `POST /runs/{run_id}/analyze`, `GET /runs`, `GET /runs/{run_id}`, `DELETE /runs`
 - Charts/audio: `GET /runs/{run_id}/charts`, `GET /runs/{run_id}/audio`
 - Export: `GET /runs/{run_id}/export/json|html|pdf`
 - Conversion: `POST /runs/{run_id}/convert`, `GET /runs/{run_id}/conversions`, `GET /runs/{run_id}/conversions/{fmt}/download`
 - Mastering: `POST /runs/{run_id}/master`, `GET /runs/{run_id}/mastering`, `GET /runs/{run_id}/mastering/{output_id}/download`
-- Editor information: `GET /editor/capabilities`, `GET /editor/plugins`, `GET /editor/plugins/{plugin_id}`, `GET /editor/generation`
+- Editor information: `GET /editor/capabilities` (includes `separation.detail` and `separation.accelerator`), `GET /editor/plugins`, `GET /editor/plugins/{plugin_id}`, `GET /editor/generation`
+- Instruments and sounds: `GET /editor/instruments`, `POST /editor/instruments/{instrument_id}/install`, `GET /editor/plugins/{plugin_id}/sounds`, `POST /editor/plugins/{plugin_id}/sounds/{sound_id}`
+- Auditions (an instrument outside any project, Synth Studio): `POST /editor/audition` (`window: true` shows the plugin's own interface), `GET /editor/audition/{key}` (reports the sound left in the window once it closes), `POST /editor/audition/{key}/load|preview|midi|stop`
 - Editor projects: `GET|POST /editor/projects`, `GET|DELETE /editor/projects/{id}`, `POST /editor/projects/{id}/state`, `POST /editor/projects/{id}/rename`
-- Editor assets: `POST /editor/projects/{id}/assets`, `POST /editor/projects/{id}/assets/from-run/{run_id}`, `GET /editor/projects/{id}/assets/{asset_id}/audio|peaks`, `DELETE /editor/projects/{id}/assets/{asset_id}`
-- Editor jobs: `POST /editor/projects/{id}/jobs`, `GET /editor/projects/{id}/jobs/{job_id}`. Operations: `separate`, `stretch`, `pitch`, `warp`, `quantize`, `denoise`, `declick`, `dehum`, `declip`, `dereverb`, `spectral_repair`, `normalize`, `analyze`, `match`, `to_midi`, `structure`, `plugin`, `generate`
+- Editor assets: `POST /editor/projects/{id}/assets`, `POST /editor/projects/{id}/assets/from-run/{run_id}`, `POST /editor/projects/{id}/assets/from-asset` (copy a clip from another session), `GET /editor/projects/{id}/assets/{asset_id}/audio|peaks`, `DELETE /editor/projects/{id}/assets/{asset_id}`
+- Editor jobs: `POST /editor/projects/{id}/jobs`, `GET /editor/projects/{id}/jobs/{job_id}`, `POST .../jobs/{job_id}/cancel`, and for an open plugin window `POST .../jobs/{job_id}/close-window|midi|load|preview`. Operations: `separate` (`stems` 2/4/6, `drum_kit`, `lead_backing`, `part` mix/drums/vocals), `stretch`, `pitch`, `warp`, `quantize`, `denoise`, `declick`, `dehum`, `declip`, `dereverb`, `spectral_repair`, `normalize`, `analyze`, `match`, `to_midi`, `structure`, `plugin`, `render_instrument`, `plugin_window`, `generate`, `generate_song`
+- Optional engines: `GET /addons`, `GET /addons/install`, `POST /addons/packs/{pack_id}/install`, `POST /addons/models/{model_file}/download`, `DELETE /addons/models`. Changes need `X-Music-Suite-Action: addons`.
 - Editor export: `POST /editor/export/mp3|flac`
-- Generation: `GET /generation/providers` (providers, schemas, engine, writer, memory, settings), `GET|POST /generation/settings`, `GET|POST /generation/setup`, `POST /generation/engine/stop`, `POST /generation/lyrics`, `POST|DELETE /generation/providers/{id}/key` (write-only, needs `X-Music-Suite-Action: generation-key`), `POST /generation/providers/{id}/plan` (draft a song plan), `POST /generation/estimate` (cost of an online request, including any upload), `GET|POST /generation/albums`, `GET|DELETE /generation/albums/{id}`, `POST /generation/albums/{id}/cancel`, `POST /generation/albums/{id}/placed`, `GET /generation/history`, `DELETE /generation/history/{id}`. Songs run as the editor job `generate_song` (no source asset needed) and are cancelled with `POST /editor/projects/{id}/jobs/{job_id}/cancel`. Design: [GENERATION_ROADMAP.md](GENERATION_ROADMAP.md)
+- Generation: `GET /generation/providers` (providers, schemas, engine, writer, memory, settings), `GET|POST /generation/settings`, `GET|POST /generation/setup`, `POST /generation/engine/stop`, `POST /generation/lyrics`, `POST|DELETE /generation/providers/{id}/key` (write-only, needs `X-Music-Suite-Action: generation-key`), `POST /generation/providers/{id}/plan` (draft a song plan), `POST /generation/estimate` (cost of an online request, including any upload), `GET|POST /generation/albums`, `GET|DELETE /generation/albums/{id}`, `POST /generation/albums/{id}/cancel`, `POST /generation/albums/{id}/placed`, `GET /generation/history`, `DELETE /generation/history/{id}`, `POST /generation/inspire` (tempo, key, metre, length and style tags of a clip). Songs run as the editor job `generate_song` (no source asset needed) and are cancelled with `POST /editor/projects/{id}/jobs/{job_id}/cancel`. Design: [GENERATION_ROADMAP.md](GENERATION_ROADMAP.md)
 
 ## 7. GPU Strategy
 
 - CPU path is canonical deterministic MVP path.
 - Optional CUDA spectrogram helper in `audioqi/gpu/spectrogram.py`.
+- AI stem separation runs on the GPU when the AI separation pack is installed with a CUDA (or Apple) PyTorch build; capabilities report the accelerator from PyTorch's build tag without importing it. Measured: 12 stems from a 45 s excerpt in 20 s on an RTX 3090.
 - API exposes `use_gpu` flag; current analyzer records backend mode.
 - Future: unified tolerance-tested CPU/GPU parity layer.
 
@@ -165,13 +186,16 @@
 - No external API calls required for any core feature.
 - Local filesystem only.
 - One opt-in exception: in-browser editor plugins (Web Audio Modules) are downloaded from the internet once the user allows them in that browser. The boundary and residual risk are set out in `GUARDRAILS.md`.
+- User-started downloads: optional packs and models (Models & engines), Surge XT, and the AI music engine are fetched only when the user installs them; installs pin every existing package and the add-on routes need an explicit confirmation header.
+- Online song generators are off until the user saves their own key; audio is uploaded only when they allow it per edit.
 - ComfyUI generation and Ollama are reached on loopback only.
 - CORS open for localhost development; harden for packaging/distribution.
 
 ## 10. Roadmap Technical Extensions
 
 - libebur128 optional backend for verified true peak + LRA.
-- Demucs stem pipeline with artifact caching (shipped in the Studio Editor).
+- Demucs stem pipeline with artifact caching (shipped in the Studio Editor; extended to 12 stems with audio-separator's DrumSep and Karaoke models).
+- Embedding a plugin's native window inside the browser page (today it opens as its own desktop window).
 - Studio Editor follow-ups: live warp playback, sample-based instruments, spectral lasso/brush selection, mid/side EQ, bus automation (`docs/EDITOR_ROADMAP.md`).
 - Batch analysis worker pool and diff views.
 - Artifact detection modules for codec defects.
