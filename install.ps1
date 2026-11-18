@@ -2,6 +2,7 @@ param(
     [switch]$WithGpu,
     [switch]$WithPro,
     [switch]$WithAiStems,
+    [switch]$FullInstall,
     [string]$ComfyUIPath,
     [switch]$InstallComfyDependencies
 )
@@ -16,6 +17,34 @@ function Install-WithWinget([string]$Id, [string]$FriendlyName) {
     }
     Write-Host "Installing $FriendlyName via winget..."
     & winget install --id $Id -e --source winget --accept-package-agreements --accept-source-agreements
+    if ($LASTEXITCODE -ne 0) {
+        throw "$FriendlyName could not be installed (winget exit code $LASTEXITCODE)."
+    }
+}
+
+function Assert-LastExitCode([string]$Action) {
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Action failed (exit code $LASTEXITCODE). Review the messages above and run install.bat again."
+    }
+}
+
+function Refresh-Path {
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+}
+
+function Add-KnownOllamaPath {
+    $ollamaFolder = Join-Path $env:LOCALAPPDATA "Programs\Ollama"
+    if ((Test-Path -LiteralPath (Join-Path $ollamaFolder "ollama.exe")) -and $env:Path -notlike "*$ollamaFolder*") {
+        $env:Path = "$ollamaFolder;$env:Path"
+    }
+}
+
+function Test-InteractiveConsole {
+    return [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
+}
+
+function Test-Yes([string]$Answer) {
+    return $Answer.Trim().ToLowerInvariant() -in @("y", "yes")
 }
 
 # librosa 1.0 and numpy 2.5 need Python 3.12; on older interpreters pip silently
@@ -91,23 +120,78 @@ function Find-ComfyPython([string]$Path) {
 }
 
 try {
-    Write-Host "== Music Suite unified installer ==" -ForegroundColor Cyan
-    Write-Host "This will install Python, FFmpeg, and Node.js if they are missing." -ForegroundColor Cyan
+    Clear-Host
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host "  Geekatplay Studio Music Suite - Windows Installer" -ForegroundColor Cyan
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "The installer checks every required library and installs anything missing:"
+    Write-Host "  - Python 3.12+, FFmpeg, Node.js and pnpm/npm"
+    Write-Host "  - Music Suite Python libraries and the optimized web app"
+    Write-Host ""
+
+    $completeInstall = $FullInstall -or $env:MUSIC_SUITE_INSTALL_ALL -eq "1"
+    $completeFailures = @()
+    if (-not $completeInstall -and -not $env:MUSIC_SUITE_INSTALL_ALL -and (Test-InteractiveConsole)) {
+        Write-Host "OPTIONAL COMPLETE INSTALL" -ForegroundColor Yellow
+        Write-Host "Download every local AI model and optional instrument too?"
+        Write-Host "This enables AI songs, AI editing, XL quality, lyrics, all stem models,"
+        Write-Host "and Surge XT. Allow about 30 GB of downloads and at least 45 GB free."
+        Write-Host "You can also add these later from Models & engines inside the app."
+        Write-Host ""
+        $completeInstall = Test-Yes (Read-Host "Complete install? [y/N]")
+    }
+    if ($completeInstall) {
+        Write-Host "Selected: COMPLETE installation (core app plus all models)." -ForegroundColor Green
+        $WithPro = $true
+    } else {
+        Write-Host "Selected: STANDARD installation (core app; models can be added later)." -ForegroundColor Green
+    }
+    Write-Host ""
+    Write-Host "Step 1 of 5 - Checking system tools..." -ForegroundColor Cyan
 
     if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
         Install-WithWinget "Gyan.FFmpeg" "FFmpeg"
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+        Refresh-Path
     }
 
     if (-not (Test-NodeVersion)) {
         Install-WithWinget "OpenJS.NodeJS.LTS" "Node.js LTS"
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+        Refresh-Path
+    }
+
+    if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) {
+        Install-WithWinget "Git.Git" "Git"
+        Refresh-Path
     }
 
     if (-not (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) -and (Get-Command corepack -ErrorAction SilentlyContinue)) {
         Write-Host "Enabling pnpm via corepack..."
         & corepack enable
+        Assert-LastExitCode "Enabling pnpm"
     }
+
+    if ($completeInstall) {
+        Add-KnownOllamaPath
+        if (-not (Get-Command ollama.exe -ErrorAction SilentlyContinue)) {
+            Install-WithWinget "Ollama.Ollama" "Ollama (local lyrics model runner)"
+            Refresh-Path
+            Add-KnownOllamaPath
+        }
+        if (-not (Get-Command ollama.exe -ErrorAction SilentlyContinue)) {
+            Write-Host "Ollama was installed but is not available in this window yet; the lyrics model can be downloaded later." -ForegroundColor Yellow
+            $completeFailures += "Ollama"
+        } else {
+            & ollama.exe list 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "Starting Ollama for the lyrics-model download..."
+                Start-Process -FilePath (Get-Command ollama.exe).Source -ArgumentList "serve" -WindowStyle Hidden
+                Start-Sleep -Seconds 3
+            }
+        }
+    }
+
+    Write-Host "System tools are ready." -ForegroundColor Green
 
     $venvPython = Join-Path $root ".venv\Scripts\python.exe"
     if ((Test-Path -LiteralPath $venvPython) -and -not (Test-PythonVersion $venvPython)) {
@@ -119,17 +203,22 @@ try {
         Write-Host "Creating project virtual environment..."
         $venvArgs = @($systemPython.PrefixArgs) + @("-m", "venv", (Join-Path $root ".venv"))
         & $systemPython.Executable @venvArgs
+        Assert-LastExitCode "Creating the Python environment"
     }
 
+    Write-Host "Step 2 of 5 - Checking Music Suite libraries..." -ForegroundColor Cyan
     & $venvPython -m ensurepip --upgrade
+    Assert-LastExitCode "Preparing pip"
     & $venvPython -m pip install --upgrade pip setuptools wheel
+    Assert-LastExitCode "Updating Python installation tools"
 
     $extras = @("dev", "editor")
     if ($WithGpu) { $extras += "gpu" }
     if ($WithPro) { $extras += "pro" }
     $extraSpec = $extras -join ","
-    Write-Host "Installing Music Suite Python dependencies ($extraSpec)..."
+    Write-Host "Installing or updating Music Suite Python dependencies ($extraSpec)..."
     & $venvPython -m pip install -e ".[${extraSpec}]"
+    Assert-LastExitCode "Installing Music Suite Python libraries"
 
     $webDir = Join-Path $root "apps\web-next"
     # A running site keeps serving pages that point at the old build's files; rebuilding under
@@ -138,15 +227,19 @@ try {
         Write-Host "Stopping the running Music Suite before rebuilding the web app..."
         try { & (Join-Path $root "stop.ps1") } catch { Write-Warning "Could not stop the running Music Suite: $_" }
     }
-    Write-Host "Installing web dependencies..."
+    Write-Host "Step 3 of 5 - Installing and building the web app..." -ForegroundColor Cyan
     Push-Location $webDir
     try {
         if (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) {
             & pnpm.cmd install
+            Assert-LastExitCode "Installing web libraries"
             & pnpm.cmd build
+            Assert-LastExitCode "Building the Music Suite web app"
         } elseif (Get-Command npm.cmd -ErrorAction SilentlyContinue) {
             & npm.cmd install
+            Assert-LastExitCode "Installing web libraries"
             & npm.cmd run build
+            Assert-LastExitCode "Building the Music Suite web app"
         } else {
             throw "pnpm or npm was not found on PATH."
         }
@@ -194,18 +287,39 @@ try {
         }
     }
 
+    Write-Host "Step 4 of 5 - Optional models and instruments..." -ForegroundColor Cyan
+
     # --- Optional: local AI music engine (AI Song Studio) ---
     # Asks once and remembers a "no". MUSIC_SUITE_INSTALL_AI=1 installs without asking, =0 skips.
     # A failure here never fails the install: the engine can be installed later with one click
     # from AI Song Studio > Settings.
-    $aiChoice = if ($env:MUSIC_SUITE_INSTALL_AI) { $env:MUSIC_SUITE_INSTALL_AI } else { "ask" }
+    $aiChoice = if ($completeInstall) { "1" } elseif ($env:MUSIC_SUITE_INSTALL_AI) { $env:MUSIC_SUITE_INSTALL_AI } else { "0" }
     if ($aiChoice -eq "0") {
         Write-Host "Skipping the local AI music engine (MUSIC_SUITE_INSTALL_AI=0)."
     } else {
-        $aiFlag = if ($aiChoice -eq "1") { "--yes" } else { "--ask" }
-        & $venvPython -m audioqi.generation.setup $aiFlag
+        $aiArgs = if ($completeInstall) { @("--yes") } elseif ($aiChoice -eq "1") { @("--yes") } else { @("--ask") }
+        & $venvPython -m audioqi.generation.setup @aiArgs
         if ($LASTEXITCODE -ne 0) {
             Write-Host "The AI music engine was not installed. Music Suite itself is ready." -ForegroundColor Yellow
+            if ($completeInstall) { $completeFailures += "AI music engine and editing model" }
+        }
+        $global:LASTEXITCODE = 0
+    }
+
+    if ($completeInstall) {
+        Write-Host "Downloading the Ollama lyrics model (about 8 GB)..."
+        & $venvPython -m audioqi.generation.setup --writer-only
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "The lyrics model was not installed. Run install.bat again to retry." -ForegroundColor Yellow
+            $completeFailures += "lyrics model"
+        }
+        $global:LASTEXITCODE = 0
+
+        Write-Host "Downloading the high-quality XL music model (about 4.9 GB)..."
+        & $venvPython -m audioqi.generation.setup --quality
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "The XL model was not installed. Try again from Models & engines in the app." -ForegroundColor Yellow
+            $completeFailures += "high-quality XL model"
         }
         $global:LASTEXITCODE = 0
     }
@@ -213,27 +327,29 @@ try {
     # --- Optional: AI stem separation (6 stems, drum kit pieces, lead/backing vocals) ---
     # -WithAiStems or MUSIC_SUITE_INSTALL_STEMS=1. Uses the NVIDIA GPU when there is one.
     # Also available any time from Models & engines in the app.
-    if ($WithAiStems -or $env:MUSIC_SUITE_INSTALL_STEMS -eq "1") {
+    if ($completeInstall -or $WithAiStems -or $env:MUSIC_SUITE_INSTALL_STEMS -eq "1") {
         Write-Host "Installing AI stem separation (about 3 GB with GPU support, plus models)..."
-        & $venvPython -m audioqi.addons install stems
+        & $venvPython -m audioqi.addons install stems --models all
         if ($LASTEXITCODE -ne 0) {
             Write-Host "AI stem separation was not installed. Try again from Models & engines in the app." -ForegroundColor Yellow
+            if ($completeInstall) { $completeFailures += "AI stem separation and models" }
         }
         $global:LASTEXITCODE = 0
     }
 
     # --- Optional: Surge XT synthesizer (free, 3,000 sounds; plays MIDI clips in the Studio Editor) ---
     # MUSIC_SUITE_INSTALL_SURGE=1. Also available any time from Models & engines in the app.
-    if ($env:MUSIC_SUITE_INSTALL_SURGE -eq "1") {
+    if ($completeInstall -or $env:MUSIC_SUITE_INSTALL_SURGE -eq "1") {
         Write-Host "Installing the Surge XT synthesizer (about 300 MB)..."
         & $venvPython -m audioqi.editor.instruments install surge-xt
         if ($LASTEXITCODE -ne 0) {
             Write-Host "Surge XT was not installed. Try again from Models & engines in the app." -ForegroundColor Yellow
+            if ($completeInstall) { $completeFailures += "Surge XT" }
         }
         $global:LASTEXITCODE = 0
     }
 
-    Write-Host ""
+    Write-Host "Step 5 of 5 - Saving installation status..." -ForegroundColor Cyan
     $gitRevision = "no-git-revision"
     if (Get-Command git.exe -ErrorAction SilentlyContinue) {
         $detectedRevision = (& git.exe -C $root rev-parse HEAD 2>$null)
@@ -245,8 +361,20 @@ try {
         $gitRevision
     ) -join "-"
     Set-Content -LiteralPath (Join-Path $root ".music-suite-install-state") -Value $manifestHash -Encoding ascii
-    Write-Host "Music Suite installation complete." -ForegroundColor Green
-    Write-Host "Start everything with: start.bat"
+    if ($completeInstall -and $completeFailures.Count -gt 0) {
+        Write-Host ""
+        Write-Host "The core app is installed, but the complete installation still needs:" -ForegroundColor Yellow
+        foreach ($item in $completeFailures) { Write-Host "  - $item" -ForegroundColor Yellow }
+        throw "Complete installation is not yet 100%. Check the messages above, then run install.bat again to retry."
+    }
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Green
+    Write-Host "  Music Suite is installed!" -ForegroundColor Green
+    Write-Host "============================================================" -ForegroundColor Green
+    Write-Host "Next: double-click start.bat"
+    if (-not $completeInstall) {
+        Write-Host "Optional AI features: open Models & engines inside Music Suite."
+    }
 } finally {
     Pop-Location
 }

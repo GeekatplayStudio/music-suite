@@ -199,15 +199,36 @@ Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (ab
 
 ### Windows
 
-Double-click `install.bat`, then `start.bat`. Stop it with `stop.bat`.
+No programming experience is needed.
+
+1. On the GitHub page, select the green **Code** button, then **Download ZIP**. Open the downloaded ZIP and select **Extract all**. Do not run the installer from inside the ZIP.
+2. Open the extracted `music-suite` folder and double-click **`install.bat`**. Keep the black installer window open. If Windows SmartScreen appears, select **More info**, confirm the publisher/source, then **Run anyway**.
+3. Choose the installation you want when this question appears:
+   - Press **Enter** (or type `n`) for the standard app. You can add AI features later from **Models & engines**.
+   - Type **`y`** and press **Enter** for a complete installation. This installs all required libraries, every local AI model, AI stem separation, the lyrics model, and Surge XT. Allow roughly 30 GB of downloads, at least 45 GB of free disk space, and plenty of time on a slower connection.
+
+<img src="docs/images/install-windows-choice.png" alt="Windows installer asking whether to perform a complete installation" width="900">
+
+The installer checks Python, FFmpeg, Node.js, Git, the Python libraries, and the web libraries. Missing tools are installed automatically. A complete installation also adds Ollama, CMake, and Microsoft C++ build tools when needed. It is safe to run `install.bat` again: already-installed tools and models are detected and reused.
+
+4. Wait for the green **Music Suite is installed!** message. If one optional model could not download, the message tells you where to retry it inside the app.
+5. Double-click **`start.bat`**. Your browser opens Music Suite. Keep its command window open while using the app.
+6. To close Music Suite, double-click **`stop.bat`**.
+
+<img src="docs/images/install-windows-complete.png" alt="Successful Music Suite Windows installation and instruction to double-click start.bat" width="900">
+
+If installation stops with an error, leave the folder where it is, check the internet connection and free disk space, then double-click `install.bat` again. Downloads that support resuming continue from their partial files.
 
 The `.bat` files call the unified PowerShell implementation. Advanced flags stay available:
 
 ```powershell
+.\install.ps1 -FullInstall
 .\install.ps1 -WithGpu
 .\install.ps1 -WithPro
 .\install.ps1 -ComfyUIPath "D:\ComfyUI" -InstallComfyDependencies
 ```
+
+For an unattended complete install, use `MUSIC_SUITE_INSTALL_ALL=1` or pass `-FullInstall`. Set `MUSIC_SUITE_INSTALL_ALL=0` to skip the question and install only the standard app.
 
 ### macOS
 

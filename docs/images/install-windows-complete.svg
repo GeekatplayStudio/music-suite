@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760">
+  <rect width="1200" height="760" fill="#e8edf5"/>
+  <rect x="55" y="35" width="1090" height="690" rx="18" fill="#ffffff" filter="url(#shadow)"/>
+  <defs><filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#314158" flood-opacity=".2"/></filter></defs>
+  <text x="95" y="82" font-family="Segoe UI, Arial" font-size="14" font-weight="700" letter-spacing="2" fill="#087a8c">WINDOWS INSTALLATION · STEP 4</text>
+  <text x="95" y="122" font-family="Segoe UI, Arial" font-size="30" font-weight="700" fill="#172033">Wait for the success message</text>
+  <text x="95" y="154" font-family="Segoe UI, Arial" font-size="17" fill="#526077">Keep the window open until all five steps finish.</text>
+  <rect x="95" y="182" width="1010" height="466" rx="10" fill="#0c0c0c" stroke="#9aa6b7"/>
+  <path d="M105 182h990a10 10 0 0 1 10 10v32H95v-32a10 10 0 0 1 10-10z" fill="#f4f4f4"/>
+  <rect x="112" y="193" width="16" height="16" rx="3" fill="#148ca4"/>
+  <text x="138" y="207" font-family="Segoe UI, Arial" font-size="14" fill="#202020">Geekatplay Studio Music Suite Installer</text>
+  <text x="1030" y="207" font-family="Segoe UI Symbol, Arial" font-size="15" fill="#697386">—  □  ×</text>
+  <g font-family="Consolas, Courier New, monospace" font-size="16">
+    <text x="125" y="266" fill="#54d8ee">Step 1 of 5 - Checking system tools...</text>
+    <text x="125" y="294" fill="#78e08f">System tools are ready.</text>
+    <text x="125" y="330" fill="#54d8ee">Step 2 of 5 - Checking Music Suite libraries...</text>
+    <text x="125" y="366" fill="#54d8ee">Step 3 of 5 - Installing and building the web app...</text>
+    <text x="125" y="402" fill="#54d8ee">Step 4 of 5 - Optional models and instruments...</text>
+    <text x="125" y="430" fill="#b6bdc8">[100.0%] The high-quality model is ready.</text>
+    <text x="125" y="458" fill="#b6bdc8">[100.0%] Installed all AI stem models.</text>
+    <text x="125" y="486" fill="#b6bdc8">Surge XT is installed.</text>
+    <text x="125" y="522" fill="#54d8ee">Step 5 of 5 - Saving installation status...</text>
+    <text x="125" y="564" fill="#78e08f">============================================================</text>
+    <text x="125" y="590" fill="#78e08f">  Music Suite is installed!</text>
+    <text x="125" y="616" fill="#78e08f">============================================================</text>
+    <text x="125" y="640" fill="#ffffff">Next: double-click start.bat</text>
+  </g>
+  <rect x="95" y="668" width="1010" height="38" rx="9" fill="#edf9fb" stroke="#b7e5eb"/>
+  <text x="114" y="693" font-family="Segoe UI, Arial" font-size="14" fill="#24515a"><tspan font-weight="700">Next:</tspan> Close this window, then double-click start.bat in the same folder.</text>
+</svg>

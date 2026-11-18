@@ -1511,6 +1511,29 @@ def test_installer_fetches_the_editing_model_on_yes(installed_engine, monkeypatc
     assert installed_engine == ["editing", "editing"]
 
 
+def test_installer_can_fetch_the_quality_model_from_the_command_line(
+    installed_engine, monkeypatch
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(setup, "quality_ready", lambda: False)
+    monkeypatch.setattr(setup, "install_quality", lambda _report: calls.append("quality"))
+    assert setup.main(["--quality"]) == 0
+    assert calls == ["quality"]
+
+
+def test_complete_reinstall_still_checks_the_lyrics_model(installed_engine, monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(setup, "pull_writer_model", lambda _report: calls.append("writer") or True)
+    assert setup.main(["--writer"]) == 0
+    assert calls == ["writer"]
+
+
+def test_required_lyrics_model_fails_when_ollama_is_missing(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(setup, "pull_writer_model", lambda _report: False)
+    assert setup.main(["--writer-only"]) == 1
+    assert "not installed" in capsys.readouterr().err
+
+
 # --------------------------------------------------------------------------- phase G3: plans, edits, cost
 
 

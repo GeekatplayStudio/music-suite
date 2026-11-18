@@ -92,6 +92,18 @@ def test_installers_offer_the_ai_engine_without_ever_failing_the_install() -> No
     assert windows.index("pnpm.cmd build") < windows.index("audioqi.generation.setup")
 
 
+def test_windows_installer_offers_a_complete_install_with_every_model() -> None:
+    windows = Path("install.ps1").read_text(encoding="utf-8")
+    assert "Complete install? [y/N]" in windows
+    assert "at least 45 GB free" in windows
+    assert "MUSIC_SUITE_INSTALL_ALL" in windows
+    assert "audioqi.generation.setup --quality" in windows
+    assert "audioqi.generation.setup --writer-only" in windows
+    assert "audioqi.addons install stems --models all" in windows
+    assert 'audioqi.editor.instruments install surge-xt' in windows
+    assert "Complete installation is not yet 100%" in windows
+
+
 def test_root_package_json_exposes_the_unified_launchers() -> None:
     """`npm run start` from the project root must work instead of failing with ENOENT."""
     manifest = json.loads(Path("package.json").read_text(encoding="utf-8"))

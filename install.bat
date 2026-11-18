@@ -1,7 +1,10 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-echo Geekatplay Studio Music Suite - Installer
+title Geekatplay Studio Music Suite Installer
+echo Starting the Music Suite installer...
+echo Keep this window open. It will explain each choice and show progress.
+echo.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" %*
 if errorlevel 1 (
   echo.
