@@ -44,6 +44,13 @@ export interface AddonsOverview {
   packs: AddonPack[];
   models: AddonModel[];
   models_bytes: number;
+  /** MuScriptor, the optional whole-mix transcriber, which the user sets up themselves. */
+  whole_mix?: {
+    status: "ready" | "needs-access" | "not-installed";
+    size: string | null;
+    downloaded: string[];
+    version: string | null;
+  };
   install: AddonInstallState;
 }
 

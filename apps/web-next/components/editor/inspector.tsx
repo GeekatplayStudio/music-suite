@@ -232,6 +232,8 @@ function JobList({ jobs, onDismiss }: { jobs: JobEntry[]; onDismiss: (id: string
 export function Inspector(props: InspectorProps) {
   const { state, clip, track, capabilities } = props;
   const [stems, setStems] = useState(4);
+  /** Song to MIDI engine: "auto" lets the backend choose the best one installed. */
+  const [midiEngine, setMidiEngine] = useState<"auto" | "stems" | "muscriptor">("auto");
   const [drumKit, setDrumKit] = useState(false);
   const [leadBacking, setLeadBacking] = useState(false);
   const [strength, setStrength] = useState(0.6);
@@ -1002,22 +1004,45 @@ export function Inspector(props: InspectorProps) {
             >
               Convert to MIDI notes
             </ActionButton>
+            {capabilities?.song_to_midi?.whole_mix === "ready" ? (
+              <label className="flex items-center gap-2 text-[11px] text-slate-400">
+                <span className="w-16 shrink-0">Method</span>
+                <select
+                  className={fieldClass}
+                  value={midiEngine}
+                  aria-label="Song to MIDI method"
+                  disabled={busy}
+                  onChange={(event) => setMidiEngine(event.target.value as typeof midiEngine)}
+                >
+                  <option value="auto">Best available (MuScriptor)</option>
+                  <option value="muscriptor">MuScriptor: one model hears the whole mix</option>
+                  <option value="stems">Stems: split first, then a model per instrument</option>
+                </select>
+              </label>
+            ) : null}
             <ActionButton
               variant="primary"
               className="w-full"
               disabled={busy}
               title={
                 capabilities?.song_to_midi
-                  ? `Stems: ${capabilities.song_to_midi.stems}. Piano: ${capabilities.song_to_midi.piano}. Other instruments, bass and vocals: ${capabilities.song_to_midi.poly}. Drums: ${capabilities.song_to_midi.drums}.`
-                  : "Separates the instruments and writes the notes of each onto its own track"
+                  ? `Stems method: ${capabilities.song_to_midi.stems}; piano ${capabilities.song_to_midi.piano}; other instruments, bass and vocals ${capabilities.song_to_midi.poly}; drums ${capabilities.song_to_midi.drums}.`
+                  : "Writes the notes of every instrument in the song onto its own track"
               }
-              onClick={() => props.onRunJob("song_to_midi", {}, `Writing the notes of ${clip.name}`)}
+              onClick={() =>
+                props.onRunJob("song_to_midi", { engine: midiEngine }, `Writing the notes of ${clip.name}`)
+              }
             >
               Whole song to MIDI (every instrument)
             </ActionButton>
             <p className="text-[11px] leading-snug text-slate-400">
-              Splits the song into its instruments and writes each one&apos;s notes on its own track: piano, guitar, bass,
-              vocals, drums and the rest. Close on clear parts, approximate on dense ones — check it by ear.
+              {capabilities?.song_to_midi?.whole_mix === "ready"
+                ? "MuScriptor names up to 35 instruments and gives each its own track. Its model is for non-commercial use only; choose Stems for work you sell. "
+                : "Splits the song into its instruments and writes each one's notes on its own track: piano, guitar, bass, vocals, drums and the rest. "}
+              Close on clear parts, approximate on dense ones: check it by ear.
+              {capabilities?.song_to_midi?.whole_mix === "needs-access"
+                ? " MuScriptor is installed but this computer is not signed in to Hugging Face: see Models & engines."
+                : ""}
             </p>
             <ActionButton
               className="w-full"

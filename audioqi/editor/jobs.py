@@ -155,6 +155,14 @@ def _v_analyze(params: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _v_song_to_midi(params: dict[str, Any]) -> dict[str, Any]:
+    _reject_unknown(params, {"engine"})
+    engine = params.get("engine", "auto")
+    if engine not in transcribe.ENGINES:
+        raise ParamError("'engine' must be auto, stems or muscriptor.")
+    return {"engine": engine}
+
+
 def _v_match(params: dict[str, Any]) -> dict[str, Any]:
     allowed = {"target_bpm", "target_key", "target_asset_id", "match_tempo", "match_key"}
     _reject_unknown(params, allowed | {"match_loudness_lufs"})
@@ -410,7 +418,7 @@ _VALIDATORS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     "generate": _v_generate,
     "generate_song": song_service.validate_request,
     "to_midi": _v_analyze,
-    "song_to_midi": _v_analyze,
+    "song_to_midi": _v_song_to_midi,
     "structure": _v_analyze,
     "warp": _v_warp,
     "quantize": _v_quantize,
@@ -850,9 +858,9 @@ def _op_to_midi(ctx: _Context) -> _Outcome:
 def _op_song_to_midi(ctx: _Context) -> _Outcome:
     """Stems, then the best transcriber for each: notes for every instrument in the song."""
     audio, sr = ctx.load()
-    report = ctx.span("process", 5, 95, "Separating the instruments, then writing their notes.")
+    report = ctx.span("process", 5, 95, "Writing the notes of every instrument.")
     report(0.0)
-    return [], transcribe.song_to_midi(audio, sr, report)
+    return [], transcribe.song_to_midi(audio, sr, report, engine=ctx.params["engine"])
 
 
 def _op_structure(ctx: _Context) -> _Outcome:

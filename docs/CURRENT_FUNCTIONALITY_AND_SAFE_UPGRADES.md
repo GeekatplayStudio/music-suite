@@ -37,6 +37,7 @@ This document records what the application already does well, which upgrades are
 - Multitrack editor at `/editor` with its own API under `/editor/*` and storage under `data/editor/`.
 - Arrange, separate, repair, mix, record, compose (MIDI) and export, as listed in the README and `docs/HELP_GUIDE.md`.
 - Heavy engines are optional, with built-in fallbacks, chosen at runtime and reported in each job result. The AI separators are installed from **Models & engines** (`/models`), which pins every installed package during the install and picks PyTorch's CUDA build for NVIDIA cards on Windows.
+- Whole song to MIDI turns a recording into one instrument track per part (see `docs/EDITOR_ROADMAP.md`); imported and exported MIDI files carry General MIDI instruments, and a SoundFont can play them.
 - Stem separation reaches 12 stems (drum kit pieces, lead and backing vocals); sheet music, MIDI keyboard and on-screen piano, voice effects, and instrument plugins such as Surge XT with its full interface in the suite's colours.
 - The full feature list, library decisions, phase history and verification log are in `docs/EDITOR_ROADMAP.md`.
 
@@ -157,7 +158,7 @@ Applied on 2026-11-09 alongside the Studio Editor work.
 ### Still deferred
 
 - TypeScript stays on 6.0: TypeScript 7.0 compiles the project, but `typescript-eslint` does not support it yet.
-- `basic-pitch` (polyphonic transcription) pins an old NumPy: on 2026-11-10 a dry run on Python 3.12 tried to build NumPy from source and failed, so it is not offered in Models & engines.
+- `basic-pitch` (polyphonic transcription) pins an old NumPy and asks for TensorFlow; since 2026-11-17 the *AI note transcription* pack installs it with `--no-deps`, and it runs on the NumPy 2.5 and onnxruntime already installed. A future basic-pitch release could break that.
 - `install.ps1` does not yet install the `editor` extra the way `install.command` does.
 
 ### AI stem separation pack (2026-11-10)

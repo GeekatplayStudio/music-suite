@@ -141,7 +141,7 @@ Press `?` in the editor for the full list of keyboard shortcuts.
 
 **Optional engines: Models & engines.** The editor works with the base install and uses built-in fallbacks where a better engine is missing. Open **Models & engines** (a button in every workspace, or `/models`) to see your graphics card and install what you want with one click:
 
-- **AI note transcription**: Transkun (piano) and basic-pitch (other instruments, bass and voice). With stem separation it powers *Whole song to MIDI*, which writes every instrument's notes onto its own track.
+- **AI note transcription**: Transkun (piano) and basic-pitch (other instruments, bass and voice). With stem separation it powers *Whole song to MIDI*, which writes every instrument's notes onto its own track. Optionally, MuScriptor (free, non-commercial use only, set up by the user with a Hugging Face sign-in) transcribes the whole mix in one model, with up to 35 instruments, and measured more accurate.
 - **AI stem separation**: Demucs, BS-RoFormer and MDX23C models. Splits into 2, 4 or 6 stems (vocals, drums, bass, guitar, piano, other), and further: drums into **kick, snare, toms, hi-hat, ride and crash**, vocals into **lead and backing**. A full split is 12 stems. It also adds AI beat tracking. On Windows with an NVIDIA card it installs PyTorch's CUDA build, so separation runs on the GPU (a 45-second excerpt split into 12 stems in about 20 s on an RTX 3090).
 - **AI music**: the AI Song Studio engine, its editing and XL models, and the lyrics writer, in the same list.
 

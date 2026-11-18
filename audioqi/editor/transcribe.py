@@ -33,6 +33,12 @@ from audioqi.editor.projects import EditorError
 logger = logging.getLogger(__name__)
 
 Notes = list[dict[str, float]]
+
+
+class NoNotesError(EditorError):
+    """A transcriber listened and wrote nothing down; another one may still hear something."""
+
+
 Progress = Callable[[float], None]
 
 MAX_NOTES_PER_PART = 20_000
@@ -42,13 +48,15 @@ SILENT_RATIO = 0.04
 DRUM_PITCHES = {"kick": 36, "snare": 38, "toms": 45, "hi-hat": 42, "ride": 51, "crash": 49}
 #: Stem name -> (track name, General MIDI program, how it is transcribed).
 PARTS: dict[str, tuple[str, int, str]] = {
-    "vocals": ("Vocals", 52, "mono"),
-    "lead vocals": ("Lead vocals", 52, "mono"),
-    "backing vocals": ("Backing vocals", 53, "poly"),
+    # The instruments are chosen to speak at once: a transcribed line is mostly short notes, and
+    # a sound that swells in slowly (strings, a choir) would be over before it was heard.
+    "vocals": ("Vocals", 73, "mono"),
+    "lead vocals": ("Lead vocals", 73, "mono"),
+    "backing vocals": ("Backing vocals", 16, "poly"),
     "bass": ("Bass", 33, "mono"),
     "piano": ("Piano", 0, "piano"),
     "guitar": ("Guitar", 25, "poly"),
-    "other": ("Other instruments", 48, "poly"),
+    "other": ("Other instruments", 4, "poly"),
     "instrumental": ("Instruments", 0, "poly"),
 }
 
@@ -74,6 +82,8 @@ def engines_available() -> dict[str, str]:
         "mono": poly,
         "drums": "kit pieces" if separation.detail_available() else "frequency bands",
         "stems": engines.separation_engines()[0],
+        # "ready", "needs-access" or "not-installed": the one-model, whole-mix transcriber.
+        "whole_mix": whole_mix_status(),
     }
 
 
@@ -166,11 +176,14 @@ def poly_notes(audio: np.ndarray, sample_rate: int) -> Notes:
     with tempfile.TemporaryDirectory(dir=projects.scratch_dir()) as tmp:
         path = Path(tmp) / "stem.wav"
         sf.write(str(path), audio, sample_rate, subtype="PCM_16")
-        # Firmer thresholds than the model's defaults (0.5, 0.3, 58 ms): the faint
-        # detections are mostly overtones and ringing, not played notes. Chosen by measuring
-        # 25 synthesized parts against their notes; real recordings were not part of that.
+        # A firm onset threshold with a loose frame threshold (the defaults are 0.5 and 0.3):
+        # a note needs a clear attack to begin, but once begun it is held for as long as
+        # there is any evidence of it. Measured on stems of real songs, this roughly doubled
+        # how much of the music was written down compared with firm thresholds for both,
+        # with the share of notes inside the song's key unchanged; settings tuned on
+        # synthesized audio alone had cut held notes and chords short.
         _, _, events = predict(
-            str(path), onset_threshold=0.55, frame_threshold=0.45, minimum_note_length=90.0
+            str(path), onset_threshold=0.6, frame_threshold=0.2, minimum_note_length=100.0
         )
     return drop_overtones(
         [
@@ -292,8 +305,24 @@ def single_line(audio: np.ndarray, sample_rate: int) -> Notes:
         # Of notes that start together, the loudest is the line; the rest are its overtones.
         if kept and note["t"] - kept[-1]["t"] < 0.05:
             continue
-        kept.append(note)
-    return kept
+        kept.append(dict(note))
+    line: Notes = []
+    for note in kept:
+        last = line[-1] if line else None
+        if last is not None:
+            gap = note["t"] - (last["t"] + last["d"])
+            if abs(note["p"] - last["p"]) <= 1 and gap < 0.08 and min(note["d"], last["d"]) < 0.14:
+                # A slide or a wobble of a semitone is one sung note, not two: the longer
+                # of the pair says which pitch it was.
+                if note["d"] > last["d"]:
+                    last["p"] = note["p"]
+                last["d"] = note["t"] + note["d"] - last["t"]
+                last["v"] = max(last["v"], note["v"])
+                continue
+            # One note at a time: the earlier note ends where the next begins.
+            last["d"] = min(last["d"], max(0.03, note["t"] - last["t"]))
+        line.append(note)
+    return line
 
 
 def transcribe_pitched(audio: np.ndarray, sample_rate: int, kind: str) -> tuple[Notes, str]:
@@ -402,6 +431,67 @@ def drum_notes(
     return notes, engine
 
 
+# --------------------------------------------------------------------------- musical clean-up
+
+_SCALES = {"major": (0, 2, 4, 5, 7, 9, 11), "minor": (0, 2, 3, 5, 7, 8, 10)}
+
+
+def keep_in_key(notes: Notes, tonic: int, scale: str) -> Notes:
+    """Drop the notes outside the key that are too short or faint to be meant.
+
+    A wrong detection is far more likely to fall outside the song's key than a played note
+    is. A long or strong note outside the key is kept, because real music has those.
+    """
+    allowed = {(tonic + step) % 12 for step in _SCALES.get(scale, _SCALES["major"])}
+    return [
+        note
+        for note in notes
+        if int(note["p"]) % 12 in allowed or (note["d"] >= 0.25 and note["v"] >= 0.5)
+    ]
+
+
+def beat_grid(beats: list[float], divisions: int) -> np.ndarray:
+    """Every subdivision of the tracked beats, following the performance's own tempo."""
+    if len(beats) < 3:
+        return np.zeros(0)
+    marks = np.asarray(beats, dtype=np.float64)
+    steps = [np.linspace(a, b, divisions, endpoint=False) for a, b in itertools.pairwise(marks)]
+    # Carry the last beat's spacing on a little, so the song's final notes have a grid too.
+    tail = marks[-1] + (marks[-1] - marks[-2]) * np.arange(0, 2 * divisions) / divisions
+    return np.concatenate([*steps, tail])
+
+
+def snap_to_grid(tracks: list[dict[str, Any]], beats: list[float]) -> str | None:
+    """Move note starts onto the beat grid the song itself keeps. Returns the grid used.
+
+    The grid comes from beats tracked in this recording, so it bends with the playing and
+    the notes stay lined up with the audio. Whichever of sixteenths and triplets fits the
+    notes better is used, and a note far from any grid line is left where it was.
+    """
+    starts = np.array([note["t"] for track in tracks for note in track["notes"]])
+    if starts.size < 8 or len(beats) < 8:
+        return None
+
+    def miss(grid: np.ndarray) -> float:
+        index = np.clip(np.searchsorted(grid, starts), 1, grid.size - 1)
+        return float(
+            np.mean(np.minimum(np.abs(starts - grid[index - 1]), np.abs(grid[index] - starts)))
+        )
+
+    sixteenths, triplets = beat_grid(beats, 4), beat_grid(beats, 3)
+    # Triplets are a coarser grid, so they must fit clearly better to be believed.
+    use_triplets = miss(triplets) < miss(sixteenths) * 0.6
+    grid = triplets if use_triplets else sixteenths
+    for track in tracks:
+        for note in track["notes"]:
+            index = int(np.clip(np.searchsorted(grid, note["t"]), 1, grid.size - 1))
+            before, after = grid[index - 1], grid[index]
+            nearest = before if note["t"] - before <= after - note["t"] else after
+            if abs(nearest - note["t"]) <= (after - before) * 0.45:
+                note["t"] = round(float(max(0.0, nearest)), 4)
+    return "triplets" if use_triplets else "sixteenths"
+
+
 # --------------------------------------------------------------------------- the whole song
 
 
@@ -432,8 +522,355 @@ def drop_bleed(tracks: list[dict[str, Any]]) -> None:
         track["notes"] = kept
 
 
+# --------------------------------------------------------------------------- one model, whole mix
+
+#: MuScriptor's instrument groups -> (track name, General MIDI program).
+WHOLE_MIX_PARTS: dict[str, tuple[str, int]] = {
+    "acoustic_piano": ("Piano", 0),
+    "electric_piano": ("Electric piano", 4),
+    "chromatic_percussion": ("Mallets and bells", 11),
+    "organ": ("Organ", 16),
+    "acoustic_guitar": ("Acoustic guitar", 25),
+    "clean_electric_guitar": ("Electric guitar", 27),
+    "distorted_electric_guitar": ("Distorted guitar", 30),
+    "acoustic_bass": ("Acoustic bass", 32),
+    "electric_bass": ("Bass", 33),
+    "violin": ("Violin", 40),
+    "viola": ("Viola", 41),
+    "cello": ("Cello", 42),
+    "contrabass": ("Contrabass", 43),
+    "orchestral_harp": ("Harp", 46),
+    "timpani": ("Timpani", 47),
+    "string_ensemble": ("Strings", 48),
+    "synth_strings": ("Synth strings", 50),
+    # A flute rather than a choir: it speaks at once, so short sung notes are heard.
+    "voice": ("Vocals", 73),
+    "orchestra_hit": ("Orchestra hit", 55),
+    "trumpet": ("Trumpet", 56),
+    "trombone": ("Trombone", 57),
+    "tuba": ("Tuba", 58),
+    "french_horn": ("French horn", 60),
+    "brass_section": ("Brass", 61),
+    "soprano_and_alto_sax": ("Alto sax", 65),
+    "tenor_sax": ("Tenor sax", 66),
+    "baritone_sax": ("Baritone sax", 67),
+    "oboe": ("Oboe", 68),
+    "english_horn": ("English horn", 69),
+    "bassoon": ("Bassoon", 70),
+    "clarinet": ("Clarinet", 71),
+    "flutes": ("Flute", 73),
+    "synth_lead": ("Synth lead", 81),
+    "synth_pad": ("Synth pad", 89),
+}
+#: General MIDI's sixteen families, eight programs each, for groups named by program number.
+GM_FAMILIES = (
+    "Piano", "Chromatic percussion", "Organ", "Guitar", "Bass", "Strings", "Ensemble", "Brass",
+    "Reed", "Pipe", "Synth lead", "Synth pad", "Synth effects", "Ethnic", "Percussive",
+    "Sound effects",
+)  # fmt: skip
+
+
+def whole_mix_part(group: str) -> tuple[str, int]:
+    """The track name and General MIDI program for one of MuScriptor's instrument groups.
+
+    Notes the model decodes into a group outside its usual list arrive as ``program_<n>``,
+    a General MIDI program number, and are named after that program's family.
+    """
+    if group in WHOLE_MIX_PARTS:
+        return WHOLE_MIX_PARTS[group]
+    if group.startswith("program_") and group[8:].isdigit():
+        program = min(127, int(group[8:]))
+        return f"{GM_FAMILIES[program // 8]} ({program + 1})", program
+    return group.replace("_", " ").capitalize(), 0
+
+
+WHOLE_MIX_SIZES = ("small", "medium", "large")
+WHOLE_MIX_SIZE_ENV = "MUSIC_SUITE_MUSCRIPTOR_SIZE"
+ENGINES = ("auto", "stems", "muscriptor")
+WHOLE_MIX_ACCESS = (
+    "MuScriptor's model is not available on this computer yet. Its weights are for "
+    "non-commercial use and need a free Hugging Face account: accept the terms at "
+    "https://huggingface.co/MuScriptor/muscriptor-medium, then sign in on this computer "
+    "with 'hf auth login' (or set HF_TOKEN) and restart Music Suite."
+)
+
+_WHOLE_MIX_LOCK = threading.Lock()
+_whole_mix_model: Any = None
+
+
+_whole_mix_loaded_size: str | None = None
+
+
+def _cached_size(size: str) -> bool:
+    from huggingface_hub import try_to_load_from_cache
+
+    return isinstance(
+        try_to_load_from_cache(f"MuScriptor/muscriptor-{size}", "model.safetensors"), str
+    )
+
+
+def whole_mix_size() -> str:
+    """The model size in use: the one loaded, else the one asked for, else one already here.
+
+    Each size is its own gated download whose terms are accepted separately, so the size
+    asked for may be one this account cannot fetch while another is already on disk.
+    """
+    import os
+
+    if _whole_mix_loaded_size:
+        return _whole_mix_loaded_size
+    asked = os.getenv(WHOLE_MIX_SIZE_ENV, "").strip().lower()
+    if asked in WHOLE_MIX_SIZES:
+        return asked
+    try:
+        for size in ("medium", "large", "small"):
+            if _cached_size(size):
+                return size
+    except Exception:
+        logger.warning("Could not look for downloaded MuScriptor weights.", exc_info=True)
+    return "medium"
+
+
+def whole_mix_status() -> str:
+    """ "ready", "needs-access" or "not-installed" for the whole-mix model."""
+    if not engines.has_module("muscriptor"):
+        return "not-installed"
+    try:
+        from huggingface_hub import get_token
+
+        if _cached_size(whole_mix_size()) or get_token():
+            return "ready"
+    except Exception:
+        logger.warning("Could not check access to the MuScriptor weights.", exc_info=True)
+    return "needs-access"
+
+
+def _load_whole_mix() -> Any:
+    """Load the model, trying the other sizes when the account may not download this one."""
+    global _whole_mix_model, _whole_mix_loaded_size
+    with _WHOLE_MIX_LOCK:
+        if _whole_mix_model is None:
+            from muscriptor import TranscriptionModel
+
+            first = whole_mix_size()
+            sizes = [first, *(size for size in ("medium", "large", "small") if size != first)]
+            failure: Exception | None = None
+            for size in sizes:
+                try:
+                    _whole_mix_model = TranscriptionModel.load_model(size)
+                except Exception as exc:  # most often: this size's terms were not accepted
+                    logger.warning("MuScriptor %s could not be loaded.", size, exc_info=True)
+                    failure = failure or exc
+                    continue
+                _whole_mix_loaded_size = size
+                break
+            if _whole_mix_model is None:
+                raise failure or RuntimeError("No MuScriptor model could be loaded.")
+        return _whole_mix_model
+
+
+def whole_mix_tracks(audio: np.ndarray, sample_rate: int, report: Progress) -> list[dict[str, Any]]:
+    """Every instrument's notes from the full mix, in one pass through MuScriptor.
+
+    The model reports no loudness, so each note takes its velocity from how loud the
+    recording is at the moment it starts.
+    """
+    from muscriptor import NoteEndEvent, NoteStartEvent
+
+    model = _load_whole_mix()
+    mono = (audio.mean(axis=1) if audio.ndim == 2 else audio).astype(np.float32)
+    hop = max(1, sample_rate // 100)
+    usable = mono[: mono.size - mono.size % hop]
+    level: np.ndarray = np.zeros(1)
+    if usable.size:
+        level = np.sqrt(np.mean(np.square(usable.reshape(-1, hop)), axis=1))
+    loudest = float(np.max(level)) or 1.0
+
+    def velocity(at: float) -> float:
+        index = min(level.size - 1, max(0, int(at * 100)))
+        heard = float(np.max(level[index : index + 6])) / loudest
+        return min(1.0, max(0.3, heard**0.5))
+
+    by_group: dict[str, Notes] = {}
+    with tempfile.TemporaryDirectory(dir=projects.scratch_dir()) as tmp:
+        path = Path(tmp) / "mix.wav"
+        sf.write(str(path), mono, sample_rate, subtype="PCM_16")
+        for event in model.transcribe(str(path)):
+            if isinstance(event, NoteEndEvent):
+                start = event.start_event
+                drums = start.instrument == "drums"
+                by_group.setdefault(start.instrument, []).append(
+                    {
+                        "t": float(start.start_time),
+                        # Drums are reported as hits, with no length of their own.
+                        "d": 0.1 if drums else float(event.end_time - start.start_time),
+                        "p": int(start.pitch),
+                        "v": velocity(float(start.start_time)),
+                    }
+                )
+            elif not isinstance(event, NoteStartEvent):
+                total = getattr(event, "total", 0)
+                if total:
+                    report(float(getattr(event, "completed", 0)) / float(total))
+    tracks: list[dict[str, Any]] = []
+    for group, notes in by_group.items():
+        if group == "drums":
+            continue
+        label, program = whole_mix_part(group)
+        tracks.append(
+            {"name": label, "role": group, "program": program, "drums": False, "notes": notes}
+        )
+    # Parts in score order, with the drums last as everywhere else in the suite.
+    order = list(WHOLE_MIX_PARTS)
+    tracks.sort(key=lambda track: order.index(track["role"]) if track["role"] in order else 99)
+    if by_group.get("drums"):
+        tracks.append(
+            {
+                "name": "Drums",
+                "role": "drums",
+                "program": 0,
+                "drums": True,
+                "notes": by_group["drums"],
+            }
+        )
+    return tracks
+
+
+#: A vocal stem quieter than this, relative to the rest of the song, holds only bleed.
+#: Sung parts in two real songs measured 0.11 and 0.28; a synthesized tone the separator
+#: did not take for a voice measured 0.0.
+VOCAL_RATIO = 0.05
+
+
+def sung_line(audio: np.ndarray, sample_rate: int, report: Progress) -> tuple[Notes, str] | None:
+    """The sung melody, from a vocals-only split. None when the song has no singing.
+
+    MuScriptor, measured on two real songs, wrote down under a fifth of the sung notes,
+    and mostly under other instruments' names; singing is what it hears least well. A
+    two-way split isolates the voice cleanly, and a single line is then written from it.
+    """
+    stems, _engine = separation.separate(audio, sample_rate, 2, report)
+    vocals, rest = stems.get("vocals"), stems.get("instrumental")
+    if vocals is None or rest is None or _rms(vocals) < _rms(rest) * VOCAL_RATIO:
+        return None
+    notes, engine = transcribe_pitched(vocals, sample_rate, "mono")
+    low, high = RANGES["vocals"]
+    return [note for note in notes if low <= note["p"] <= high], engine
+
+
+def _whole_mix_song(
+    audio: np.ndarray, sample_rate: int, report: Progress, snap: bool
+) -> dict[str, Any]:
+    from audioqi.editor import analysis
+
+    seconds = audio.shape[0] / float(sample_rate)
+    measured = analysis.analyze(audio, sample_rate)
+    key = analysis.parse_key(str(measured.get("key_label") or ""))
+    key_trusted = key is not None and float(measured.get("key_confidence") or 0.0) >= 0.7
+    tracks = whole_mix_tracks(audio, sample_rate, lambda fraction: report(0.05 + 0.75 * fraction))
+    engine = f"muscriptor ({whole_mix_size()})"
+    engines_used = {str(track["name"]): engine for track in tracks}
+    stems_note = "none: transcribed from the full mix"
+    if not any(track["role"] == "voice" for track in tracks):
+        try:
+            sung = sung_line(audio, sample_rate, lambda fraction: report(0.8 + 0.15 * fraction))
+        except Exception:
+            logger.warning("The vocal line could not be added.", exc_info=True)
+            sung = None
+        if sung and sung[0]:
+            label, program = WHOLE_MIX_PARTS["voice"]
+            tracks.insert(
+                0,
+                {
+                    "name": label,
+                    "role": "voice",
+                    "program": program,
+                    "drums": False,
+                    "notes": sung[0],
+                },
+            )
+            engines_used[label] = f"{sung[1]} (vocals split out)"
+            stems_note = "vocals only, for the sung line"
+    for track in tracks:
+        notes = track["notes"]
+        if not track["drums"] and key is not None and key_trusted:
+            notes = keep_in_key(notes, key[0], key[1])
+        track["notes"] = _tidy(notes, seconds)
+    tracks = [track for track in tracks if track["notes"]]
+    grid = snap_to_grid(tracks, list(measured.get("beats") or [])) if snap else None
+    if grid:
+        for track in tracks:
+            track["notes"] = _tidy(track["notes"], seconds)
+    report(1.0)
+    if not tracks:
+        raise NoNotesError("MuScriptor found no notes in this audio.")
+    return {
+        "bpm": measured.get("bpm"),
+        "key": measured.get("key_label") if key_trusted else None,
+        "grid": grid,
+        "tracks": tracks,
+        "engines": {
+            name: used
+            for name, used in engines_used.items()
+            if any(t["name"] == name for t in tracks)
+        },
+        "stems": stems_note,
+        "skipped": [],
+        "seconds": round(seconds, 3),
+        "note_count": sum(len(track["notes"]) for track in tracks),
+    }
+
+
 def song_to_midi(
-    audio: np.ndarray, sample_rate: int, progress: Progress | None = None
+    audio: np.ndarray,
+    sample_rate: int,
+    progress: Progress | None = None,
+    *,
+    snap: bool = True,
+    engine: str = "auto",
+) -> dict[str, Any]:
+    """A recording as one track of notes per instrument.
+
+    ``engine`` "auto" uses the whole-mix model when it is installed and its weights can be
+    had, and otherwise splits the song into stems and transcribes each. "stems" and
+    "muscriptor" insist on one or the other.
+    """
+    if engine not in ENGINES:
+        raise EditorError("Engine must be auto, stems or muscriptor.")
+    report = progress or (lambda _fraction: None)
+    if float(np.max(np.abs(audio))) < 1e-4:
+        raise EditorError("This audio is silent, so there are no notes to find.")
+    status = whole_mix_status()
+    if engine == "muscriptor" and status != "ready":
+        raise EditorError(WHOLE_MIX_ACCESS, 409)
+    problem: str | None = None
+    if engine != "stems" and status == "ready":
+        try:
+            return _whole_mix_song(audio, sample_rate, report, snap)
+        except NoNotesError:
+            if engine == "muscriptor":
+                raise
+            problem = "MuScriptor found no notes, so the stems method was used."
+        except EditorError:
+            raise
+        except Exception as exc:
+            # Most often: signed in, but the model's terms have not been accepted yet.
+            logger.warning("MuScriptor could not transcribe; using stems instead.", exc_info=True)
+            if engine == "muscriptor":
+                raise EditorError(WHOLE_MIX_ACCESS, 409) from exc
+            problem = f"MuScriptor could not be used ({type(exc).__name__}), so stems were used."
+    result = _stems_song(audio, sample_rate, report, snap=snap)
+    if problem:
+        result["whole_mix_problem"] = problem
+    return result
+
+
+def _stems_song(
+    audio: np.ndarray,
+    sample_rate: int,
+    progress: Progress | None = None,
+    *,
+    snap: bool = True,
 ) -> dict[str, Any]:
     """Split a recording into stems and transcribe each. Returns tracks and what wrote them."""
     report = progress or (lambda _fraction: None)
@@ -457,6 +894,13 @@ def song_to_midi(
     levels = {name: _rms(stem) for name, stem in stems.items()}
     loudest = max(levels.values(), default=0.0)
 
+    # The song's own key and beats, used to clean the notes up once they are written.
+    from audioqi.editor import analysis
+
+    measured = analysis.analyze(audio, sample_rate)
+    key = analysis.parse_key(str(measured.get("key_label") or ""))
+    key_trusted = key is not None and float(measured.get("key_confidence") or 0.0) >= 0.7
+
     tracks: list[dict[str, Any]] = []
     used: dict[str, str] = {}
     skipped: list[str] = []
@@ -470,7 +914,10 @@ def song_to_midi(
             continue
         notes, engine = transcribe_pitched(pitched[name], sample_rate, kind)
         low, high = RANGES.get(name, (0, 127))
-        notes = _tidy([note for note in notes if low <= note["p"] <= high], seconds)
+        notes = [note for note in notes if low <= note["p"] <= high]
+        if key is not None and key_trusted:
+            notes = keep_in_key(notes, key[0], key[1])
+        notes = _tidy(notes, seconds)
         if not notes:
             skipped.append(label)
             continue
@@ -497,10 +944,18 @@ def song_to_midi(
         else:
             skipped.append("Drums")
 
+    grid = snap_to_grid(tracks, list(measured.get("beats") or [])) if snap else None
+    if grid:
+        for track in tracks:
+            # Two notes can land on one grid line; they are the same note.
+            track["notes"] = _tidy(track["notes"], seconds)
     report(1.0)
     if not tracks:
         raise EditorError("No notes were found in this audio.")
     return {
+        "bpm": measured.get("bpm"),
+        "key": measured.get("key_label") if key_trusted else None,
+        "grid": grid,
         "tracks": tracks,
         "engines": used,
         "stems": stem_engine,

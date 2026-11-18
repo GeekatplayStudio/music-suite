@@ -317,6 +317,32 @@ def overview() -> dict[str, Any]:
         "models": model_status(),
         "models_bytes": folder_size(models_dir()),
         "install": state(),
+        "whole_mix": whole_mix_overview(),
+    }
+
+
+def whole_mix_overview() -> dict[str, Any]:
+    """MuScriptor, the optional whole-mix transcriber: installed, signed in, which sizes are here.
+
+    Never installed or downloaded from here: its weights are gated and for non-commercial
+    use, so the user installs it, accepts its terms and signs in themselves.
+    """
+    from audioqi.editor import transcribe
+
+    status = transcribe.whole_mix_status()
+    downloaded: list[str] = []
+    if status != "not-installed":
+        for size in transcribe.WHOLE_MIX_SIZES:
+            try:
+                if transcribe._cached_size(size):
+                    downloaded.append(size)
+            except Exception:
+                break
+    return {
+        "status": status,
+        "size": transcribe.whole_mix_size() if status != "not-installed" else None,
+        "downloaded": downloaded,
+        "version": package_version("muscriptor"),
     }
 
 

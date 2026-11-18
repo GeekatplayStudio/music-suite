@@ -229,6 +229,57 @@ export function ModelsPage() {
               <p className="text-xs text-slate-400">{notes.installed ? "Ready. Reload open editor pages to use it." : notes.download_note}</p>
             </div>
           )}
+          {addons?.whole_mix ? (
+            <div className="space-y-2 rounded-xl border border-white/10 bg-slate-950/40 p-3" aria-label="MuScriptor">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-slate-100">MuScriptor: one model for the whole mix (optional)</h3>
+                  <p className="mt-1 text-xs leading-snug text-slate-400">
+                    Hears the full song at once and names up to 35 instruments. Its model is free but for{" "}
+                    <strong className="text-slate-200">non-commercial use only</strong> (CC BY-NC 4.0), and its terms forbid
+                    transcribing music you have no rights to. When it is ready, Whole song to MIDI can use it; choose the Stems
+                    method for work you sell.
+                  </p>
+                </div>
+                <Status ok={addons.whole_mix.status === "ready"}>
+                  {addons.whole_mix.status === "ready"
+                    ? `Ready${addons.whole_mix.size ? ` · ${addons.whole_mix.size}` : ""}`
+                    : addons.whole_mix.status === "needs-access"
+                      ? "Needs sign-in"
+                      : "Not installed"}
+                </Status>
+              </div>
+              {addons.whole_mix.status === "ready" ? (
+                <p className="text-xs text-slate-400">
+                  {addons.whole_mix.downloaded.length
+                    ? `Downloaded: ${addons.whole_mix.downloaded.join(", ")}.`
+                    : "Signed in; the model downloads the first time it is used."}{" "}
+                  Set MUSIC_SUITE_MUSCRIPTOR_SIZE to small, medium or large to choose a size.
+                </p>
+              ) : (
+                <ol className="list-decimal space-y-1 pl-5 text-xs text-slate-300">
+                  {addons.whole_mix.status === "not-installed" ? (
+                    <li>
+                      Install its code:{" "}
+                      <code className="rounded bg-black/40 px-1">.venv\Scripts\python -m pip install git+https://github.com/muscriptor/muscriptor.git</code>
+                    </li>
+                  ) : null}
+                  <li>
+                    Accept the terms for a size on Hugging Face (each size separately), for example{" "}
+                    <a className="text-cyan-300 underline" href="https://huggingface.co/MuScriptor/muscriptor-large" target="_blank" rel="noreferrer">
+                      muscriptor-large
+                    </a>
+                    .
+                  </li>
+                  <li>
+                    Sign in on this computer: <code className="rounded bg-black/40 px-1">.venv\Scripts\hf auth login</code>. Signing in on
+                    the website alone is not enough.
+                  </li>
+                  <li>Restart Music Suite.</li>
+                </ol>
+              )}
+            </div>
+          ) : null}
         </section>
       ) : null}
       {stems ? (

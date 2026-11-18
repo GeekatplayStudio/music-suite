@@ -587,13 +587,33 @@ function fadeCurve(curve: FadeCurve, from: number, to: number, level: number): F
   return values;
 }
 
+/**
+ * The stretch of the timeline whose notes are scheduled in one go. Every note is a small
+ * graph of oscillators, filters and envelopes, and a MIDI song has thousands of them:
+ * creating them all when Play is pressed overloads the audio thread, which then falls
+ * behind real time and plays silence. So live playback schedules a few seconds ahead and
+ * tops that up as it goes; an offline export, which has no clock to keep up with, takes
+ * everything at once.
+ */
+interface NoteWindow {
+  /** Timeline seconds; notes starting in [from, to) are scheduled. */
+  from: number;
+  to: number;
+}
+
+const ALL_NOTES: NoteWindow = { from: -Infinity, to: Infinity };
+/** How far ahead of the playhead notes are scheduled, and how early that is topped up. */
+const NOTE_LOOKAHEAD = 4;
+const NOTE_REFILL = 2;
+
 function scheduleClips(
   ctx: BaseAudioContext,
   state: ProjectState,
   mixer: Mixer,
   lookup: BufferLookup,
   fromPosition: number,
-  contextStart: number
+  contextStart: number,
+  notes: NoteWindow = ALL_NOTES
 ): AudioScheduledSourceNode[] {
   const sources: AudioScheduledSourceNode[] = [];
   const synths = new Map(state.tracks.map((track) => [track.id, track.synth]));
@@ -602,9 +622,11 @@ function scheduleClips(
     if (clip.notes) {
       const input = mixer.tracks.get(clip.trackId)?.input;
       const synth = synths.get(clip.trackId);
-      if (input && synth) scheduleNotes(ctx, clip, synth, state.bpm, input, fromPosition, contextStart, sources);
+      if (input && synth) scheduleNotes(ctx, clip, synth, state.bpm, input, fromPosition, contextStart, sources, notes);
       continue;
     }
+    // Audio clips are scheduled once, when playback starts; later windows add notes only.
+    if (notes.from > fromPosition) continue;
     const nodes = mixer.tracks.get(clip.trackId);
     const buffer = lookup(clip.assetId, clip.reversed);
     if (!nodes || !buffer) continue;
@@ -759,7 +781,8 @@ function scheduleNotes(
   output: AudioNode,
   fromPosition: number,
   contextStart: number,
-  sources: AudioScheduledSourceNode[]
+  sources: AudioScheduledSourceNode[],
+  window: NoteWindow = ALL_NOTES
 ): void {
   const gain = dbToGain(clip.gainDb);
   const clipEnd = clip.start + clip.duration;
@@ -782,6 +805,9 @@ function scheduleNotes(
       if (previous && previous.t + previous.d >= note.t - 0.01) glideFrom = previous.p;
     }
     if (end <= fromPosition + 0.005 || end <= start) return;
+    // The first window also takes notes already sounding at the playhead; later ones
+    // take only notes that begin inside them, so nothing is scheduled twice.
+    if (start >= window.to || (window.from > fromPosition && start < window.from)) return;
     const when = contextStart + Math.max(0, start - fromPosition);
     const until = contextStart + (end - fromPosition);
     if (synth.kind === "drums") {
@@ -812,6 +838,10 @@ export class EditorEngine {
   private ctx: AudioContext | null = null;
   private mixer: Mixer | null = null;
   private sources: AudioScheduledSourceNode[] = [];
+  /** Timeline position up to which notes have been scheduled for this playback pass. */
+  private notesUntil = 0;
+  /** Sources that have finished, to be dropped from `sources` at the next top-up. */
+  private ended = new WeakSet<AudioScheduledSourceNode>();
   private state: ProjectState;
   private buffers = new Map<string, AudioBuffer>();
   private reversed = new Map<string, AudioBuffer>();
@@ -1044,7 +1074,31 @@ export class EditorEngine {
     this.startPosition = position;
     this.recording?.anchors.push({ ctxTime: this.startedAt, position });
     this.writeAutomation(position, this.startedAt);
-    this.sources = scheduleClips(this.ctx, this.state, this.mixer, this.lookup, position, this.startedAt);
+    this.notesUntil = position + NOTE_LOOKAHEAD;
+    this.sources = scheduleClips(this.ctx, this.state, this.mixer, this.lookup, position, this.startedAt, {
+      from: position,
+      to: this.notesUntil
+    });
+    this.watchEnded(this.sources);
+  }
+
+  private watchEnded(sources: AudioScheduledSourceNode[]): void {
+    for (const source of sources) source.addEventListener("ended", () => this.ended.add(source), { once: true });
+  }
+
+  /** Schedule the next stretch of notes once the playhead nears the end of the last one. */
+  private topUpNotes(position: number): void {
+    if (!this.ctx || !this.mixer || position < this.notesUntil - NOTE_REFILL) return;
+    // A timer held back by a hidden tab can wake late: never leave a gap behind the playhead.
+    const to = Math.max(this.notesUntil, position) + NOTE_LOOKAHEAD;
+    const added = scheduleClips(this.ctx, this.state, this.mixer, this.lookup, this.startPosition, this.startedAt, {
+      from: this.notesUntil,
+      to
+    });
+    this.notesUntil = to;
+    this.watchEnded(added);
+    // Finished voices are let go here, so a long song does not hold every note it has played.
+    this.sources = [...this.sources.filter((source) => !this.ended.has(source)), ...added];
   }
 
   async play(from?: number): Promise<void> {
@@ -1099,7 +1153,11 @@ export class EditorEngine {
       this.seek(loop.start);
       return;
     }
-    if (position > projectDuration(this.state) + tailSeconds(this.state) + 0.25) this.pause();
+    if (position > projectDuration(this.state) + tailSeconds(this.state) + 0.25) {
+      this.pause();
+      return;
+    }
+    this.topUpNotes(position);
   }
 
   private peakOf(analyser: AnalyserNode | null | undefined): number {

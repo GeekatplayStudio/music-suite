@@ -90,7 +90,15 @@ export interface Capabilities {
   plugins: { available: boolean; formats: string[] };
   transcription?: { engine: string };
   /** The engine that writes each kind of part when a whole song is turned into MIDI. */
-  song_to_midi?: { piano: string; poly: string; mono: string; drums: string; stems: string };
+  song_to_midi?: {
+    piano: string;
+    poly: string;
+    mono: string;
+    drums: string;
+    stems: string;
+    /** The one-model, whole-mix transcriber (MuScriptor): whether it can be used here. */
+    whole_mix?: "ready" | "needs-access" | "not-installed";
+  };
 }
 
 export interface PluginInfo {

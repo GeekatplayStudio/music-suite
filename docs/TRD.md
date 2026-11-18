@@ -81,6 +81,7 @@
 - `SQLAlchemy + SQLite`: simple local persistence for run history and artifact pointers.
 - `weasyprint`: offline HTML->PDF export path.
 - `torch/torchaudio/nnAudio` (optional): CUDA acceleration path for spectrogram-heavy workflows.
+- Song to MIDI (`audioqi/editor/transcribe.py`, job `song_to_midi`, `engine` auto/stems/muscriptor): MuScriptor (code MIT, weights CC BY-NC, user-installed and gated) on the whole mix plus a vocal line from a two-stem split, when available; otherwise stems, then Transkun (MIT) for piano, basic-pitch (Apache-2.0, installed without its dependency pins) for other pitched parts, and loudness-based hit detection for drums. Then key filtering and snapping to the song's tracked beat grid.
 - Editor engines, each with a built-in fallback: `audio-separator` (BS-RoFormer) then Demucs for stems; Pedalboard (Rubber Band) for stretch, pitch and plugin hosting; `noisereduce` for denoising; `beat_this` for beats; SciPy for the restoration tools. The reasoning is recorded in `docs/EDITOR_ROADMAP.md` section 3.
 
 ## 2. Data Flow
