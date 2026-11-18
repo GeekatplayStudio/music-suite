@@ -13,6 +13,10 @@
 
 [Geekatplay Studio](https://github.com/GeekatplayStudio) · [Official repository](https://github.com/GeekatplayStudio/music-suite)
 
+### [⬇ Download Music Suite for Windows (ZIP)](https://github.com/GeekatplayStudio/music-suite/archive/refs/heads/main.zip)
+
+Extract the ZIP, then double-click **`install.bat`**. Beginner guides: [English](docs/WINDOWS_INSTALL_GUIDE.md) · [Русский](docs/WINDOWS_INSTALL_GUIDE_RU.md)
+
 <img src="docs/images/geometry-mapper.png" alt="Song Geometry Mapper rendering a full-song 3D spectral map" width="100%">
 
 <sub>Song Geometry Mapper — a full-song 3D spectral map with an always-on readout, a seekable waveform scrubber, and structural arcs linking passages that recur.</sub>
@@ -154,7 +158,7 @@ This is the practical “what can I do with it?” list. **✅ Verified** means 
 
 Detailed evidence and the hand-test log live in [Studio Editor roadmap](docs/EDITOR_ROADMAP.md), [AI generation roadmap](docs/GENERATION_ROADMAP.md), and [current functionality](docs/CURRENT_FUNCTIONALITY_AND_SAFE_UPGRADES.md).
 
-**Current verification gate (2026-11-18):** 479 backend tests passed with 1 platform-dependent skip; all 20 Song Geometry Mapper tests passed; Ruff, TypeScript, ESLint and the production build passed; and the production dependency audit reported no known vulnerabilities.
+**Current verification gate (2026-11-18):** 481 backend tests passed with 1 platform-dependent skip; all 20 Song Geometry Mapper tests passed; Ruff, TypeScript, ESLint and the production build passed; and the production dependency audit reported no known vulnerabilities.
 
 ---
 
@@ -303,8 +307,8 @@ Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (ab
 - Python 3.12 or newer (librosa 1.0 and numpy 2.5 need it). The installer sets up 3.12 when it finds nothing newer, and recreates a virtual environment built on an older Python
 - Node.js 22.13 or newer; the current LTS is recommended, and the installer replaces older versions
 - pnpm (recommended) or npm
-- FFmpeg and ffprobe on `PATH`
-- Git for in-app updates
+- FFmpeg and ffprobe (the Windows installer downloads a private, checksum-verified copy when needed)
+- Git for in-app updates (the Windows installer can use a private, checksum-verified portable copy)
 - Optional: ComfyUI with a compatible Torch/CUDA environment (for music generation)
 - Optional: AI stem separation from *Models & engines* (about 3 GB with NVIDIA GPU support, plus 2.2 GB of models)
 - Optional, for AI Song Studio: about 6 GB of free disk, CMake and a C++ compiler (the installer adds CMake through Homebrew or winget), and Ollama for the best lyrics
@@ -317,7 +321,7 @@ Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (ab
 
 No programming experience is needed.
 
-1. On the GitHub page, select the green **Code** button, then **Download ZIP**. Open the downloaded ZIP and select **Extract all**. Do not run the installer from inside the ZIP.
+1. Use the direct **[Download Music Suite for Windows](https://github.com/GeekatplayStudio/music-suite/archive/refs/heads/main.zip)** link. Open the downloaded ZIP and select **Extract all**. Do not run the installer from inside the ZIP.
 2. Open the extracted `music-suite` folder and double-click **`install.bat`**. Keep the black installer window open. If Windows SmartScreen appears, select **More info**, confirm the publisher/source, then **Run anyway**.
 3. Choose the installation you want when this question appears:
    - Press **Enter** (or type `n`) for the standard app. You can add AI features later from **Models & engines**.
@@ -325,7 +329,7 @@ No programming experience is needed.
 
 <img src="docs/images/install-windows-choice.png" alt="Windows installer asking whether to perform a complete installation" width="900">
 
-The installer checks Python, FFmpeg, Node.js, Git, the Python libraries, and the web libraries. Missing tools are installed automatically. A complete installation also adds Ollama, CMake, and Microsoft C++ build tools when needed. It is safe to run `install.bat` again: already-installed tools and models are detected and reused.
+The installer checks Python, FFmpeg, Node.js, Git, the Python libraries, and the web libraries. Missing tools are installed automatically. If Windows Package Manager (`winget`) is absent or broken, the core installer safely falls back to official downloads: checksum-verified portable FFmpeg, Node.js and Git packages, plus the digitally signed Python installer. A complete installation also adds Ollama, CMake, and Microsoft C++ build tools when needed. It is safe to run `install.bat` again: already-installed tools and models are detected and reused.
 
 4. Wait for the green **Music Suite is installed!** message. If one optional model could not download, the message tells you where to retry it inside the app.
 5. Double-click **`start.bat`**. Your browser opens Music Suite. Keep its command window open while using the app.
@@ -333,7 +337,7 @@ The installer checks Python, FFmpeg, Node.js, Git, the Python libraries, and the
 
 <img src="docs/images/install-windows-complete.png" alt="Successful Music Suite Windows installation and instruction to double-click start.bat" width="900">
 
-If installation stops with an error, leave the folder where it is, check the internet connection and free disk space, then double-click `install.bat` again. Downloads that support resuming continue from their partial files.
+If installation stops with an error, leave the folder where it is, check the internet connection and free disk space, then double-click `install.bat` again. Downloads that support resuming continue from their partial files. See the illustrated [Windows installation and troubleshooting guide](docs/WINDOWS_INSTALL_GUIDE.md), also available [in Russian](docs/WINDOWS_INSTALL_GUIDE_RU.md).
 
 The `.bat` files call the unified PowerShell implementation. Advanced flags stay available:
 

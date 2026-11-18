@@ -187,3 +187,34 @@ def test_installers_reject_end_of_life_node() -> None:
     assert "node_is_supported" in Path("install.command").read_text(encoding="utf-8")
     manifest = json.loads(Path("package.json").read_text(encoding="utf-8"))
     assert manifest["engines"]["node"] == ">=22.13"
+
+
+def test_windows_core_install_does_not_depend_on_winget() -> None:
+    """Broken or missing WinGet must not strand beginners before the app can start."""
+    windows = Path("install.ps1").read_text(encoding="utf-8")
+    assert "Install-PortableFFmpeg" in windows
+    assert "ffmpeg-release-essentials.zip" in windows
+    assert '$checksumUrl = "$downloadUrl.sha256"' in windows
+    assert "Install-PortableNode" in windows
+    assert "SHASUMS256.txt" in windows
+    assert "Install-PythonDirect" in windows
+    assert "Get-AuthenticodeSignature" in windows
+    assert "Python Software Foundation" in windows
+    assert "Install-PortableGit" in windows
+    assert "git-for-windows/git/releases/latest" in windows
+    assert "Assert-FileSha256" in windows
+    assert "Start-Transcript" in windows
+    assert '"install.log"' in windows
+
+    startup = Path("start.ps1").read_text(encoding="utf-8")
+    assert 'Join-Path $toolsRoot "ffmpeg\\bin"' in startup
+    assert 'Join-Path $toolsRoot "node"' in startup
+    assert 'Join-Path $toolsRoot "git\\cmd"' in startup
+
+
+def test_windows_ai_tool_installs_use_only_the_winget_source() -> None:
+    """The Microsoft Store source can fail certificate pinning or create ambiguity."""
+    setup = Path("audioqi/generation/setup.py").read_text(encoding="utf-8")
+    cmake_command = setup[setup.index('"Kitware.CMake"') : setup.index('"Kitware.CMake"') + 300]
+    assert '"--source"' in cmake_command
+    assert '"winget"' in cmake_command

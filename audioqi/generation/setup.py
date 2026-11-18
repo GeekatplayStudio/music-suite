@@ -148,6 +148,8 @@ def _ensure_tools(report: Report) -> None:
                     "--id",
                     "Kitware.CMake",
                     "-e",
+                    "--source",
+                    "winget",
                     "--accept-source-agreements",
                     "--accept-package-agreements",
                 ],

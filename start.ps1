@@ -13,9 +13,24 @@ $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 $venvPython = Join-Path $root ".venv\Scripts\python.exe"
 $webDir = Join-Path $root "apps\web-next"
+$toolsRoot = Join-Path $root ".tools"
 $installStatePath = Join-Path $root ".music-suite-install-state"
 $processFile = Join-Path $root ".music-suite-processes.json"
 $logDir = Join-Path $root "logs"
+
+function Add-BundledToolPaths {
+    foreach ($folder in @(
+        (Join-Path $toolsRoot "ffmpeg\bin"),
+        (Join-Path $toolsRoot "node"),
+        (Join-Path $toolsRoot "git\cmd")
+    )) {
+        if ((Test-Path -LiteralPath $folder) -and $env:Path -notlike "*$folder*") {
+            $env:Path = "$folder;$env:Path"
+        }
+    }
+}
+
+Add-BundledToolPaths
 
 if ($StartupTimeoutSeconds -lt 30) { $StartupTimeoutSeconds = 30 }
 if ($env:MUSIC_SUITE_STARTUP_TIMEOUT_SECONDS) {
@@ -197,6 +212,9 @@ if (Test-Path -LiteralPath $processFile) {
 
 if (
     -not (Test-Path -LiteralPath $venvPython) -or
+    -not (Get-Command node.exe -ErrorAction SilentlyContinue) -or
+    -not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue) -or
+    -not (Get-Command ffprobe.exe -ErrorAction SilentlyContinue) -or
     -not (Test-Path -LiteralPath (Join-Path $webDir "node_modules")) -or
     -not (Test-Path -LiteralPath (Join-Path $webDir ".next\BUILD_ID")) -or
     -not (Test-Path -LiteralPath $installStatePath) -or
@@ -204,6 +222,7 @@ if (
 ) {
     Write-Host "Dependencies are missing or changed; running the unified installer first..."
     & (Join-Path $root "install.ps1") -ComfyUIPath $ComfyUIPath
+    Add-BundledToolPaths
 }
 
 $selectedWebPort = Find-AvailablePort $WebPort
