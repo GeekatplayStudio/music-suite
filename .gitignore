@@ -18,3 +18,4 @@ build/
 .music-suite-processes.json
 .music-suite-install-state
 .DS_Store
+.claude/

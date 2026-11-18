@@ -1,6 +1,6 @@
 # Geekatplay Studio Music Suite Pro Upgrades Reference
 
-**Created by Vladimir Chopine · Geekatplay Studio**
+**Maintained by Geekatplay Studio**
 
 ## Purpose
 

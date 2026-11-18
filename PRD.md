@@ -1,6 +1,6 @@
 # Geekatplay Studio Music Suite — Product Requirements Document
 
-**Created by Vladimir Chopine · Geekatplay Studio**
+**Maintained by Geekatplay Studio**
 
 ## 1. Executive Summary
 Geekatplay Studio Music Suite combines AudioQI analysis and mastering with Sonic Visual AI in one local-first, loopback-accessed application. It targets audio engineers, mixing/mastering specialists, and content creators who require deterministic measurements and offline AI-assisted mastering advice without sending raw audio or metadata to external services.
@@ -36,7 +36,7 @@ All modifications to the codebase must pass a mandatory multi-phase gatekeeper v
 3. **Frontend Compilation:** Verify type checks and production bundle builds via `pnpm build`.
 
 ---
-*Copyright &copy; 2026 Geekatplay Studio and Vladimir Chopine. All rights reserved.*
+*Copyright &copy; 2026 Geekatplay Studio. All rights reserved.*
 
 ## 5. Studio Editor
 

@@ -42,7 +42,7 @@ app.layout = dbc.Container(
             [
                 html.H1("Geekatplay Studio Music Suite", className="app-title"),
                 html.P(
-                    "Created by Vladimir Chopine — analysis and mastering for individual tracks.",
+                    "Created by Geekatplay Studio — analysis and mastering for individual tracks.",
                     className="app-subtitle",
                 ),
             ],

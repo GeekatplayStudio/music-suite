@@ -143,7 +143,7 @@ def _clean(raw: Any) -> dict[str, Any]:
     }
     bpm = raw.get("bpm")
     if isinstance(bpm, (int, float)) and not isinstance(bpm, bool) and 30 <= bpm <= 300:
-        brief["bpm"] = int(round(bpm))
+        brief["bpm"] = round(bpm)
     key = _normal_key(raw.get("key") or raw.get("keyscale"))
     if key:
         brief["keyscale"] = key

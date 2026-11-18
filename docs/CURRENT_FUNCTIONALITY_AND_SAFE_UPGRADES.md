@@ -1,6 +1,6 @@
 # Geekatplay Studio Music Suite — Current Functionality and Safe Upgrades
 
-**Created by Vladimir Chopine · Geekatplay Studio**
+**Maintained by Geekatplay Studio**
 
 ## Objective
 
@@ -158,7 +158,7 @@ Applied on 2026-11-09 alongside the Studio Editor work.
 
 - TypeScript stays on 6.0: TypeScript 7.0 compiles the project, but `typescript-eslint` does not support it yet.
 - `basic-pitch` (polyphonic transcription) pins an old NumPy: on 2026-11-10 a dry run on Python 3.12 tried to build NumPy from source and failed, so it is not offered in Models & engines.
-- `install.ps1` does not yet install the `editor` extra the way `install.command` does.
+- The Windows and macOS installers now both install the `editor` extra; the complete Windows path also offers every supported local model and instrument.
 
 ### AI stem separation pack (2026-11-10)
 

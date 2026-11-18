@@ -1,6 +1,6 @@
 # Geekatplay Studio Music Suite References
 
-**Created by Vladimir Chopine · Geekatplay Studio**
+**Maintained by Geekatplay Studio**
 
 ## Core Analysis / DSP
 

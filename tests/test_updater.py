@@ -20,7 +20,7 @@ def test_update_status_is_pinned_and_reports_available(monkeypatch: pytest.Monke
     result = updater.get_update_status(Path("."))
 
     assert result["repository"] == "https://github.com/GeekatplayStudio/music-suite"
-    assert result["author"] == "Vladimir Chopine"
+    assert result["author"] == "Geekatplay Studio"
     assert result["update_available"] is True
     assert result["update_supported"] is True
 

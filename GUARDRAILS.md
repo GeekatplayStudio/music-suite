@@ -1,6 +1,6 @@
 # Geekatplay Studio Music Suite Guardrails
 
-**Created by Vladimir Chopine · Geekatplay Studio · Official repository: `GeekatplayStudio/music-suite`**
+**Maintained by Geekatplay Studio · Official repository: `GeekatplayStudio/music-suite`**
 
 These boundaries are enforced in code and covered by automated tests. Defaults are intentionally local-first and conservative.
 

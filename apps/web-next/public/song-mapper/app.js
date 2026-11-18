@@ -51,7 +51,7 @@ const {
   stopRecordingBtn,
   copyMp4CommandBtn,
   helpBtn,
-  supportVladBtn,
+  supportProjectBtn,
   focusToggleBtn,
   helpModal,
   closeHelpBtn,
@@ -492,7 +492,7 @@ function updateMathPanel(nowMs, force = false) {
 }
 
 function updateSupportButtonTheme() {
-  if (!supportVladBtn) {
+  if (!supportProjectBtn) {
     return;
   }
 
@@ -518,10 +518,10 @@ function updateSupportButtonTheme() {
   const hiB = Math.round(clamp(b * 0.86 + 48, 0, 255));
   const intensity = 0.86;
 
-  supportVladBtn.style.background = `linear-gradient(115deg, rgba(${hiR}, ${hiG}, ${hiB}, ${(0.24 * intensity).toFixed(3)}), rgba(${r}, ${g}, ${b}, ${(0.2 * intensity).toFixed(3)}))`;
-  supportVladBtn.style.borderColor = `rgba(${hiR}, ${hiG}, ${hiB}, ${(0.62 * intensity).toFixed(3)})`;
-  supportVladBtn.style.color = "#ecf6ff";
-  supportVladBtn.style.boxShadow = `0 0 14px rgba(${r}, ${g}, ${b}, ${(glowAlpha * intensity).toFixed(3)})`;
+  supportProjectBtn.style.background = `linear-gradient(115deg, rgba(${hiR}, ${hiG}, ${hiB}, ${(0.24 * intensity).toFixed(3)}), rgba(${r}, ${g}, ${b}, ${(0.2 * intensity).toFixed(3)}))`;
+  supportProjectBtn.style.borderColor = `rgba(${hiR}, ${hiG}, ${hiB}, ${(0.62 * intensity).toFixed(3)})`;
+  supportProjectBtn.style.color = "#ecf6ff";
+  supportProjectBtn.style.boxShadow = `0 0 14px rgba(${r}, ${g}, ${b}, ${(glowAlpha * intensity).toFixed(3)})`;
 }
 
 const DOCK_WIDTH_KEY = "sgm.dock-width";

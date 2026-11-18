@@ -1346,7 +1346,7 @@ def test_extend_before_the_start_is_matched_on_the_original_part() -> None:
 def test_new_audio_is_brought_to_the_source_loudness() -> None:
     source = _source()
     result = _source() * 0.2
-    matched, info = acestep_provider._match_level("cover", {}, source, SR, result, SR)
+    _matched, info = acestep_provider._match_level("cover", {}, source, SR, result, SR)
     assert info["output_lufs"] == pytest.approx(info["matched_lufs"], abs=0.3)
 
 
@@ -1383,9 +1383,9 @@ def test_an_edit_job_sends_the_clip_and_keeps_its_level(
     ).json()
     sent: dict[str, Any] = {}
 
-    def fake_job(self, base, path, body, ctx, low, high, expected, detail, files=None):  # noqa: ANN001
+    def fake_job(self, base, path, body, ctx, low, high, expected, detail, files=None):
         sent.update(path=path, body=body, files=sorted(files or {}))
-        staged, rate = sf.read(str(files["audio"]), dtype="float32")
+        staged, _rate = sf.read(str(files["audio"]), dtype="float32")
         sent["subtype"] = sf.info(str(files["audio"])).subtype
         out = staged.copy()
         out[2 * SR : 4 * SR] *= 0.1

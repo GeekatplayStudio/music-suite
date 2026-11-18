@@ -1,6 +1,6 @@
 # Geekatplay Studio Music Suite Help Guide
 
-**Created by Vladimir Chopine · Geekatplay Studio**
+**Maintained by Geekatplay Studio**
 
 ## 1) Session Control
 

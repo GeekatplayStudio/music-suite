@@ -103,7 +103,7 @@ export function createRuntime() {
   const legendScale = document.getElementById("legend-scale");
   
   const helpBtn = document.getElementById("help-btn");
-  const supportVladBtn = document.getElementById("support-vlad-btn");
+  const supportProjectBtn = document.getElementById("support-project-btn");
   const focusToggleBtn = document.getElementById("focus-toggle");
   const helpModal = document.getElementById("help-modal");
   const closeHelpBtn = document.getElementById("close-help");
@@ -587,7 +587,7 @@ export function createRuntime() {
     legendBar,
     legendScale,
     helpBtn,
-    supportVladBtn,
+    supportProjectBtn,
     focusToggleBtn,
     helpModal,
     closeHelpBtn,

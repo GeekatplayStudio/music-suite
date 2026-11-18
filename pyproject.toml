@@ -9,7 +9,7 @@ description = "Unified local music analysis, mastering, visualization, and Comfy
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-authors = [{ name = "Vladimir Chopine" }]
+authors = [{ name = "Geekatplay Studio" }]
 maintainers = [{ name = "Geekatplay Studio" }]
 dependencies = [
   "fastapi>=0.142.2",

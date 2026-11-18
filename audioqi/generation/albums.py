@@ -311,7 +311,7 @@ def _run_track(record: dict[str, Any], track: dict[str, Any]) -> None:
             status = "cancelled" if "cancelled" in str(exc).lower() else "failed"
             _set_track(album_id, index, status=status, detail="Stopped.", error=str(exc))
             return
-        except Exception as exc:  # noqa: BLE001 - one bad track must not stop the album
+        except Exception as exc:  # One bad track must not stop the album.
             logger.exception("Album %s track %s failed", album_id, index)
             _set_track(
                 album_id,
@@ -364,7 +364,7 @@ def _loop() -> None:
     while not _STOP.is_set():
         try:
             run_pending()
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception("Album runner error")
         _WAKE.wait(timeout=30.0)
         _WAKE.clear()
