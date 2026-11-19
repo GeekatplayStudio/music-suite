@@ -148,15 +148,53 @@ def _ensure_tools(report: Report) -> None:
                     "--id",
                     "Kitware.CMake",
                     "-e",
+                    "--source",
+                    "winget",
                     "--accept-source-agreements",
                     "--accept-package-agreements",
                 ],
                 None,
             )
+            cmake_bin = (
+                Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "CMake" / "bin"
+            )
+            if cmake_bin.is_dir():
+                os.environ["PATH"] = f"{cmake_bin}{os.pathsep}{os.environ.get('PATH', '')}"
         if shutil.which("cmake") is None:
             raise SetupError(
                 "CMake is needed to build the engine. Install it (macOS: brew install cmake, "
-                "Windows: winget install Kitware.CMake, Linux: your package manager) and run this again."
+                "Windows: winget install Kitware.CMake, Linux: your package manager) "
+                "and run this again."
+            )
+    if sys.platform == "win32" and not _windows_cpp_toolchain_ready():
+        winget = shutil.which("winget")
+        if winget is None:
+            raise SetupError(
+                "A C++ compiler is needed. Install Visual Studio 2022 Build Tools with the "
+                "Desktop development with C++ workload, then run this again."
+            )
+        report("tools", 4, "Installing the Microsoft C++ build tools (this can take a while).")
+        _run(
+            [
+                winget,
+                "install",
+                "--id",
+                "Microsoft.VisualStudio.2022.BuildTools",
+                "-e",
+                "--source",
+                "winget",
+                "--accept-source-agreements",
+                "--accept-package-agreements",
+                "--override",
+                "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools "
+                "--includeRecommended",
+            ],
+            None,
+        )
+        if not _windows_cpp_toolchain_ready():
+            raise SetupError(
+                "The C++ build tools were installed but could not be verified. Restart Windows, "
+                "then run install.bat again."
             )
     if sys.platform == "darwin":
         probe = subprocess.run(["xcode-select", "-p"], capture_output=True, check=False)
@@ -165,6 +203,32 @@ def _ensure_tools(report: Report) -> None:
                 "Apple's command line tools are needed to build the engine. "
                 "Run: xcode-select --install — then run this again."
             )
+
+
+def _windows_cpp_toolchain_ready() -> bool:
+    """Return whether CMake can find a usable Windows C++ compiler."""
+    if shutil.which("cl") or shutil.which("g++"):
+        return True
+    program_files_x86 = os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")
+    vswhere = Path(program_files_x86) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+    if not vswhere.is_file():
+        return False
+    result = subprocess.run(
+        [
+            str(vswhere),
+            "-latest",
+            "-products",
+            "*",
+            "-requires",
+            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+            "-property",
+            "installationPath",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0 and bool(result.stdout.strip())
 
 
 def _git(args: list[str], cwd: Path) -> str:
@@ -262,7 +326,7 @@ def _download_models(
     done = total - need
     for name, (size, digest) in pending.items():
         part = folder / f"{name}.part"
-        for attempt in range(3):
+        for _attempt in range(3):
             have = part.stat().st_size if part.is_file() else 0
             if have > size:
                 part.unlink()
@@ -409,9 +473,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ask", action="store_true", help="Ask once; remember a 'no'.")
     parser.add_argument("--writer", action="store_true", help="Also fetch the Ollama lyrics model.")
     parser.add_argument(
+        "--writer-only",
+        action="store_true",
+        help="Fetch the Ollama lyrics model and fail if Ollama is unavailable.",
+    )
+    parser.add_argument(
         "--editing",
         action="store_true",
         help="Also fetch the editing model (extract, add a part); --yes includes it.",
+    )
+    parser.add_argument(
+        "--quality",
+        action="store_true",
+        help="Fetch the optional high-quality XL model (the engine must be installed).",
     )
     parser.add_argument(
         "--status", action="store_true", help="Print whether the engine is installed."
@@ -421,11 +495,39 @@ def main(argv: list[str] | None = None) -> int:
     if args.status:
         print("installed" if engine.install_status()["installed"] else "missing")
         return 0
+    if args.writer_only:
+        try:
+            if not pull_writer_model(_console_report()):
+                print(
+                    "Ollama is not installed; the lyrics model was not downloaded.",
+                    file=sys.stderr,
+                )
+                return 1
+        except SetupError as exc:
+            print(f"The lyrics model was not downloaded: {exc}", file=sys.stderr)
+            return 1
+        return 0
+    if args.quality:
+        if quality_ready():
+            print("The high-quality model is already installed.")
+            return 0
+        try:
+            install_quality(_console_report())
+        except SetupError as exc:
+            print(f"\nThe high-quality model was not downloaded: {exc}", file=sys.stderr)
+            return 1
+        return 0
     want_editing = args.yes or args.editing
     if engine.install_status()["installed"] and _git(
         ["rev-parse", "HEAD"], settings.engine_dir()
     ) in (ENGINE_COMMIT, ""):
         print("The local AI music engine is already installed.")
+        if args.writer:
+            try:
+                if not pull_writer_model(_console_report()):
+                    print("Ollama is not installed; the lyrics model was skipped.")
+            except SetupError as exc:
+                print(f"The lyrics model was not downloaded: {exc}", file=sys.stderr)
         if editing_ready():
             return 0
         if not want_editing and not (args.ask and _ask_editing()):
@@ -434,7 +536,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.ask and not args.yes:
         if settings.load()["setup_declined"] or not sys.stdin.isatty():
             print(
-                "Skipping the local AI music engine. You can install it later from AI Song Studio > Settings."
+                "Skipping the local AI music engine. You can install it later from "
+                "AI Song Studio > Settings."
             )
             return 0
         print()
@@ -442,7 +545,8 @@ def main(argv: list[str] | None = None) -> int:
             "Optional: local AI music generation (write and generate full songs on this computer)."
         )
         print(
-            f"This builds the ACE-Step engine and downloads about {DOWNLOAD_BYTES / 1024**3:.1f} GB of models."
+            "This builds the ACE-Step engine and downloads about "
+            f"{DOWNLOAD_BYTES / 1024**3:.1f} GB of models."
         )
         answer = input("Install it now? [Y/n] ").strip().lower()
         if answer not in ("", "y", "yes"):

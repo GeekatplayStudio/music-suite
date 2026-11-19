@@ -2398,7 +2398,7 @@ export default function HomePage() {
               <div className="rounded-xl border border-border/70 bg-background/40 p-3">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Product</p>
                 <p className="mt-1 font-semibold">Geekatplay Studio Music Suite</p>
-                <p className="text-xs text-muted-foreground">Created by Vladimir Chopine</p>
+                <p className="text-xs text-muted-foreground">Created by Geekatplay Studio</p>
               </div>
               <div className="rounded-xl border border-border/70 bg-background/40 p-3">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Installed version</p>
@@ -3901,7 +3901,7 @@ export default function HomePage() {
       <footer className="mt-12 border-t border-border/40 py-6 text-center text-xs text-muted-foreground">
         <p>&copy; {new Date().getFullYear()} Geekatplay Studio. All rights reserved.</p>
         <p className="mt-1 text-[11px] opacity-75">
-          Music Suite &bull; Created by Vladimir Chopine &bull; Version 1.0.0
+          Music Suite &bull; Created by Geekatplay Studio &bull; Version 1.0.0
         </p>
       </footer>
     </main>

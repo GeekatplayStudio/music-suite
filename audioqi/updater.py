@@ -92,7 +92,7 @@ def get_update_status(project_root: Path) -> dict[str, Any]:
     supported = current is not None
     return {
         "product": "Geekatplay Studio Music Suite",
-        "author": "Vladimir Chopine",
+        "author": "Geekatplay Studio",
         "version": __version__,
         "repository": REPOSITORY_URL,
         "branch": UPDATE_BRANCH,

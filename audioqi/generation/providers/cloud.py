@@ -10,6 +10,7 @@ and downloaded audio must stay under the suite's upload size limit.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import math
 import subprocess
@@ -581,7 +582,7 @@ class ElevenLabsProvider(_CloudProvider):
         ctx.progress(12.0, "Uploading the clip to ElevenLabs.")
         with tempfile.TemporaryDirectory(dir=projects.scratch_dir()) as tmp:
             mp3 = Path(tmp) / "clip.mp3"
-            encoded = subprocess.run(  # noqa: S603 - fixed argv
+            encoded = subprocess.run(
                 [
                     "ffmpeg",
                     "-v",
@@ -714,7 +715,7 @@ def plan_to_api(sections: list[dict[str, Any]]) -> dict[str, Any]:
             text += "\n" + section["lyrics"]
         chunk: dict[str, Any] = {
             "text": text,
-            "duration_ms": int(round(float(section["seconds"]) * 1000)),
+            "duration_ms": round(float(section["seconds"]) * 1000),
             "positive_styles": list(section.get("styles") or []),
             "negative_styles": list(section.get("avoid") or []),
             "context_adherence": section.get("adherence") or "high",
@@ -818,13 +819,13 @@ def inpaint_plan(
     def ref(a: float, b: float) -> dict[str, Any]:
         return {
             "song_id": song_id,
-            "range": {"start_ms": int(round(a * 1000)), "end_ms": int(round(b * 1000))},
+            "range": {"start_ms": round(a * 1000), "end_ms": round(b * 1000)},
         }
 
     def gen(duration: float) -> dict[str, Any]:
         return {
             "text": gen_text,
-            "duration_ms": int(round(duration * 1000)),
+            "duration_ms": round(duration * 1000),
             "positive_styles": _styles_from(values),
             "negative_styles": [],
             "context_adherence": "high",
@@ -981,12 +982,10 @@ class FalProvider(_CloudProvider):
             elapsed = time.monotonic() - started
             if ctx.cancelled():
                 if isinstance(cancel_url, str) and host_allowed(cancel_url, (FAL_QUEUE_HOST,)):
-                    try:
+                    with contextlib.suppress(requests.RequestException):
                         requests.put(
                             cancel_url, headers=headers, timeout=10.0, allow_redirects=False
                         )
-                    except requests.RequestException:
-                        pass
                 raise EditorError("Generation was cancelled.", 409)
             if elapsed > limit:
                 raise EditorError("Song generation took too long and was abandoned.", 504)

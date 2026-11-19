@@ -1,6 +1,6 @@
 # Geekatplay Studio Music Suite Help Guide
 
-**Created by Vladimir Chopine · Geekatplay Studio**
+**Maintained by Geekatplay Studio**
 
 ## 1) Session Control
 
@@ -446,6 +446,7 @@ Open **Models & engines** from any workspace (or go to `/models`). It shows this
 
 ### General
 
+- **Windows installation, FFmpeg, or `winget` errors** — follow the beginner [Windows installation guide](WINDOWS_INSTALL_GUIDE.md), also available [in Russian](WINDOWS_INSTALL_GUIDE_RU.md). The installer now falls back to verified official downloads when `winget` is missing or broken.
 - `Failed to fetch`:
   - confirm the API is running; startup prefers port `8008` but auto-selects the next free loopback port
   - the browser always calls the same-origin `/suite-api` proxy, so no public API URL needs to be configured

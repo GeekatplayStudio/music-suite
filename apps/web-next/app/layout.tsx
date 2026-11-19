@@ -5,7 +5,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Geekatplay Studio | Music Suite",
-  description: "Geekatplay Studio Music Suite by Vladimir Chopine: analysis, mastering, visualization, and AI generation."
+  description: "Geekatplay Studio Music Suite: analysis, mastering, visualization, and AI generation."
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -54,7 +54,7 @@ def _importable(python: Path) -> bool:
         if fresh and _probe["python"] == str(python):
             return bool(_probe["ok"])
     try:
-        done = subprocess.run(  # noqa: S603 - fixed argv, interpreter chosen by the operator
+        done = subprocess.run(
             [str(python), "-I", "-c", "import yue2"], capture_output=True, timeout=60, check=False
         )
         ok = done.returncode == 0
@@ -173,7 +173,7 @@ class YuE2Provider:
             log = work / "worker.log"
             ctx.progress(12.0, "Starting YuE2 (the first run downloads the model).")
             with log.open("wb") as sink:
-                child = subprocess.Popen(  # noqa: S603 - fixed argv
+                child = subprocess.Popen(
                     [str(python), "-I", str(WORKER), str(request_file), str(out)],
                     stdout=sink,
                     stderr=subprocess.STDOUT,

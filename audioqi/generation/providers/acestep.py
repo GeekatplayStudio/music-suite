@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import email
 import io
 import json
@@ -556,10 +557,8 @@ class AceStepProvider:
         failures = 0
         while True:
             if ctx.cancelled():
-                try:
+                with contextlib.suppress(requests.RequestException):
                     requests.post(f"{base}/job", params={"id": job_id, "cancel": "1"}, timeout=10.0)
-                except requests.RequestException:
-                    pass
                 raise EditorError("Generation was cancelled.", 409)
             elapsed = time.monotonic() - started
             # No percentage comes back, so progress follows the time we measured for this size.
@@ -829,13 +828,13 @@ def match_level(
     """
     if task in ("repaint", "extend") and source_rate == result_rate:
         offset = (
-            int(round(-float(body["repainting_start"]) * result_rate))
+            round(-float(body["repainting_start"]) * result_rate)
             if body["repainting_start"] < 0
             else 0
         )
-        start = int(round(max(0.0, float(body["repainting_start"])) * source_rate))
+        start = round(max(0.0, float(body["repainting_start"])) * source_rate)
         end = (
-            int(round(float(body["repainting_end"]) * source_rate))
+            round(float(body["repainting_end"]) * source_rate)
             if body["repainting_start"] >= 0
             else 0
         )

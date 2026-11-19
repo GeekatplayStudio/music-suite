@@ -922,7 +922,7 @@ def test_an_audition_can_show_the_plugins_own_window(client: TestClient, monkeyp
     seen: dict[str, Any] = {}
     monkeypatch.setattr(engines, "plugin_hosting_available", lambda: True)
 
-    def start(plugin_id, state, notes, seconds, *, play, live, window):  # noqa: ANN001
+    def start(plugin_id, state, notes, seconds, *, play, live, window):
         seen.update(window=window, live=live)
         return "k"
 
@@ -979,4 +979,3 @@ def test_surge_skin_is_built_and_made_the_default(tmp_path, monkeypatch) -> None
     again = surge_skin.ensure()
     assert again["built"] is False and again["defaults"] == []
     assert "mine.surge-skin" in (user / "SurgeXTUserDefaults.xml").read_text()
-

@@ -17,4 +17,6 @@ dist/
 build/
 .music-suite-processes.json
 .music-suite-install-state
+.tools/
 .DS_Store
+.claude/

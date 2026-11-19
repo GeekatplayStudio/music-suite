@@ -11,7 +11,11 @@
 [![Next.js](https://img.shields.io/badge/Next.js-16-000000.svg?style=flat-square&logo=nextdotjs&logoColor=white)](apps/web-next)
 [![Local first](https://img.shields.io/badge/Runs-local--first-8b5cf6.svg?style=flat-square)](GUARDRAILS.md)
 
-Created by **Vladimir Chopine** · [GeekatplayStudio/music-suite](https://github.com/GeekatplayStudio/music-suite)
+[Geekatplay Studio](https://github.com/GeekatplayStudio) · [Official repository](https://github.com/GeekatplayStudio/music-suite)
+
+### [⬇ Download Music Suite for Windows (ZIP)](https://github.com/GeekatplayStudio/music-suite/archive/refs/heads/main.zip)
+
+Extract the ZIP, then double-click **`install.bat`**. Beginner guides: [English](docs/WINDOWS_INSTALL_GUIDE.md) · [Русский](docs/WINDOWS_INSTALL_GUIDE_RU.md)
 
 <img src="docs/images/geometry-mapper.png" alt="Song Geometry Mapper rendering a full-song 3D spectral map" width="100%">
 
@@ -39,6 +43,122 @@ The former **AudioQI Analyzer** and **Sonic Visual AI** projects now share one c
 | 🧠 **Describe** | Local Ollama model writes the track's style, always shown beside the description derived from the measurements |
 | 🔌 **Integrate** | Guarded local MCP server, plus optional ComfyUI nodes for music generation |
 | 🔒 **Stay local** | Loopback-only binding, no cloud calls for audio, explicit opt-in for every mutation. The network features — in-browser editor plugins and the online song services — stay off until you switch them on |
+
+---
+
+## Verified feature showcase
+
+This is the practical “what can I do with it?” list. **✅ Verified** means the path is covered by the current automated suite, a recorded browser/hardware check, or both. **◻️ Implemented** means the feature is present and passes build/type checks, but every interaction has not been hand-exercised. **◇ Optional** means it needs the named local model, plugin or third-party service. **△ Contract-tested** means the integration is tested against the provider’s documented request/response shape without spending money on a live request.
+
+### Create complete music
+
+- ✅ **Idea, style and lyrics → a complete song with vocals.** Enter a concept, write or generate section-tagged lyrics, choose tempo, key, metre and duration, then ask for up to four versions.
+- ✅ **Generate from a reference song.** Import a song and Music Suite measures its tempo, key, time signature and length, drafts a style description, and carries those musical facts into a new generation form.
+- ✅ **Start from style, lyrics, music or any combination.** Keep the measured reference, replace its description, provide your own lyrics, make an instrumental, or let the local writer draft the missing pieces.
+- ✅ **Regenerate part of a song.** Highlight a region and replace only that section while preserving the audio around it and matching the source level.
+- ✅ **Extend before or after the song.** Add a new intro, outro or continuation without overwriting the original.
+- ✅ **Restyle an existing song.** Keep the musical source while asking for a new production style.
+- ✅ **Extract an instrument, add a new part, or build a song around a part.** These editing tasks use the optional ACE-Step editing model.
+- ✅ **Generate an album of up to 20 songs.** The queue writes missing song details, waits for memory, continues after a failed track, supports cancel/resume, and places completed songs into one editor session without duplicates.
+- ✅ **Editable song plans.** Build section-by-section plans for providers that support them, including style, duration and lyrics per section, with live cost estimates.
+- ◇ **Fully local generation.** ACE-Step 1.5 and the Ollama lyrics writer run on this computer after the models are installed; the XL model is available as a higher-quality option.
+- △ **Optional online generators.** ElevenLabs Music, fal.ai models and Google Lyria use the user’s own key, remain off by default, show an estimate first, and upload source audio only after explicit consent. These provider paths are contract-tested; see the limitations below for live-request coverage.
+
+### Split, transcribe and understand a song
+
+- ✅ **Separate 2 or 4 classic stems:** vocals/instrumental, or vocals, drums, bass and other.
+- ✅ **Separate 6 musical stems:** vocals, drums, bass, guitar, piano and other.
+- ✅ **Reach up to 12 named stems:** lead vocal, backing vocals, kick, snare, toms, hi-hat, ride, crash, bass, guitar, piano and other. A real 45-second Windows/NVIDIA split completed in about 20 seconds in the recorded verification pass.
+- ✅ **Split only the part you need.** Run drum-kit separation on a drum stem or lead/backing separation on a vocal stem.
+- ✅ **Convert audio melody to MIDI notes.** The fallback transcriber is verified on monophonic melodies, including pitch and onset accuracy and clean failure on silence.
+- ✅ **Detect song structure.** Find section boundaries and label repeated sections alike, then repeat or remove a section as a block.
+- ✅ **Detect and match tempo and key.** Analysis is half/double-time aware, chooses the smallest useful pitch interval, and can match one clip to project settings or another clip.
+- ✅ **Describe musical style locally.** When Ollama is available, the app adds genre, instrumentation, mood and production language while retaining the measurement-based description beside it.
+
+### Compose, perform and create notation
+
+- ✅ **Piano-roll basics.** Add notes by pointer or keyboard, select/delete groups, copy and paste, and switch between melodic and named drum-kit lanes.
+- ◻️ **Detailed piano-roll editing.** Moving/resizing note groups, velocity editing, transpose and quantise are implemented; not every interaction has been hand-exercised across browsers.
+- ✅ **MIDI file import and export.** Round trips preserve notes and timing, and imported clips become editable instrument tracks.
+- ✅ **Live MIDI and computer-keyboard playing.** Velocity, sustain pedal, pitch bend and note recording feed the selected built-in synth or plugin instrument.
+- ✅ **On-screen piano.** Mouse, touch and computer keys play the same live path used by a hardware MIDI keyboard.
+- ✅ **Built-in synthesizer.** Three oscillators, unison, FM, noise, 12/24 dB filters with drive, two envelopes, two tempo-synced LFOs, an eight-route modulation matrix, mono glide and 17 levelled presets.
+- ✅ **Drum kit.** Program drum hits in the piano roll and render them into playback and exports.
+- ✅ **Sheet music from MIDI.** Grand staff, key signatures, chords, rests, ties, triplet eighths, compound 6/8–12/8 metres and plain 5/8 or 7/8 grouping.
+- ✅ **Print or export notation to PDF.** A4 and US Letter layouts include title blocks, page numbers, line/page-break ties and multi-page scores.
+- ◇ **VST3 and Audio Unit instruments.** Render a MIDI clip through an installed plugin in an isolated worker, save its state and open its native editor window.
+- ◇ **Surge XT in one click.** Browse roughly 3,000 sounds, audition and favourite them, play live, use Surge’s native interface, and exchange portable `.mssound` files.
+
+### Edit and arrange without damaging originals
+
+- ✅ **Non-destructive multitrack sessions.** Originals remain unchanged; processed takes become new assets and every timeline edit can be undone.
+- ✅ **Move, trim, split, duplicate and reverse clips.** Use snapping, a playhead, range selections and keyboard shortcuts.
+- ✅ **Fades and automatic crossfades.** Linear, equal-power and S-curve fades are available; overlapping clips can crossfade automatically.
+- ✅ **Ripple delete and section editing.** Delete a time range across tracks, repeat named sections, or cut a section out as a block.
+- ✅ **Time-stretch without changing pitch and pitch-shift without changing duration.** Explicit API tests measure both behaviours.
+- ✅ **Warp marked moments and quantise drifting beats.** Verification moved beats from a 62 ms worst error to about 3 ms.
+- ✅ **Markers and loop playback.** Add, drag, snap and jump between markers; loop a selected range during review or recording.
+- ✅ **Recording and take lanes.** Free recording, punch-in and loop recording create aligned takes that can be comped without deleting alternatives.
+- ✅ **Autosave and reload.** Projects restore clips, effects, automation, markers, plugin state and view state.
+
+### Repair difficult recordings
+
+- ✅ **Noise reduction** with an optional learned noise print or FFT fallback.
+- ✅ **DeClick** for impulses while leaving clean audio effectively unchanged.
+- ✅ **DeHum** for 50 Hz or 60 Hz mains hum and harmonics.
+- ✅ **DeClip** to rebuild flattened peaks while avoiding changes to unclipped material.
+- ✅ **DeReverb** to shorten excessive room tails.
+- ✅ **Spectral repair.** Select a time/frequency box and attenuate it or heal it from surrounding audio; processing stays inside the selection.
+- ✅ **Loudness normalisation** with a true-peak ceiling and clean handling of silence.
+- ✅ **Batch processing and favourites.** Run the same repair on selected clips and save reusable processing chains.
+
+### Mix, shape voices and master
+
+- ✅ **Per-track processing:** EQ, gate, distortion, compressor, delay and reverb.
+- ✅ **Sends and core automation.** Reverb sends, volume automation and automatic crossfades were measured through rendered output.
+- ◻️ **Full bus and automation surface.** Group buses plus pan, EQ, compressor, delay and reverb automation are implemented; every route and slider has not been hand-exercised.
+- ✅ **Voice effects:** pitch shift, robot ring modulation, megaphone distortion, synth voice and a vocoder that can follow the singer, hold one note or follow MIDI notes/chords.
+- ✅ **Live metering:** track/master levels, integrated/short-term/momentary loudness, true peak, stereo correlation, phase scope and live spectrum.
+- ✅ **True-peak limiting.** A measured verification held a heavily driven mix near a −1.0 dBTP ceiling.
+- ✅ **Explainable mastering.** Source-aware preflight chooses safe settings; each EQ, de-essing, compression, limiting and refinement stage reports progress and reasoning.
+- ◇ **Internal, FFmpeg, Pedalboard and Matchering paths** with graceful fallback when optional libraries are absent; Pedalboard and Matchering require their optional packages.
+- ✅ **Reference-aware mastering** plus target LUFS, true peak, input gain, stereo width, bass mono and refinement controls.
+- ✅ **Regression guard.** A candidate master is rejected if it materially worsens harshness, clipping, true-peak risk or mono compatibility, even when its aggregate score rises.
+
+### Analyse, visualise and map sound
+
+- ✅ **Broadcast and mastering measurements:** LUFS, true peak, sample peak, LRA, crest factor, dynamic range, noise floor, peak-to-noise, stereo correlation, phase and frequency range.
+- ✅ **File intelligence:** container, codec, bitrate, sample rate, channels, duration, tags and likely lossy/transcoded cut-offs.
+- ✅ **Actionable issue markers:** clipping, harshness, sub-bass weight, stereo/mono concerns and other detected regions tied to exact times.
+- ✅ **Eleven interactive review charts:** waveform, envelope, loudness, spectrum, stereo views, vectorscope and multiple spectrograms.
+- ✅ **Real-time Visual AI:** 60 FPS Spectrum, Orbit and Waveform modes driven by the browser audio analyser.
+- ✅ **3D Song Geometry Mapper:** spectral points, tempo/key confidence, repeat detection, seekable waveform, structure arcs, multiple coordinate mappings, time fog, trails, overlays, presets and exports.
+- ✅ **Refuse false precision.** Unsupported noise-floor, tempo, key and band-limit conclusions show N/A or “unclear” with the reason instead of inventing a number.
+
+### Export, connect and stay in control
+
+- ✅ **Export a mix, highlighted range or every track** as WAV (24-bit or 32-bit float), FLAC or MP3, including effect tails and instrument tracks.
+- ✅ **Export analysis** as JSON, HTML and PDF and export chart images where the platform’s rendering dependencies are available.
+- ✅ **Move songs between workspaces.** Send a song among Analysis, AI Song Studio and Studio Editor, add it to a new or existing session, split it on arrival, and never replace existing work.
+- ✅ **Guarded local MCP server.** Status and analysis tools are read-only by default; queueing requires an explicit environment opt-in, IDs are validated and filesystem paths are removed from context.
+- ✅ **Safe in-app updates.** Only the official repository and `main` branch are accepted; updates are fast-forward-only and refuse dirty or diverged trees.
+- ✅ **Local-first security.** Services bind to loopback, secrets are write-only and stored in the OS keychain or an owner-only fallback file, downloads use host allowlists, and network plugins/providers are opt-in.
+
+### Known limits and verification gaps
+
+- ⚠️ **Audio-to-MIDI is monophonic today.** Single-note melodies are verified; chords/polyphonic transcription are not reliable because Basic Pitch is not currently compatible with this dependency stack.
+- ⚠️ **Stem count is not the same as guaranteed isolation quality.** The 12-stem path and a real GPU split are verified, but lead-versus-backing-vocal quality still needs broader testing on vocal-heavy material.
+- ⚠️ **Paid cloud generation has limited live coverage.** ElevenLabs, fal.ai and Lyria safety, validation, polling, download and import paths are contract-tested; real paid requests were not run in the recorded verification pass.
+- ⚠️ **ComfyUI “Generate a part” is stand-in tested.** Its workflow and failure handling are covered, but the recorded pass did not use a real ComfyUI installation.
+- ⚠️ **Listening quality remains subjective.** DSP operations are signal-tested and AI edits were run end to end, but every effect, separator, generator and restoration strength has not been critically auditioned on a broad music library.
+- ⚠️ **Browser and hardware coverage is not exhaustive.** Chromium is the primary verified browser. Firefox/Safari Web MIDI, AudioWorklet and third-party plugin behaviour need more hand testing; microphone recording used generated input in the recorded timing checks.
+- ⚠️ **Plugin compatibility varies.** Surge XT and selected effect paths are verified, but arbitrary VST3, Audio Unit and Web Audio Module plugins can still reject a host, fail to restore state or omit offline export support.
+- ⚠️ **Notation is intentionally focused.** It is one voice per staff and supports the documented triplets/metres; advanced tuplets, engraving-level manual layout and selectable vector notes in exported PDFs are not implemented.
+- ⚠️ **Platform coverage differs.** Windows 11 and current macOS have the strongest recorded checks. Linux and some older GPU/driver combinations remain less tested.
+
+Detailed evidence and the hand-test log live in [Studio Editor roadmap](docs/EDITOR_ROADMAP.md), [AI generation roadmap](docs/GENERATION_ROADMAP.md), and [current functionality](docs/CURRENT_FUNCTIONALITY_AND_SAFE_UPGRADES.md).
+
+**Current verification gate (2026-11-18):** 481 backend tests passed with 1 platform-dependent skip; all 20 Song Geometry Mapper tests passed; Ruff, TypeScript, ESLint and the production build passed; and the production dependency audit reported no known vulnerabilities.
 
 ---
 
@@ -188,8 +308,8 @@ Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (ab
 - Python 3.12 or newer (librosa 1.0 and numpy 2.5 need it). The installer sets up 3.12 when it finds nothing newer, and recreates a virtual environment built on an older Python
 - Node.js 22.13 or newer; the current LTS is recommended, and the installer replaces older versions
 - pnpm (recommended) or npm
-- FFmpeg and ffprobe on `PATH`
-- Git for in-app updates
+- FFmpeg and ffprobe (the Windows installer downloads a private, checksum-verified copy when needed)
+- Git for in-app updates (the Windows installer can use a private, checksum-verified portable copy)
 - Optional: ComfyUI with a compatible Torch/CUDA environment (for music generation)
 - Optional: AI stem separation from *Models & engines* (about 3 GB with NVIDIA GPU support, plus 2.2 GB of models)
 - Optional, for AI Song Studio: about 6 GB of free disk, CMake and a C++ compiler (the installer adds CMake through Homebrew or winget), and Ollama for the best lyrics
@@ -200,15 +320,36 @@ Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (ab
 
 ### Windows
 
-Double-click `install.bat`, then `start.bat`. Stop it with `stop.bat`.
+No programming experience is needed.
+
+1. Use the direct **[Download Music Suite for Windows](https://github.com/GeekatplayStudio/music-suite/archive/refs/heads/main.zip)** link. Open the downloaded ZIP and select **Extract all**. Do not run the installer from inside the ZIP.
+2. Open the extracted `music-suite` folder and double-click **`install.bat`**. Keep the black installer window open. If Windows SmartScreen appears, select **More info**, confirm the publisher/source, then **Run anyway**.
+3. Choose the installation you want when this question appears:
+   - Press **Enter** (or type `n`) for the standard app. You can add AI features later from **Models & engines**.
+   - Type **`y`** and press **Enter** for a complete installation. This installs all required libraries, every local AI model, AI stem separation, the lyrics model, and Surge XT. Allow roughly 30 GB of downloads, at least 45 GB of free disk space, and plenty of time on a slower connection.
+
+<img src="docs/images/install-windows-choice.png" alt="Windows installer asking whether to perform a complete installation" width="900">
+
+The installer checks Python, FFmpeg, Node.js, Git, the Python libraries, and the web libraries. Missing tools are installed automatically. If Windows Package Manager (`winget`) is absent or broken, the core installer safely falls back to official downloads: checksum-verified portable FFmpeg, Node.js and Git packages, plus the digitally signed Python installer. A complete installation also adds Ollama, CMake, and Microsoft C++ build tools when needed. It is safe to run `install.bat` again: already-installed tools and models are detected and reused.
+
+4. Wait for the green **Music Suite is installed!** message. If one optional model could not download, the message tells you where to retry it inside the app.
+5. Double-click **`start.bat`**. Your browser opens Music Suite. Keep its command window open while using the app.
+6. To close Music Suite, double-click **`stop.bat`**.
+
+<img src="docs/images/install-windows-complete.png" alt="Successful Music Suite Windows installation and instruction to double-click start.bat" width="900">
+
+If installation stops with an error, leave the folder where it is, check the internet connection and free disk space, then double-click `install.bat` again. Downloads that support resuming continue from their partial files. See the illustrated [Windows installation and troubleshooting guide](docs/WINDOWS_INSTALL_GUIDE.md), also available [in Russian](docs/WINDOWS_INSTALL_GUIDE_RU.md).
 
 The `.bat` files call the unified PowerShell implementation. Advanced flags stay available:
 
 ```powershell
+.\install.ps1 -FullInstall
 .\install.ps1 -WithGpu
 .\install.ps1 -WithPro
 .\install.ps1 -ComfyUIPath "D:\ComfyUI" -InstallComfyDependencies
 ```
+
+For an unattended complete install, use `MUSIC_SUITE_INSTALL_ALL=1` or pass `-FullInstall`. Set `MUSIC_SUITE_INSTALL_ALL=0` to skip the question and install only the standard app.
 
 ### macOS
 
@@ -408,7 +549,7 @@ Further reading: [Help guide](docs/HELP_GUIDE.md) · [Studio Editor roadmap](doc
 ### Credits and license
 
 **Geekatplay Studio Music Suite**<br>
-Created and maintained by **Vladimir Chopine**<br>
+Created and maintained by Geekatplay Studio<br>
 Copyright © 2026 Geekatplay Studio
 
 Released under the [MIT License](LICENSE).

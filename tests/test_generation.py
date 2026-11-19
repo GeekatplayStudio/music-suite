@@ -1347,7 +1347,7 @@ def test_extend_before_the_start_is_matched_on_the_original_part() -> None:
 def test_new_audio_is_brought_to_the_source_loudness() -> None:
     source = _source()
     result = _source() * 0.2
-    matched, info = acestep_provider._match_level("cover", {}, source, SR, result, SR)
+    _matched, info = acestep_provider._match_level("cover", {}, source, SR, result, SR)
     assert info["output_lufs"] == pytest.approx(info["matched_lufs"], abs=0.3)
 
 
@@ -1384,9 +1384,9 @@ def test_an_edit_job_sends_the_clip_and_keeps_its_level(
     ).json()
     sent: dict[str, Any] = {}
 
-    def fake_job(self, base, path, body, ctx, low, high, expected, detail, files=None):  # noqa: ANN001
+    def fake_job(self, base, path, body, ctx, low, high, expected, detail, files=None):
         sent.update(path=path, body=body, files=sorted(files or {}))
-        staged, rate = sf.read(str(files["audio"]), dtype="float32")
+        staged, _rate = sf.read(str(files["audio"]), dtype="float32")
         sent["subtype"] = sf.info(str(files["audio"])).subtype
         out = staged.copy()
         out[2 * SR : 4 * SR] *= 0.1
@@ -1510,6 +1510,29 @@ def test_installer_fetches_the_editing_model_on_yes(installed_engine, monkeypatc
     assert installed_engine == ["editing"]
     assert setup.main(["--yes"]) == 0  # --yes includes it without asking.
     assert installed_engine == ["editing", "editing"]
+
+
+def test_installer_can_fetch_the_quality_model_from_the_command_line(
+    installed_engine, monkeypatch
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(setup, "quality_ready", lambda: False)
+    monkeypatch.setattr(setup, "install_quality", lambda _report: calls.append("quality"))
+    assert setup.main(["--quality"]) == 0
+    assert calls == ["quality"]
+
+
+def test_complete_reinstall_still_checks_the_lyrics_model(installed_engine, monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(setup, "pull_writer_model", lambda _report: calls.append("writer") or True)
+    assert setup.main(["--writer"]) == 0
+    assert calls == ["writer"]
+
+
+def test_required_lyrics_model_fails_when_ollama_is_missing(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(setup, "pull_writer_model", lambda _report: False)
+    assert setup.main(["--writer-only"]) == 1
+    assert "not installed" in capsys.readouterr().err
 
 
 # --------------------------------------------------------------------------- phase G3: plans, edits, cost
