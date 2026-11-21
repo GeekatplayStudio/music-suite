@@ -285,8 +285,8 @@ export function ReampPanel({
           <div className="space-y-2 rounded-lg bg-black/30 p-2">
             <p className="font-semibold text-slate-200">4. Record a pass</p>
             <p className="leading-snug text-slate-400">
-              Choose the voice <strong className="text-slate-200">by hand on the keyboard</strong> first. Program change does not pick
-              its tones, so nothing of the sort is sent. One part per pass.
+              Choose the voice <strong className="text-slate-200">on the keyboard</strong> first; this panel leaves its sound alone. One
+              part per pass. The wand button next to this one does every part in turn and switches voices for you.
             </p>
             {tracks.length ? (
               <label className="block text-slate-400">

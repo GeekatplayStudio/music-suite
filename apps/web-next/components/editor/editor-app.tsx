@@ -23,6 +23,7 @@ import {
   Undo2,
   Upload,
   Sparkles,
+  WandSparkles,
   ZoomIn,
   ZoomOut
 } from "lucide-react";
@@ -36,6 +37,7 @@ import { Piano } from "@/components/synth/piano";
 import { Inspector, type JobEntry } from "@/components/editor/inspector";
 import { MidiControl } from "@/components/editor/midi-control";
 import { PianoRoll } from "@/components/editor/piano-roll";
+import { KeyboardWizard } from "@/components/editor/keyboard-wizard";
 import { ReampPanel } from "@/components/editor/reamp-panel";
 import { SpectralPanel } from "@/components/editor/spectral-panel";
 import { RULER_HEIGHT, Timeline } from "@/components/editor/timeline";
@@ -49,7 +51,7 @@ import { type ProcessStep, favouriteStore } from "@/lib/editor/favourites";
 import { MediaStore } from "@/lib/editor/media";
 import { type MidiEvent, midiHub } from "@/lib/editor/midi";
 import { midiOutHub } from "@/lib/editor/midi-out";
-import { MidiPassDriver, trackNotes } from "@/lib/editor/reamp";
+import { MidiPassDriver, capVoices, trackNotes } from "@/lib/editor/reamp";
 import { type MidiOutTrack, parseMidi, writeMidi, writeMidiFile } from "@/lib/editor/smf";
 import { gmPatch } from "@/lib/editor/gm";
 import { watchSoundFont } from "@/lib/editor/soundfont";
@@ -598,6 +600,7 @@ export function EditorApp({
   /** The pass currently playing a part out to a hardware keyboard, if any. */
   const reampRef = useRef<{ driver: MidiPassDriver; sourceName: string } | null>(null);
   const [reampRunning, setReampRunning] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
 
   const stateRef = useRef(state);
   const aliveRef = useRef(true);
@@ -828,6 +831,7 @@ export function EditorApp({
         .map((track) => ({
           id: track.id,
           name: track.name,
+          drums: track.synth.kind === "drums",
           noteCount: state.clips.reduce(
             (total, clip) => (clip.trackId === track.id && clip.notes ? total + clip.notes.length : total),
             0
@@ -1542,11 +1546,22 @@ export function EditorApp({
    * it matters, and stops itself once the part has finished. What comes back is shifted
    * earlier by the measured round trip, so it lands where the notes were.
    */
-  const startReampPass = async ({ trackId, deviceId, latency }: { trackId: string; deviceId: string; latency: number }) => {
+  const startReampPass = async ({
+    trackId,
+    deviceId,
+    latency,
+    maxVoices = 0
+  }: {
+    trackId: string;
+    deviceId: string;
+    latency: number;
+    /** At most this many notes at once; 0 sends the part as written. */
+    maxVoices?: number;
+  }) => {
     if (engine.isRecording() || reampRef.current) return;
     const current = stateRef.current;
     const source = current.tracks.find((track) => track.id === trackId);
-    const notes = trackNotes(current, trackId);
+    const notes = capVoices(trackNotes(current, trackId), maxVoices);
     if (!source || !notes.length) {
       setNotice("That part has no notes to play out.");
       return;
@@ -1568,6 +1583,55 @@ export function EditorApp({
     setRecording(true);
     setReampRunning(true);
     setNotice(`Playing ${source.name} out to the keyboard. It stops on its own at the end of the part.`);
+  };
+
+  /** Wizard: put a song file on the timeline. Returns its clip, or null when it could not be read. */
+  const wizardImport = async (file: File): Promise<string | null> => {
+    const before = new Set(stateRef.current.clips.map((clip) => clip.id));
+    await importFiles([file], 0, null);
+    await delay(50);
+    return stateRef.current.clips.find((clip) => !before.has(clip.id) && !clip.notes)?.id ?? null;
+  };
+
+  /**
+   * Wizard: split the song into audio stems and write each part's notes, with the settings
+   * that measured best: the most stems this machine can make, and the stems method for notes.
+   */
+  const wizardPrepare = async (clipId: string): Promise<boolean> => {
+    const clip = stateRef.current.clips.find((c) => c.id === clipId);
+    if (!clip) return false;
+    const stems = Math.max(...(capabilities?.separation.stem_options ?? [4]));
+    const split = await runJob("separate", { stems }, `Splitting ${clip.name} into ${stems} stems`, [clipId]);
+    if (!split) return false;
+    await delay(120);
+    return runJob("song_to_midi", { engine: "stems" }, `Writing the notes of ${clip.name}`, [clipId]);
+  };
+
+  /**
+   * Wizard: leave the finished song playing. The note tracks fall silent, and so does the
+   * original stem of every part the keyboard replaced; the stems it did not replace stay.
+   */
+  const wizardFinish = (recorded: string[]) => {
+    const current = stateRef.current;
+    const partName = (name: string) => name.replace(/ \(MIDI\)$/, "").trim().toLowerCase();
+    const replaced = new Set(
+      current.tracks.filter((track) => recorded.includes(track.id)).map((track) => partName(track.name))
+    );
+    // The stems are named by the separator and the note tracks by the transcriber.
+    if (replaced.has("other instruments")) replaced.add("other");
+    if (replaced.has("instruments")) replaced.add("instrumental");
+    const withNotes = new Set(current.clips.filter((clip) => clip.notes).map((clip) => clip.trackId));
+    commit({
+      ...current,
+      tracks: current.tracks.map((track) => {
+        if (withNotes.has(track.id)) return { ...track, mute: true };
+        // "Instruments" is what a two-stem split calls everything that is not the voice.
+        const stem = track.name.trim().toLowerCase();
+        const kitPiece = ["kick", "snare", "toms", "hi-hat", "ride", "crash"].includes(stem) && replaced.has("drums");
+        return replaced.has(stem) || kitPiece ? { ...track, mute: true } : track;
+      })
+    });
+    engine.seek(0);
   };
 
   const onRecordingEnded = useEffectEvent(() => void stopRecording());
@@ -2020,6 +2084,13 @@ export function EditorApp({
             recordsNotes={recordsNotes}
             onAddInstrument={addInstrumentTrack}
           />
+          <IconButton
+            label="Keyboard wizard: song in, keyboard voices out, step by step"
+            active={showWizard}
+            onClick={() => setShowWizard(true)}
+          >
+            <WandSparkles className="h-4 w-4" />
+          </IconButton>
           <ReampPanel
             engine={engine}
             tracks={reampTracks}
@@ -2573,6 +2644,29 @@ export function EditorApp({
             </dl>
           </div>
         </div>
+      ) : null}
+      {showWizard ? (
+        <KeyboardWizard
+          engine={engine}
+          songs={state.clips.filter((clip) => !clip.notes && clip.duration > 20).map((clip) => ({ clipId: clip.id, name: clip.name }))}
+          parts={reampTracks}
+          progress={
+            jobs.find((entry) => entry.job.status === "queued" || entry.job.status === "running")
+              ? (() => {
+                  const entry = jobs.find((j) => j.job.status === "queued" || j.job.status === "running")!;
+                  return { title: entry.title, fraction: entry.job.progress, detail: entry.job.detail || entry.job.stage };
+                })()
+              : null
+          }
+          passRunning={reampRunning}
+          editorBusy={working !== null}
+          onClose={() => setShowWizard(false)}
+          onImport={wizardImport}
+          onPrepare={wizardPrepare}
+          onStartPass={(options) => void startReampPass(options)}
+          onStopPass={() => void stopRecording()}
+          onFinish={wizardFinish}
+        />
       ) : null}
     </main>
   );

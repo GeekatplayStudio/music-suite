@@ -13,10 +13,13 @@
  *
  * * It answers on **MIDI channel 4 and nothing else**, so it plays one part at a time. A
  *   multi-track song has to go over in one pass per part.
- * * **Program change and bank select do not pick its tones.** Every program from 0 to 127,
- *   under every bank tried, produced the same sound, and the first program change moved it
- *   off the tone chosen on the panel. So nothing of the sort is ever sent from here: the
- *   voice is the one selected by hand on the instrument.
+ * * **Its tones are chosen with bank select and program change**, but only from Roland's own
+ *   banks: MSB 71 with LSB 96-99, MSB 87 with LSB 85-91, and MSB 86 LSB 65 for drum kits.
+ *   Program change alone, or under a bank it does not have, lands on a fallback sound and
+ *   takes it off the tone chosen on the panel, which is why an earlier sweep of the usual
+ *   General MIDI banks looked as though tone selection did nothing.
+ * * Bank 71/99 is not in the published GO:KEYS 3 tone list; on the Minion edition it holds
+ *   a further set of distinct voices.
  * * Velocity and the full 0-127 pitch range do get through.
  */
 
@@ -24,6 +27,29 @@ export interface MidiOutputInfo {
   id: string;
   name: string;
 }
+
+/** A sound on the instrument: bank select MSB and LSB, and the program as its list counts it (1-128). */
+export interface Tone {
+  msb: number;
+  lsb: number;
+  program: number;
+}
+
+/** The banks a GO:KEYS 3 has, in the order of Roland's tone list. */
+export const TONE_BANKS: { label: string; msb: number; lsb: number; programs: number }[] = [
+  { label: "Extra voices (71/99)", msb: 71, lsb: 99, programs: 128 },
+  { label: "Preset A (71/96)", msb: 71, lsb: 96, programs: 128 },
+  { label: "Preset B (71/97)", msb: 71, lsb: 97, programs: 128 },
+  { label: "Preset C (71/98)", msb: 71, lsb: 98, programs: 61 },
+  { label: "Common 1 (87/85)", msb: 87, lsb: 85, programs: 128 },
+  { label: "Common 2 (87/86)", msb: 87, lsb: 86, programs: 128 },
+  { label: "Common 3 (87/87)", msb: 87, lsb: 87, programs: 128 },
+  { label: "Common 4 (87/88)", msb: 87, lsb: 88, programs: 128 },
+  { label: "Common 5 (87/89)", msb: 87, lsb: 89, programs: 128 },
+  { label: "Common 6 (87/90)", msb: 87, lsb: 90, programs: 128 },
+  { label: "Common 7 (87/91)", msb: 87, lsb: 91, programs: 69 },
+  { label: "Drum kits (86/65)", msb: 86, lsb: 65, programs: 74 }
+];
 
 export interface MidiOutStatus {
   state: "idle" | "connecting" | "ready" | "unsupported" | "denied";
@@ -177,6 +203,47 @@ class MidiOutHub {
     const note = Math.min(127, Math.max(0, Math.round(pitch)));
     this.held.get(wire)?.delete(note);
     return this.send([0x80 | wire, note, 0], at);
+  }
+
+  /**
+   * Switch the instrument to a tone: bank select MSB, bank select LSB, then program change,
+   * in that order, on the channel it listens to. The instrument needs a moment afterwards
+   * before notes play in the new sound; callers wait about a third of a second.
+   */
+  selectTone(tone: Tone, channel = this.status.channel): boolean {
+    const wire = (channel - 1) & 0x0f;
+    const program = Math.min(128, Math.max(1, Math.round(tone.program)));
+    return (
+      this.send([0xb0 | wire, 0, tone.msb & 0x7f]) &&
+      this.send([0xb0 | wire, 32, tone.lsb & 0x7f]) &&
+      this.send([0xc0 | wire, program - 1])
+    );
+  }
+
+  /**
+   * Hear about tones chosen on the instrument itself. When its panel sends bank select and
+   * program change, the choice is reported here, so it can be remembered and sent back
+   * later. Instruments that send nothing simply never call back.
+   */
+  watchTones(onTone: (tone: Tone) => void): () => void {
+    const access = this.access;
+    if (!access) return () => undefined;
+    const bank = new Map<number, { msb: number; lsb: number }>();
+    const listener = (event: MIDIMessageEvent) => {
+      const data = event.data;
+      if (!data || data.length < 2) return;
+      const kind = data[0] & 0xf0;
+      const wire = data[0] & 0x0f;
+      const held = bank.get(wire) ?? { msb: 0, lsb: 0 };
+      if (kind === 0xb0 && data[1] === 0) bank.set(wire, { ...held, msb: data[2] });
+      else if (kind === 0xb0 && data[1] === 32) bank.set(wire, { ...held, lsb: data[2] });
+      else if (kind === 0xc0) onTone({ msb: held.msb, lsb: held.lsb, program: data[1] + 1 });
+    };
+    const inputs = [...access.inputs.values()];
+    for (const input of inputs) input.addEventListener("midimessage", listener);
+    return () => {
+      for (const input of inputs) input.removeEventListener("midimessage", listener);
+    };
   }
 
   /**

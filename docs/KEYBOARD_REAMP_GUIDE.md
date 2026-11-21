@@ -20,8 +20,8 @@ shape of the whole workflow, so read them before planning a session.
 | Does USB-C carry MIDI **and** audio? | Yes, both, class compliant. No driver, no audio interface, no cables beyond the one USB-C lead. | Roland's own specification, and confirmed by the ports appearing on this machine. |
 | Which MIDI channel does it play? | **Channel 4, and only channel 4.** | All 16 channels were played in turn and the returning audio measured. Channel 4 gave −22 dBFS; every other channel sat at the −93 dBFS noise floor. |
 | Is it multi-timbral? | **No.** One sound at a time. | Follows from the above: there is no second channel to put a second part on. |
-| Can program change pick its tones? | **No.** | Programs 0–127 were swept, under bank MSB 0/87/92/93/121. Every one produced an identical sound (spectral centroid 1265 Hz, spread 1 Hz across the whole sweep). |
-| Does program change do any harm? | **Yes — avoid it.** The first program change moved the instrument off the tone selected on the panel and it did not come back. | The take before any program change measured a centroid of 2018 Hz; every take after measured 1265 Hz. |
+| Can its sounds be switched over MIDI? | **Yes**, with bank select + program change from Roland's own banks: MSB 71 / LSB 96–99, MSB 87 / LSB 85–91, and 86/65 for drum kits. | Twelve bank/program combinations were sent and each returned a different sound. Bank 71/99, which is not in the published GO:KEYS 3 tone list, returned 36 distinct sounds from programs 1–36. |
+| What about other bank numbers? | They land on a fallback sound and take the keyboard off the voice chosen on the panel. | Programs 0–127 under banks 0, 92, 93 and 121 all returned one identical sound. An earlier version of this guide wrongly concluded from that sweep that tone selection did not work at all. |
 | Does velocity get through? | Yes, and it changes tone as well as level: 21.9 dB between velocity 20 and 127. | Four velocities played and measured. |
 | What pitch range plays? | At least MIDI 24–108, wider than the 61 physical keys. | Each pitch played and measured. |
 | How tight is the timing? | Within about 8 ms over a 1.5-second phrase. | A four-note phrase was played out and each note's own fundamental tracked in the returning audio. |
@@ -30,9 +30,26 @@ shape of the whole workflow, so read them before planning a session.
 
 1. **One part per pass.** The keyboard plays one sound at a time, so a four-stem song is
    four separate passes, not one.
-2. **Choose the voice by hand.** The Minion buttons are the only way in. The app
-   deliberately sends no program change, because doing so would knock the instrument off
-   the voice you just selected.
+2. **The app can switch the voice between passes**, as long as it sends bank numbers the
+   keyboard has. Which program in which bank is which Minion voice is found by ear: the
+   wizard steps through them with arrow buttons and plays each one.
+
+## The quick way: the wizard
+
+Press the **wand** button in the editor toolbar. It walks through everything below:
+
+1. **Song** — load a file, or pick one on the timeline. It is split into stems and each
+   stem is written out as notes, with the settings that measured best.
+2. **Keyboard** — one button connects MIDI, finds the audio input and measures the delay.
+3. **Voices** — tick the parts to replace and give each a voice: step through the
+   keyboard's sounds with the arrows, or click a part and press a sound button on the
+   keyboard. Melody parts are sent one note at a time, chordal parts three.
+4. **Record** — every ticked part is played and recorded in turn, the voice switched
+   before each.
+5. **Done** — the takes are on their own tracks in time; the note tracks and the stems
+   they replaced are muted; everything else still plays.
+
+The rest of this guide is the same trip by hand.
 
 ---
 
@@ -95,9 +112,9 @@ Then, before sending anything out:
 
 For **each** part you want in a Minion voice:
 
-1. **Select the Minion voice on the keyboard by hand** — the dedicated buttons, 32
-   variations of Bob, Kevin and Stuart. Play a few keys to be sure it is the one you want.
-   The app will not change it, and must not.
+1. **Select the Minion voice on the keyboard** — the dedicated buttons, 32 variations of
+   Bob, Kevin and Stuart. Play a few keys to be sure it is the one you want. The cable
+   panel leaves the sound alone; the wizard can switch it for you.
 2. Open the **cable panel**, section **4. Record a pass**.
 3. Choose the part in **Part to play out**. The list shows only tracks that have notes, with
    how many.
@@ -147,7 +164,7 @@ the original:
 | *Test in* is silent | A microphone is selected instead of **Line (Roland Digital Piano)**. |
 | "Nothing came back" when measuring | The keyboard is off, muted, or the MIDI port and audio input belong to different devices. |
 | The take is late or early | Measure the delay again. It changes if you switch audio device or the system changes buffer size. |
-| The take sounds like a piano, not a Minion | A program change reached the instrument and moved it off the panel voice. Re-select the Minion voice by hand. The app sends none, so check nothing else is driving the keyboard. |
+| The take sounds like a piano, not a Minion | A program change under a bank the keyboard does not have moved it to its fallback sound. Re-select the voice, on the keyboard or in the wizard. |
 | Notes play but the wrong ones | The transcription is wrong, not the keyboard. Fix it in the piano roll. |
 | The take is distorted | Keyboard volume too high into the USB input. Bring it down to about three-quarters and measure again. |
 | Only the first note of a chord sounds | Expected on a monophonic voice. Some character voices are one-note-at-a-time. |

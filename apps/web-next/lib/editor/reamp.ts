@@ -233,3 +233,30 @@ export class MidiPassDriver {
     return this.from;
   }
 }
+
+/**
+ * A part thinned to at most `voices` notes at once, keeping the louder ones.
+ *
+ * A transcribed accompaniment can hold a dozen notes a second. A software synth copes; a
+ * character voice on a keyboard turns that into a blur. When a new note would exceed the
+ * limit it replaces the quietest one sounding if it is louder, and is left out otherwise.
+ */
+export function capVoices(notes: Note[], voices: number): Note[] {
+  if (voices <= 0) return notes;
+  const kept: Note[] = [];
+  let sounding: Note[] = [];
+  for (const source of [...notes].sort((a, b) => a.t - b.t || b.v - a.v)) {
+    const note = { ...source };
+    sounding = sounding.filter((other) => other.t + other.d > note.t + 0.005);
+    if (sounding.length >= voices) {
+      const quietest = sounding.reduce((low, other) => (other.v < low.v ? other : low));
+      if (quietest.v >= note.v) continue;
+      // The quieter note gives way: it ends where the louder one begins.
+      quietest.d = Math.max(0.02, note.t - quietest.t);
+      sounding = sounding.filter((other) => other !== quietest);
+    }
+    sounding.push(note);
+    kept.push(note);
+  }
+  return kept;
+}
