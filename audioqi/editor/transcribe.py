@@ -325,6 +325,60 @@ def single_line(audio: np.ndarray, sample_rate: int) -> Notes:
     return line
 
 
+#: A note quieter than this, relative to the loudest pitch sounding with it, is not counted
+#: as heard in the recording.
+HEARD_DB = 30.0
+
+
+def heard_notes(notes: Notes, audio: np.ndarray, sample_rate: int) -> Notes:
+    """Only the notes that can actually be heard in the audio they were written from.
+
+    A transcriber reports what it believes, and some of what it believes is not there:
+    measured on a real song, a quarter to a third of the notes it wrote for a busy stem
+    were at pitches with nothing sounding. So each note is checked against the stem's own
+    spectrum, and kept only when its pitch is a peak while it sounds: louder than the
+    semitone either side, and not far below the loudest pitch at that moment.
+    """
+    if not notes:
+        return notes
+    import librosa
+
+    rate, hop, lowest = 22_050, 256, 21
+    mono = audio.mean(axis=1) if audio.ndim == 2 else audio
+    mono = librosa.resample(mono.astype(np.float32), orig_sr=sample_rate, target_sr=rate)
+    spectrum = np.abs(
+        librosa.cqt(
+            mono,
+            sr=rate,
+            hop_length=hop,
+            fmin=float(librosa.midi_to_hz(lowest)),
+            n_bins=88,
+            bins_per_octave=12,
+        )
+    )
+    level = librosa.amplitude_to_db(spectrum, ref=np.max)
+    per_second = rate / hop
+    kept: Notes = []
+    for note in notes:
+        row = round(note["p"]) - lowest
+        if row < 1 or row >= level.shape[0] - 1:
+            # Outside what the spectrum covers: nothing to check it against.
+            kept.append(note)
+            continue
+        first = int((note["t"] + 0.02) * per_second)
+        last = int((note["t"] + min(max(note["d"], 0.08), 0.35)) * per_second) + 1
+        if first >= level.shape[1]:
+            continue
+        column = level[:, first:last].mean(axis=1)
+        if (
+            column[row] >= column[row - 1]
+            and column[row] >= column[row + 1]
+            and column[row] > float(column.max()) - HEARD_DB
+        ):
+            kept.append(note)
+    return kept
+
+
 def transcribe_pitched(audio: np.ndarray, sample_rate: int, kind: str) -> tuple[Notes, str]:
     """Run the best installed engine for one kind of part, falling back when one fails."""
     chain: list[tuple[str, Callable[[np.ndarray, int], Notes]]] = []
@@ -587,6 +641,11 @@ def whole_mix_part(group: str) -> tuple[str, int]:
 WHOLE_MIX_SIZES = ("small", "medium", "large")
 WHOLE_MIX_SIZE_ENV = "MUSIC_SUITE_MUSCRIPTOR_SIZE"
 ENGINES = ("auto", "stems", "muscriptor")
+#: Whether "auto" reaches for the whole-mix model when it is installed. It does not:
+#: measured on a real song against the recording itself, 66 to 87 percent of the notes the
+#: stems method wrote were audibly there, against 43 to 64 percent for the whole-mix model,
+#: which also named instruments the song did not have. It stays available by name.
+AUTO_WHOLE_MIX = False
 WHOLE_MIX_ACCESS = (
     "MuScriptor's model is not available on this computer yet. Its weights are for "
     "non-commercial use and need a free Hugging Face account: accept the terms at "
@@ -831,9 +890,8 @@ def song_to_midi(
 ) -> dict[str, Any]:
     """A recording as one track of notes per instrument.
 
-    ``engine`` "auto" uses the whole-mix model when it is installed and its weights can be
-    had, and otherwise splits the song into stems and transcribes each. "stems" and
-    "muscriptor" insist on one or the other.
+    ``engine`` "auto" and "stems" split the song into stems and transcribe each, checking
+    every note against the stem it came from. "muscriptor" asks for the whole-mix model.
     """
     if engine not in ENGINES:
         raise EditorError("Engine must be auto, stems or muscriptor.")
@@ -844,7 +902,7 @@ def song_to_midi(
     if engine == "muscriptor" and status != "ready":
         raise EditorError(WHOLE_MIX_ACCESS, 409)
     problem: str | None = None
-    if engine != "stems" and status == "ready":
+    if status == "ready" and (engine == "muscriptor" or (engine == "auto" and AUTO_WHOLE_MIX)):
         try:
             return _whole_mix_song(audio, sample_rate, report, snap)
         except NoNotesError:
@@ -915,6 +973,7 @@ def _stems_song(
         notes, engine = transcribe_pitched(pitched[name], sample_rate, kind)
         low, high = RANGES.get(name, (0, 127))
         notes = [note for note in notes if low <= note["p"] <= high]
+        notes = heard_notes(notes, pitched[name], sample_rate)
         if key is not None and key_trusted:
             notes = keep_in_key(notes, key[0], key[1])
         notes = _tidy(notes, seconds)

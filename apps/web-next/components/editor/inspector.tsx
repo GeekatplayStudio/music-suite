@@ -1014,7 +1014,7 @@ export function Inspector(props: InspectorProps) {
                   disabled={busy}
                   onChange={(event) => setMidiEngine(event.target.value as typeof midiEngine)}
                 >
-                  <option value="auto">Best available (MuScriptor)</option>
+                  <option value="auto">Best available (stems, every note checked against the audio)</option>
                   <option value="muscriptor">MuScriptor: one model hears the whole mix</option>
                   <option value="stems">Stems: split first, then a model per instrument</option>
                 </select>

@@ -229,8 +229,18 @@ def _fake_song(monkeypatch: pytest.MonkeyPatch, stems: dict[str, np.ndarray]) ->
     monkeypatch.setattr(analysis, "analyze", lambda _audio, _sr: {"beats": [], "key_label": None})
     monkeypatch.setattr(separation, "separate", separate)
     monkeypatch.setattr(transcribe, "transcribe_pitched", pitched)
+    # The fake transcriber writes pitches that are not in the fake stems; these tests are
+    # about routing, and the check against the audio has its own test below.
+    monkeypatch.setattr(transcribe, "heard_notes", lambda notes, _audio, _sr: notes)
     monkeypatch.setattr(transcribe, "drum_notes", lambda *_a: ([_note(0.5, 36)], "kit pieces"))
     return asked
+
+
+def test_a_note_that_is_not_in_the_audio_is_dropped() -> None:
+    # The recording holds middle C and nothing else.
+    audio = _tone(60, 2.0)
+    written = [_note(0.5, 60), _note(0.5, 66), _note(1.0, 71)]
+    assert [note["p"] for note in transcribe.heard_notes(written, audio, SR)] == [60]
 
 
 def test_a_song_becomes_one_track_per_instrument(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -273,6 +283,8 @@ def test_a_song_becomes_one_track_per_instrument(monkeypatch: pytest.MonkeyPatch
 def _fake_muscriptor(
     monkeypatch: pytest.MonkeyPatch, events: list[Any], refused: tuple[str, ...] = ()
 ) -> list[str]:
+    # These tests are about the whole-mix path, which "auto" takes only when told to.
+    monkeypatch.setattr(transcribe, "AUTO_WHOLE_MIX", True)
     """Stand in for the muscriptor package and for having its weights."""
     import sys
     import types
@@ -455,6 +467,7 @@ def test_the_whole_mix_model_is_optional_and_failure_falls_back_to_stems(
         raise RuntimeError("401 gated repo")
 
     monkeypatch.setattr(transcribe, "whole_mix_tracks", refused_download)
+    monkeypatch.setattr(transcribe, "AUTO_WHOLE_MIX", True)
     result = transcribe.song_to_midi(audio, SR)
     assert result["stems"] == "fake separator" and "MuScriptor" in result["whole_mix_problem"]
     assert transcribe.song_to_midi(audio, SR, engine="stems").get("whole_mix_problem") is None
@@ -545,3 +558,12 @@ def test_the_notes_pack_installs_basic_pitch_without_its_pins(
     assert calls[1][-2:] == ["--no-deps", "basic-pitch==0.4.0"]
     # Both are still held to what is already installed.
     assert all("-c" in command for command in calls)
+
+
+def test_auto_uses_the_stems_method_even_when_the_whole_mix_model_is_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_song(monkeypatch, {"other": _tone(60, 1.0)})
+    monkeypatch.setattr(transcribe, "whole_mix_status", lambda: "ready")
+    monkeypatch.setattr(transcribe, "whole_mix_tracks", lambda *_a: pytest.fail("not asked for"))
+    assert transcribe.song_to_midi(_tone(60, 1.0), SR)["stems"] == "fake separator"
