@@ -425,3 +425,27 @@ def test_ebur128_metrics_agree_with_the_builtin_meter() -> None:
     assert abs(result["integrated_lufs"] - loudness_integrated_lufs(audio, sr)) < 0.5
     assert abs(result["true_peak_dbfs"] - (-12.04)) < 0.3
     assert 0.0 <= result["lra_lu"] < 1.0
+
+
+def test_self_check_reports_a_flattened_loudness_range_as_a_regression() -> None:
+    from audioqi.mastering import _mastering_self_check
+
+    sr = 48000
+    t = np.arange(sr * 12) / sr
+    tone = np.sin(2 * np.pi * 220 * t)
+    # Quiet and loud sections 12 dB apart, every three seconds.
+    level = np.where((t // 3) % 2 == 0, 0.08, 0.32)
+    source = np.stack([tone * level, tone * level], axis=1).astype(np.float32)
+    flattened = np.stack([tone * 0.2, tone * 0.2], axis=1).astype(np.float32)
+
+    cfg = PRESETS["streaming"]
+    check = _mastering_self_check(source, flattened, sr=sr, cfg=cfg, best_output_id="m")
+    assert check["source"]["loudness_range_lu"] > 8
+    assert check["mastered"]["loudness_range_lu"] < 1
+    assert "loudness_range_collapse" in check["worsened"]
+    assert check["assessment"] != "strong_improvement"
+    assert any(fix["issue"] == "loudness_range_collapse" for fix in check["recommended_fixes"])
+
+    # Keeping the range is not flagged.
+    kept = _mastering_self_check(source, source * 1.2, sr=sr, cfg=cfg, best_output_id="m")
+    assert "loudness_range_collapse" not in kept["worsened"]

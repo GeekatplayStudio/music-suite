@@ -21,7 +21,7 @@ $installLogPath = Join-Path $installLogDir "install.log"
 $transcriptStarted = $false
 try {
     New-Item -ItemType Directory -Path $installLogDir -Force | Out-Null
-    Start-Transcript -Path $installLogPath -Append | Out-Null
+    Start-Transcript -Path $installLogPath -Append -ErrorAction Stop | Out-Null
     $transcriptStarted = $true
 } catch {
     Write-Warning "The installer could not create its log file, but installation will continue."
@@ -439,7 +439,11 @@ function Write-Step([string]$Message) {
 
 try {
     # Clearing would erase the explanation start.ps1 just printed about what is missing.
-    if (-not $CoreOnly) { Clear-Host }
+    # Clearing needs a real console window: with the output captured (a pipe, Tee-Object, CI)
+    # PowerShell cannot move the cursor and Clear-Host fails with "CursorPosition".
+    if (-not $CoreOnly -and -not [Console]::IsOutputRedirected) {
+        try { Clear-Host } catch {}
+    }
     Write-Host "============================================================" -ForegroundColor Cyan
     Write-Host "  Geekatplay Studio Music Suite - Windows Installer" -ForegroundColor Cyan
     Write-Host "============================================================" -ForegroundColor Cyan

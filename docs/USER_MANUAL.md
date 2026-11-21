@@ -135,7 +135,7 @@ Masters the song for its destination: sets loudness, controls peaks, balances th
 
 #### Suggested From Analysis
 
-After analysis, this box suggests a mode, preset, loudness and peak ceiling, with the reasons. **Apply Suggested Settings** copies them into the form below (it leaves Input Gain, Bass Mono, Stereo Width and Reference Run ID alone).
+After analysis, this box suggests a mode, preset, loudness and peak ceiling, with the reasons. **Apply Suggested Settings** copies them into the form below (it leaves Input Gain, Bass Mono, Stereo Width and Reference song alone).
 
 How it decides:
 
@@ -150,7 +150,7 @@ How it decides:
 | Preset | streaming, club, film, voice | streaming | The starting point for the chain: compression, de-essing, punch and how far the bass is made mono. See the table below. |
 | Normalization Profile | Off, YouTube, Spotify, Apple Music, Instagram, TikTok, Broadcast EBU, Podcast Voice | Off | Fills Target LUFS and True Peak with that platform's values. |
 | Backend | internal, auto, ffmpeg, pedalboard, matchering | internal | An optional extra processing stage. See [Backends](#backends). |
-| Reference Run ID | another run's ID | empty | With matchering: makes the master sound like that reference song. |
+| Reference song | None, or any other song in Run History | None | With matchering: makes the master sound like that song. |
 | Target LUFS | −30 to −6 | −14 | How loud the master is overall. |
 | True Peak dBFS | −6 to 0 | −1 | The highest peak allowed, including peaks between samples. |
 | Input Gain (dB) | −12 to +12 | 0 | Turns the source up or down before mastering, which changes how hard the chain works. **Reset** returns it to 0. |
@@ -176,15 +176,17 @@ Platform profiles: YouTube, Spotify, Instagram and TikTok −14 LUFS / −1 dBTP
 
 | Backend | What it adds | Needs |
 |---|---|---|
-| internal | Nothing extra: the built-in chain only. The safest and the default. | Nothing |
+| internal | Nothing extra: the built-in chain only. The safest, the fastest and the default. | Nothing |
 | ffmpeg | A second pass of filtering, compression, loudness normalisation and limiting. | ffmpeg (installed) |
 | pedalboard | A second pass of filtering, compression and limiting. | The Pedalboard library |
-| matchering | Matches the tone and loudness of a reference song. | The Matchering library **and** a Reference Run ID |
+| matchering | Matches the tone and loudness of a reference song. | The Matchering library **and** a Reference song |
 | auto | Picks matchering (when available with a reference), else pedalboard, else internal. Never ffmpeg. | |
 
 If a backend is not installed, mastering quietly uses **internal** instead. Check "Backend selected" in the progress box to see what was used, and "Pro modules" to see which are installed.
 
-> **Finding a Run ID for Reference Run ID:** the page shows only the first 8 characters. The full ID is in the address of that run's **JSON**, **HTML** or **PDF** export link: select the reference song, right-click **JSON**, copy the link, and take the long ID from it.
+On a slower computer the extra backends can take several minutes per song, where **internal** takes well under one. The **Active Run** tile shows the song's full run ID with a copy button, if you need it elsewhere.
+
+Only one mastering pass runs per song at a time. Pressing **Run Mastering** again while one is under way says so and changes nothing; wait for it to finish, then run it with the new settings.
 
 #### Running and reading the results
 
@@ -194,7 +196,7 @@ If a backend is not installed, mastering quietly uses **internal** instead. Chec
 - **Source-Aware Adaptation:** what mastering changed before it began, and why. For example, it lowers the peak ceiling for a source that already clips, raises de-essing for a harsh one, or narrows the width when it finds phase problems. Settings you locked (Bass Mono, Stereo Width) are not touched.
 - **Post-Master Self-Check:** measures the master and compares it with the source.
   - *Assessment:* strong improvement, partial improvement, unchanged, or regression.
-  - *Issue score before → after:* lower is better. Each kind of problem adds points (clipping, peak risk, too loud, mono problems 3; harshness, sub-bass, dips, too quiet, too dense 2).
+  - *Issue score before → after:* lower is better. Each kind of problem adds points (clipping, peak risk, too loud, mono problems, flattened loudness range 3; harshness, sub-bass, dips, too quiet, too dense 2). *Flattened loudness range* means the master kept less than half of the song's loudness range: quiet and loud sections ended up at nearly one level.
   - *Compliance: pass* means loudness is within 0.75 LU of the target, peaks are no more than 0.1 dB over the ceiling, there is no clipping, and the music still has punch (enough crest). If the first result fails, up to two stricter attempts are made automatically ("Post-check rescue").
   - *Resolved / Remaining / Worsened:* which problems changed, and *Recommended fixes* for what remains.
 - **Mastered Outputs:** every file made, with its loudness, peak and (V2) score, where lower is better. All are 32-bit float WAV at 48 kHz.

@@ -20,6 +20,8 @@ from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 import numpy as np
 import pytest
@@ -521,7 +523,7 @@ def test_install_checks_every_download_and_places_the_files(tmp_path: Path, monk
     monkeypatch.setattr(instruments, "UNPACK_BYTES", 0)
 
     def fake_fetch(spec, dest, report, span):
-        dest.write_bytes(Path(spec.url.removeprefix("file://")).read_bytes())
+        dest.write_bytes(Path(url2pathname(urlparse(spec.url).path)).read_bytes())
         if hashlib.sha256(dest.read_bytes()).hexdigest() != spec.sha256:
             raise instruments.InstallError("mismatch")
         report(span[1], "ok")

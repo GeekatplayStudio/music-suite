@@ -504,20 +504,10 @@ def _build_charts(
 
 
 def _approx_lra(short_term_lufs: list[float]) -> float:
-    """Loudness range with the EBU Tech 3342 gates.
+    """Loudness range with the EBU Tech 3342 gates; shared with mastering's self-check."""
+    from audioqi.core.metrics import loudness_range_lu
 
-    Values at or below -70 LUFS are dropped, then values more than 20 LU below
-    the energy mean of the rest, so silence and fades cannot stretch the
-    range. The short-term series is sampled more coarsely than the
-    standard's 10 Hz, which keeps this an approximation.
-    """
-    values = np.asarray([v for v in short_term_lufs if np.isfinite(v)], dtype=np.float64)
-    values = values[values > -70.0]
-    if values.size == 0:
-        return 0.0
-    mean_lufs = float(10.0 * np.log10(np.mean(np.power(10.0, values / 10.0))))
-    values = values[values >= mean_lufs - 20.0]
-    return float(np.percentile(values, 95) - np.percentile(values, 10))
+    return loudness_range_lu(short_term_lufs)
 
 
 def _clipping_ratio(audio: np.ndarray, threshold: float = 0.999) -> float:

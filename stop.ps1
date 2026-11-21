@@ -3,9 +3,17 @@ $root = $PSScriptRoot
 $processFile = Join-Path $root ".music-suite-processes.json"
 
 function Get-ListenerProcessId([int]$Port) {
-    foreach ($line in (& netstat.exe -ano -p TCP)) {
-        if ($line -match '^\s*TCP\s+\S+:(\d+)\s+\S+\s+LISTENING\s+(\d+)\s*$' -and [int]$Matches[1] -eq $Port) {
-            return [int]$Matches[2]
+    # Which process listens on a loopback port. Windows' own connection list first: it reads
+    # the same in every language. netstat names the state in the system language (LISTENING
+    # in English, translated elsewhere), so its fallback goes by the remote address instead, which
+    # is 0.0.0.0:0 for a listening socket everywhere.
+    try {
+        $connection = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop | Select-Object -First 1
+        if ($connection) { return [int]$connection.OwningProcess }
+    } catch {}
+    foreach ($line in (& netstat.exe -ano -p TCP 2>$null)) {
+        if ($line -match '^\s*TCP\s+\S+:(\d+)\s+(0\.0\.0\.0:0|\[::\]:0)\s+\S+\s+(\d+)\s*$' -and [int]$Matches[1] -eq $Port) {
+            return [int]$Matches[3]
         }
     }
     return $null

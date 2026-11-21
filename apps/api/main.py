@@ -633,6 +633,16 @@ def download_converted_file(run_id: str, fmt: str, db: Session = Depends(get_db)
     return FileResponse(path, filename=path.name, media_type=media_type)
 
 
+# Checking that no mastering pass is under way and recording a new one must happen as one
+# step: two requests arriving together would otherwise both see "idle" and the second
+# would overwrite the first one's state while the first kept running.
+_MASTERING_START_LOCK = threading.Lock()
+MASTERING_BUSY = (
+    "Mastering is already running for this song. Wait for it to finish, then run it again "
+    "with the new settings."
+)
+
+
 @app.post("/runs/{run_id}/master")
 def master_run(
     run_id: str,
@@ -701,24 +711,25 @@ def master_run(
         reference_path = candidate
 
     run_dir = Path(run.run_dir)
-    existing = read_mastering_state(run_dir)
-    if existing.get("status") in {"queued", "running"}:
-        return _mastering_payload(run_dir)
+    with _MASTERING_START_LOCK:
+        existing = read_mastering_state(run_dir)
+        if existing.get("status") in {"queued", "running"}:
+            raise HTTPException(status_code=409, detail=MASTERING_BUSY)
 
-    reset_mastering_outputs(run_dir)
-    write_mastering_state(
-        run_dir,
-        {
-            "status": "queued",
-            "progress": 0.0,
-            "error_message": None,
-            "mode": normalized_mode,
-            "preset": normalized_preset,
-            "backend": normalized_backend,
-            "stage": "queued",
-            "detail": _mastering_stage_detail("queued"),
-        },
-    )
+        reset_mastering_outputs(run_dir)
+        write_mastering_state(
+            run_dir,
+            {
+                "status": "queued",
+                "progress": 0.0,
+                "error_message": None,
+                "mode": normalized_mode,
+                "preset": normalized_preset,
+                "backend": normalized_backend,
+                "stage": "queued",
+                "detail": _mastering_stage_detail("queued"),
+            },
+        )
     submit(
         f"{run_id}:master",
         lambda: _run_mastering_job(

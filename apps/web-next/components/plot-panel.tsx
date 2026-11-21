@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { CircleHelp } from "lucide-react";
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -107,7 +107,7 @@ function clampRangeToBounds(range: [number, number], bounds: [number, number]): 
   return [start, end];
 }
 
-export function PlotPanel({ title, figure, height = 520, className, helpText, xRange }: PlotPanelProps) {
+function PlotPanelView({ title, figure, height = 520, className, helpText, xRange }: PlotPanelProps) {
   const [plotError, setPlotError] = useState<string | null>(null);
 
   const figureData = useMemo(
@@ -290,3 +290,25 @@ export function PlotPanel({ title, figure, height = 520, className, helpText, xR
     </Card>
   );
 }
+
+function sameRange(a?: [number, number], b?: [number, number]): boolean {
+  if (!a || !b) return a === b;
+  return a[0] === b[0] && a[1] === b[1];
+}
+
+/**
+ * A chart redraws only when what it shows changes. The analyser page re-renders several
+ * times a second while audio plays (the playhead moves), and its eleven charts include
+ * large spectrogram heatmaps: redrawing them all on every tick froze the page on slower
+ * computers. The page builds `xRange` afresh each render, so it is compared by value.
+ */
+export const PlotPanel = memo(
+  PlotPanelView,
+  (prev, next) =>
+    prev.figure === next.figure &&
+    prev.title === next.title &&
+    prev.height === next.height &&
+    prev.className === next.className &&
+    prev.helpText === next.helpText &&
+    sameRange(prev.xRange, next.xRange)
+);

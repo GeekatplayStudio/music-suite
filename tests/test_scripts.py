@@ -28,9 +28,13 @@ def test_startup_bootstraps_with_unified_installer() -> None:
     assert "install.ps1" in startup
     assert "apps.api.main:app" in startup
     assert "apps\\web-next" in startup
-    assert "next start" in startup
+    # Node runs Next's own start command directly, in production mode, on loopback only.
+    assert "node_modules\\next\\dist\\bin\\next" in startup
+    assert '"start", "-H", "127.0.0.1"' in startup
     assert "next dev" not in startup
-    assert "next start -H 127.0.0.1" in startup
+    # After an update the web app is rebuilt and libraries are brought up to date.
+    assert "Invoke-WebAppBuild -WebDir $webDir -BuildOnly" in startup
+    assert "$readiness.Rebuild" in startup
     assert ".next\\BUILD_ID" in startup
     assert "Find-AvailablePort" in startup
     assert "api_port" in startup
@@ -89,7 +93,7 @@ def test_installers_offer_the_ai_engine_without_ever_failing_the_install() -> No
     assert "audioqi.generation.setup" in windows
     assert "MUSIC_SUITE_INSTALL_AI" in windows
     assert '"dev", "editor"' in windows
-    assert windows.index("pnpm.cmd build") < windows.index("audioqi.generation.setup")
+    assert windows.index("Invoke-WebAppBuild") < windows.index("audioqi.generation.setup")
 
 
 def test_windows_installer_offers_a_complete_install_with_every_model() -> None:
@@ -151,8 +155,25 @@ def test_frontend_uses_runtime_same_origin_api_proxy() -> None:
 
 
 def test_installers_create_production_frontend_build() -> None:
-    assert "pnpm.cmd build" in Path("install.ps1").read_text(encoding="utf-8")
+    assert "Invoke-WebAppBuild -WebDir $webDir" in Path("install.ps1").read_text(encoding="utf-8")
+    shared = Path("scripts/install-state.ps1").read_text(encoding="utf-8")
+    assert '@("build")' in shared and '@("run", "build")' in shared
     assert "pnpm build" in Path("install.command").read_text(encoding="utf-8")
+
+
+def test_windows_scripts_stay_plain_ascii() -> None:
+    """Windows PowerShell 5.1 reads a script without a byte-order mark in the local code
+    page, so any non-ASCII character can be misread on a non-English Windows."""
+    for name in ("install.ps1", "start.ps1", "stop.ps1", "scripts/install-state.ps1"):
+        text = Path(name).read_text(encoding="utf-8")
+        assert all(ord(ch) < 128 for ch in text), name
+
+
+def test_port_detection_does_not_depend_on_the_windows_language() -> None:
+    for name in ("start.ps1", "stop.ps1"):
+        text = Path(name).read_text(encoding="utf-8")
+        assert "Get-NetTCPConnection" in text
+        assert r"\s+LISTENING\s+" not in text, name
 
 
 def test_only_one_readme_exists() -> None:

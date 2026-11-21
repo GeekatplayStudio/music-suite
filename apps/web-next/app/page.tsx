@@ -3,7 +3,9 @@
 import {
   AlertTriangle,
   AudioWaveform,
+  Check,
   CircleHelp,
+  Copy,
   Cpu,
   Piano,
   Download,
@@ -221,7 +223,7 @@ const ELEMENT_GUIDE_ROWS: Array<{ element: string; meaning: string }> = [
       "Execution path for mastering. 'auto' chooses best available backend at runtime; unavailable backends fall back safely."
   },
   {
-    element: "AI Mastering | Reference Run ID",
+    element: "AI Mastering | Reference song",
     meaning:
       "Optional analyzed run id used as tonal/loudness reference (primarily for matchering-style reference mastering)."
   },
@@ -773,6 +775,7 @@ export default function HomePage() {
   const visualizerRef = useRef<HTMLDivElement | null>(null);
 
   const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [runIdCopied, setRunIdCopied] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [runDetail, setRunDetail] = useState<RunDetail | null>(null);
   const [charts, setCharts] = useState<ChartsPayload>({});
@@ -2716,7 +2719,7 @@ export default function HomePage() {
                 </p>
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   AudioQI now applies a source-aware preflight adjustment pass before rendering variants or stem rescue.
-                  Use Backend, Refine Passes, and Reference Run ID for advanced pro mastering control.
+                  Use Backend, Refine Passes, and Reference song for advanced pro mastering control.
                 </p>
               </div>
 
@@ -2838,13 +2841,26 @@ export default function HomePage() {
                   </label>
 
                   <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Reference Run ID (matchering)</span>
-                    <Input
-                      type="text"
-                      placeholder="optional run id"
+                    <span className="font-medium text-foreground">Reference song (matchering)</span>
+                    {/* Chosen by name: the run ID it needs is not something anyone can read off the page. */}
+                    <select
                       value={masterReferenceRunId}
                       onChange={(e) => setMasterReferenceRunId(e.target.value)}
-                    />
+                      className="w-full rounded-xl border border-input bg-input px-3 py-2 text-sm text-foreground"
+                      aria-label="Reference song for matchering"
+                    >
+                      <option value="">None</option>
+                      {runs
+                        .filter((run) => run.id !== selectedRunId)
+                        .map((run) => (
+                          <option key={run.id} value={run.id}>
+                            {run.filename} · {new Date(run.created_at).toLocaleDateString()}
+                          </option>
+                        ))}
+                      {masterReferenceRunId && !runs.some((run) => run.id === masterReferenceRunId) ? (
+                        <option value={masterReferenceRunId}>Run {masterReferenceRunId.slice(0, 8)}…</option>
+                      ) : null}
+                    </select>
                   </label>
                 </div>
 
@@ -2958,7 +2974,7 @@ export default function HomePage() {
 
                 <p className="text-[11px] text-muted-foreground">
                   Backend notes: `internal` is the safest default, `auto` is for advanced backend selection, and `matchering`
-                  requires a valid Reference Run ID. Input Gain (-12..+12 dB) trims the source before profiling,
+                  requires a valid Reference song. Input Gain (-12..+12 dB) trims the source before profiling,
                   adaptation, and every backend pass, so it changes how the chain hears the mix. Bass Mono
                   collapses out-of-phase side energy below the cutoff (the mid is untouched) and Stereo Width
                   scales the side channel; leaving both on preset default lets the preflight tighten them when
@@ -3310,9 +3326,29 @@ export default function HomePage() {
               <p className="mt-2 truncate display-font text-lg font-semibold text-foreground">
                 {selectedRunFilename}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {selectedRunId ? `Run ID ${selectedRunId.slice(0, 8)}...` : "Upload a file to create a run."}
-              </p>
+              {selectedRunId ? (
+                <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                  <span className="truncate font-mono" title={selectedRunId}>
+                    Run ID {selectedRunId}
+                  </span>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded p-1 hover:bg-white/10 hover:text-foreground"
+                    title="Copy the full run ID"
+                    aria-label="Copy the full run ID"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(selectedRunId).then(() => {
+                        setRunIdCopied(true);
+                        window.setTimeout(() => setRunIdCopied(false), 1500);
+                      });
+                    }}
+                  >
+                    {runIdCopied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">Upload a file to create a run.</p>
+              )}
             </div>
 
             <div className="rounded-2xl border border-border/80 bg-card/70 p-4">

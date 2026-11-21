@@ -27,6 +27,7 @@ from audioqi.core.metrics import (
     crest_factor_db,
     dbfs,
     loudness_integrated_lufs,
+    loudness_range_lu,
     loudness_timeline_lufs,
     oversampled_true_peak,
     spectral_balance,
@@ -2783,6 +2784,7 @@ def _quality_profile(audio: np.ndarray, sr: int, cfg: MasterPreset) -> dict[str,
     issue_score = int(sum(issue_weights[key] for key, count in marker_counts.items() if count > 0))
     payload: dict[str, Any] = {
         "integrated_lufs": integrated_lufs,
+        "loudness_range_lu": loudness_range_lu(short_term.values),
         "target_lufs": cfg.target_lufs,
         "true_peak_dbfs": true_peak_db,
         "target_true_peak_dbfs": cfg.target_true_peak_dbfs,
@@ -2810,6 +2812,7 @@ def _mastering_self_check(
 ) -> dict[str, Any]:
     source = _quality_profile(source_audio, sr=sr, cfg=cfg)
     mastered = _quality_profile(mastered_audio, sr=sr, cfg=cfg)
+    _flag_loudness_range_collapse(source, mastered)
     source_counts = source.get("marker_counts", {})
     mastered_counts = mastered.get("marker_counts", {})
     marker_types = sorted(set(source_counts.keys()) | set(mastered_counts.keys()))
@@ -2865,8 +2868,52 @@ def _mastering_self_check(
     }
 
 
+#: A master that keeps less than this share of the source's loudness range has flattened it.
+LRA_COLLAPSE_RATIO = 0.5
+#: Sources with less range than this have little to lose, and the measurement is noisy there.
+LRA_COLLAPSE_MIN_SOURCE_LU = 2.0
+LRA_COLLAPSE_WEIGHT = 3
+
+
+def _flag_loudness_range_collapse(source: dict[str, Any], mastered: dict[str, Any]) -> None:
+    """Count a flattened loudness range as a problem the master made.
+
+    Each marker in a quality profile describes one signal on its own, so a master that
+    turns quiet verses and loud choruses into one level looked clean: an LRA of 3.5 LU
+    falling to 0.9 LU was reported as a strong improvement. Loss of range only shows
+    against the source, so it is judged here and added to the master's score.
+    """
+    before = float(source.get("loudness_range_lu") or 0.0)
+    after = float(mastered.get("loudness_range_lu") or 0.0)
+    collapsed = before >= LRA_COLLAPSE_MIN_SOURCE_LU and after < before * LRA_COLLAPSE_RATIO
+    for profile, count in ((source, 0), (mastered, 1 if collapsed else 0)):
+        profile.setdefault("marker_counts", {})["loudness_range_collapse"] = count
+        profile.setdefault("issue_weights", {})["loudness_range_collapse"] = LRA_COLLAPSE_WEIGHT
+    if collapsed:
+        mastered["issue_score"] = int(mastered.get("issue_score", 0)) + LRA_COLLAPSE_WEIGHT
+        mastered.setdefault("marker_events", {})["loudness_range_collapse"] = [
+            {
+                "type": "loudness_range_collapse",
+                "start_seconds": 0.0,
+                "end_seconds": float(mastered.get("duration_seconds") or 0.0),
+                "severity": "high",
+                "message": (
+                    f"Loudness range fell from {before:.1f} LU to {after:.1f} LU: "
+                    "quiet and loud sections now sit at nearly one level."
+                ),
+            }
+        ]
+
+
 def _marker_fix_recommendations(remaining: list[str]) -> list[dict[str, str]]:
     guidance_map = {
+        "loudness_range_collapse": {
+            "issue": "loudness_range_collapse",
+            "action": (
+                "The master flattened the song's dynamics. Use mode V1 or the film preset, "
+                "lower Refine Passes, or ease compression so sections keep their contrast."
+            ),
+        },
         "harshness_band": {
             "issue": "harshness_band",
             "action": (

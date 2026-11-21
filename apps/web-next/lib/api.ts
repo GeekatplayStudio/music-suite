@@ -32,7 +32,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `Request failed: ${res.status}`);
+    // The API explains refusals as {"detail": "..."}: show that sentence, not the raw JSON.
+    let message = text;
+    try {
+      const body = JSON.parse(text) as { detail?: unknown };
+      if (typeof body.detail === "string") message = body.detail;
+    } catch {
+      /* not JSON: keep the text as it is */
+    }
+    throw new Error(message || `Request failed: ${res.status}`);
   }
   return (await res.json()) as T;
 }

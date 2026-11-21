@@ -463,3 +463,28 @@ def test_mastering_backend_and_reference_validation(tmp_path: Path) -> None:
             "pedalboard",
             "matchering",
         }
+
+
+def test_a_second_mastering_request_is_refused_while_one_is_under_way(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The first pass is held at "queued", so the second request meets it under way.
+    monkeypatch.setattr(api_main, "submit", lambda *_args, **_kwargs: None)
+    fixture = write_synthetic_fixture(tmp_path / "synthetic.wav")
+    with TestClient(api_main.app) as client:
+        _hard_reset_test_state(client)
+        with fixture.open("rb") as f:
+            upload = client.post(
+                "/runs/upload?hide_from_history=true",
+                files={"file": ("synthetic.wav", f, "audio/wav")},
+            )
+        run_id = upload.json()["run"]["id"]
+
+        first = client.post(f"/runs/{run_id}/master?mode=v1&preset=club&backend=internal")
+        assert first.status_code == 200
+        second = client.post(f"/runs/{run_id}/master?mode=v1&preset=streaming&backend=internal")
+        assert second.status_code == 409
+        assert "already running" in second.json()["detail"]
+        # The first request's settings are still the ones on record.
+        state = client.get(f"/runs/{run_id}/mastering").json()
+        assert state["status"] == "queued" and state["preset"] == "club"
