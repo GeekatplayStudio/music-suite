@@ -6,7 +6,9 @@ param(
     [switch]$StartComfyUI,
     [string]$ComfyUIPath,
     [int]$ComfyPort = 8188,
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    # Report what is missing and stop, rather than installing anything.
+    [switch]$NoInstall
 )
 
 $ErrorActionPreference = "Stop"
@@ -65,18 +67,7 @@ function Get-LogTail($LogPair, [int]$LineCount = 20) {
     return @($lines | Where-Object { $_ -and $_.Trim() }) -join [Environment]::NewLine
 }
 
-function Get-DependencyManifestHash {
-    $gitRevision = "no-git-revision"
-    if (Get-Command git.exe -ErrorAction SilentlyContinue) {
-        $detectedRevision = (& git.exe -C $root rev-parse HEAD 2>$null)
-        if ($LASTEXITCODE -eq 0 -and $detectedRevision) { $gitRevision = $detectedRevision.Trim() }
-    }
-    return @(
-        (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $root "pyproject.toml")).Hash,
-        (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $webDir "pnpm-lock.yaml")).Hash,
-        $gitRevision
-    ) -join "-"
-}
+. (Join-Path $root "scripts\install-state.ps1")
 
 function Test-PortAvailable([int]$Port) {
     if ($Port -lt 1 -or $Port -gt 65535) { return $false }
@@ -210,19 +201,38 @@ if (Test-Path -LiteralPath $processFile) {
     }
 }
 
-if (
-    -not (Test-Path -LiteralPath $venvPython) -or
-    -not (Get-Command node.exe -ErrorAction SilentlyContinue) -or
-    -not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue) -or
-    -not (Get-Command ffprobe.exe -ErrorAction SilentlyContinue) -or
-    -not (Test-Path -LiteralPath (Join-Path $webDir "node_modules")) -or
-    -not (Test-Path -LiteralPath (Join-Path $webDir ".next\BUILD_ID")) -or
-    -not (Test-Path -LiteralPath $installStatePath) -or
-    (Get-Content -Raw -LiteralPath $installStatePath).Trim() -ne (Get-DependencyManifestHash)
-) {
-    Write-Host "Dependencies are missing or changed; running the unified installer first..."
-    & (Join-Path $root "install.ps1") -ComfyUIPath $ComfyUIPath
+# Starting must start. Only something genuinely missing is installed here, and only the
+# core of it; a dependency list that merely changed is reported and the app still starts,
+# because silently reinstalling a working copy is what made startup unusable before.
+$readiness = Get-MusicSuiteReadiness -Root $root -WebDir $webDir -StatePath $installStatePath
+
+foreach ($item in $readiness.Stale) {
+    Write-Host "Note: $($item.Detail)." -ForegroundColor Yellow
+}
+if ($readiness.Stale.Count -gt 0) {
+    Write-Host "Music Suite will start with what is already installed. To update it, run install.bat." -ForegroundColor Yellow
+    Write-Host ""
+}
+
+if (-not $readiness.Ready) {
+    Write-Host "Music Suite cannot start yet. What is missing:" -ForegroundColor Yellow
+    foreach ($item in $readiness.Missing) {
+        Write-Host "  - $($item.Detail)" -ForegroundColor Yellow
+    }
+    Write-Host ""
+    if ($NoInstall) {
+        throw "Run install.bat to install the missing pieces, or start again without -NoInstall."
+    }
+    Write-Host "Installing just these core pieces now. Optional AI models are not touched;" -ForegroundColor Cyan
+    Write-Host "add those later from Models and engines inside the app." -ForegroundColor Cyan
+    Write-Host ""
+    & (Join-Path $root "install.ps1") -CoreOnly -ComfyUIPath $ComfyUIPath
     Add-BundledToolPaths
+    $readiness = Get-MusicSuiteReadiness -Root $root -WebDir $webDir -StatePath $installStatePath
+    if (-not $readiness.Ready) {
+        $stillMissing = ($readiness.Missing | ForEach-Object { $_.Detail }) -join "; "
+        throw "The installer finished but Music Suite is still not ready: $stillMissing"
+    }
 }
 
 $selectedWebPort = Find-AvailablePort $WebPort

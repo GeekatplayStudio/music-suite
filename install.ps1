@@ -4,11 +4,15 @@ param(
     [switch]$WithAiStems,
     [switch]$FullInstall,
     [string]$ComfyUIPath,
-    [switch]$InstallComfyDependencies
+    [switch]$InstallComfyDependencies,
+    # Install only what the app needs to run, asking nothing. Used by start.ps1 when it
+    # finds a missing piece, so starting never turns into an interactive download session.
+    [switch]$CoreOnly
 )
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
+. (Join-Path $root "scripts\install-state.ps1")
 $toolsRoot = Join-Path $root ".tools"
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 Push-Location $root
@@ -42,19 +46,62 @@ function Add-BundledToolPaths {
     }
 }
 
+function Format-Bytes([long]$Bytes) {
+    if ($Bytes -ge 1GB) { return "{0:N2} GB" -f ($Bytes / 1GB) }
+    if ($Bytes -ge 1MB) { return "{0:N1} MB" -f ($Bytes / 1MB) }
+    if ($Bytes -ge 1KB) { return "{0:N0} KB" -f ($Bytes / 1KB) }
+    return "$Bytes bytes"
+}
+
 function Invoke-TrustedDownload([string]$Uri, [string]$Destination, [string]$FriendlyName) {
+    <#
+        Downloads with visible progress: how much of how big, how fast, on one line that
+        updates. The old version silenced the progress bar, so a multi-hundred-megabyte
+        download looked like the installer had hung.
+    #>
     Write-Host "Downloading $FriendlyName from $(([uri]$Uri).Host)..."
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $response = $null
+    $input_ = $null
+    $output = $null
     try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-        $oldProgress = $ProgressPreference
-        $ProgressPreference = "SilentlyContinue"
-        try {
-            Invoke-WebRequest -Uri $Uri -OutFile $Destination -UseBasicParsing
-        } finally {
-            $ProgressPreference = $oldProgress
+        $request = [Net.HttpWebRequest]::Create($Uri)
+        $request.UserAgent = "MusicSuiteInstaller"
+        $request.Timeout = 60000
+        $response = $request.GetResponse()
+        $total = [long]$response.ContentLength
+        $input_ = $response.GetResponseStream()
+        $output = [IO.File]::Create($Destination)
+        $buffer = New-Object byte[] 131072
+        $done = [long]0
+        $started = [Diagnostics.Stopwatch]::StartNew()
+        $lastReport = [TimeSpan]::Zero
+        $sizeLabel = if ($total -gt 0) { Format-Bytes $total } else { "unknown size" }
+        while (($read = $input_.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $output.Write($buffer, 0, $read)
+            $done += $read
+            # Report about five times a second: often enough to look alive, rarely enough
+            # not to flood a redirected log with thousands of lines.
+            if (($started.Elapsed - $lastReport).TotalMilliseconds -lt 200) { continue }
+            $lastReport = $started.Elapsed
+            $speed = if ($started.Elapsed.TotalSeconds -gt 0) { $done / $started.Elapsed.TotalSeconds } else { 0 }
+            $line = if ($total -gt 0) {
+                "  {0} of {1} ({2,3:N0}%) at {3}/s" -f (Format-Bytes $done), $sizeLabel, ($done * 100.0 / $total), (Format-Bytes ([long]$speed))
+            } else {
+                "  {0} at {1}/s" -f (Format-Bytes $done), (Format-Bytes ([long]$speed))
+            }
+            Write-Host ("`r" + $line.PadRight(70)) -NoNewline
         }
+        $started.Stop()
+        Write-Host ("`r" + ("  {0} in {1:N0}s" -f (Format-Bytes $done), $started.Elapsed.TotalSeconds).PadRight(70))
     } catch {
+        if ($output) { $output.Dispose(); $output = $null }
+        if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue }
         throw "Could not download $FriendlyName from its official source. Check the internet connection, VPN/proxy, and antivirus, then run install.bat again. Details: $($_.Exception.Message)"
+    } finally {
+        if ($output) { $output.Dispose() }
+        if ($input_) { $input_.Dispose() }
+        if ($response) { $response.Dispose() }
     }
 }
 
@@ -314,8 +361,17 @@ function Find-ComfyPython([string]$Path) {
 
 Add-BundledToolPaths
 
+$script:InstallStarted = [Diagnostics.Stopwatch]::StartNew()
+function Write-Step([string]$Message) {
+    # Every step says how long the install has been going, so a long one is visibly working
+    # rather than apparently stuck.
+    $elapsed = $script:InstallStarted.Elapsed
+    Write-Host ("[{0:mm\:ss}] {1}" -f $elapsed, $Message) -ForegroundColor Cyan
+}
+
 try {
-    Clear-Host
+    # Clearing would erase the explanation start.ps1 just printed about what is missing.
+    if (-not $CoreOnly) { Clear-Host }
     Write-Host "============================================================" -ForegroundColor Cyan
     Write-Host "  Geekatplay Studio Music Suite - Windows Installer" -ForegroundColor Cyan
     Write-Host "============================================================" -ForegroundColor Cyan
@@ -326,9 +382,13 @@ try {
     Write-Host "  - Troubleshooting log: $installLogPath"
     Write-Host ""
 
-    $completeInstall = $FullInstall -or $env:MUSIC_SUITE_INSTALL_ALL -eq "1"
+    $completeInstall = (-not $CoreOnly) -and ($FullInstall -or $env:MUSIC_SUITE_INSTALL_ALL -eq "1")
     $completeFailures = @()
-    if (-not $completeInstall -and -not $env:MUSIC_SUITE_INSTALL_ALL -and (Test-InteractiveConsole)) {
+    if ($CoreOnly) {
+        Write-Host "Running in core-only mode: nothing optional is downloaded and nothing is asked." -ForegroundColor Cyan
+        Write-Host ""
+    }
+    if (-not $CoreOnly -and -not $completeInstall -and -not $env:MUSIC_SUITE_INSTALL_ALL -and (Test-InteractiveConsole)) {
         Write-Host "OPTIONAL COMPLETE INSTALL" -ForegroundColor Yellow
         Write-Host "Download every local AI model and optional instrument too?"
         Write-Host "This enables AI songs, AI editing, XL quality, lyrics, all stem models,"
@@ -340,11 +400,13 @@ try {
     if ($completeInstall) {
         Write-Host "Selected: COMPLETE installation (core app plus all models)." -ForegroundColor Green
         $WithPro = $true
+    } elseif ($CoreOnly) {
+        Write-Host "Selected: CORE installation (only what is needed to run)." -ForegroundColor Green
     } else {
         Write-Host "Selected: STANDARD installation (core app; models can be added later)." -ForegroundColor Green
     }
     Write-Host ""
-    Write-Host "Step 1 of 5 - Checking system tools..." -ForegroundColor Cyan
+    Write-Step "Step 1 of 5 - Checking system tools (Python, FFmpeg, Node.js, Git)..."
 
     if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
         $null = Try-InstallWithWinget "Gyan.FFmpeg" "FFmpeg"
@@ -407,7 +469,7 @@ try {
         Assert-LastExitCode "Creating the Python environment"
     }
 
-    Write-Host "Step 2 of 5 - Checking Music Suite libraries..." -ForegroundColor Cyan
+    Write-Step "Step 2 of 5 - Checking Music Suite Python libraries..."
     & $venvPython -m ensurepip --upgrade
     Assert-LastExitCode "Preparing pip"
     & $venvPython -m pip install --upgrade pip setuptools wheel
@@ -428,7 +490,7 @@ try {
         Write-Host "Stopping the running Music Suite before rebuilding the web app..."
         try { & (Join-Path $root "stop.ps1") } catch { Write-Warning "Could not stop the running Music Suite: $_" }
     }
-    Write-Host "Step 3 of 5 - Installing and building the web app..." -ForegroundColor Cyan
+    Write-Step "Step 3 of 5 - Installing and building the web app (this is the slowest step)..."
     Push-Location $webDir
     try {
         if (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) {
@@ -488,13 +550,13 @@ try {
         }
     }
 
-    Write-Host "Step 4 of 5 - Optional models and instruments..." -ForegroundColor Cyan
+    Write-Step "Step 4 of 5 - Optional models and instruments..."
 
     # --- Optional: local AI music engine (AI Song Studio) ---
     # Asks once and remembers a "no". MUSIC_SUITE_INSTALL_AI=1 installs without asking, =0 skips.
     # A failure here never fails the install: the engine can be installed later with one click
     # from AI Song Studio > Settings.
-    $aiChoice = if ($completeInstall) { "1" } elseif ($env:MUSIC_SUITE_INSTALL_AI) { $env:MUSIC_SUITE_INSTALL_AI } else { "0" }
+    $aiChoice = if ($CoreOnly) { "0" } elseif ($completeInstall) { "1" } elseif ($env:MUSIC_SUITE_INSTALL_AI) { $env:MUSIC_SUITE_INSTALL_AI } else { "0" }
     if ($aiChoice -eq "0") {
         Write-Host "Skipping the local AI music engine (MUSIC_SUITE_INSTALL_AI=0)."
     } else {
@@ -528,7 +590,7 @@ try {
     # --- Optional: AI stem separation (6 stems, drum kit pieces, lead/backing vocals) ---
     # -WithAiStems or MUSIC_SUITE_INSTALL_STEMS=1. Uses the NVIDIA GPU when there is one.
     # Also available any time from Models & engines in the app.
-    if ($completeInstall -or $WithAiStems -or $env:MUSIC_SUITE_INSTALL_STEMS -eq "1") {
+    if (-not $CoreOnly -and ($completeInstall -or $WithAiStems -or $env:MUSIC_SUITE_INSTALL_STEMS -eq "1")) {
         Write-Host "Installing AI stem separation (about 3 GB with GPU support, plus models)..."
         & $venvPython -m audioqi.addons install stems --models all
         if ($LASTEXITCODE -ne 0) {
@@ -540,7 +602,7 @@ try {
 
     # --- Optional: Surge XT synthesizer (free, 3,000 sounds; plays MIDI clips in the Studio Editor) ---
     # MUSIC_SUITE_INSTALL_SURGE=1. Also available any time from Models & engines in the app.
-    if ($completeInstall -or $env:MUSIC_SUITE_INSTALL_SURGE -eq "1") {
+    if (-not $CoreOnly -and ($completeInstall -or $env:MUSIC_SUITE_INSTALL_SURGE -eq "1")) {
         Write-Host "Installing the Surge XT synthesizer (about 300 MB)..."
         & $venvPython -m audioqi.editor.instruments install surge-xt
         if ($LASTEXITCODE -ne 0) {
@@ -550,18 +612,10 @@ try {
         $global:LASTEXITCODE = 0
     }
 
-    Write-Host "Step 5 of 5 - Saving installation status..." -ForegroundColor Cyan
-    $gitRevision = "no-git-revision"
-    if (Get-Command git.exe -ErrorAction SilentlyContinue) {
-        $detectedRevision = (& git.exe -C $root rev-parse HEAD 2>$null)
-        if ($LASTEXITCODE -eq 0 -and $detectedRevision) { $gitRevision = $detectedRevision.Trim() }
-    }
-    $manifestHash = @(
-        (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $root "pyproject.toml")).Hash,
-        (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $webDir "pnpm-lock.yaml")).Hash,
-        $gitRevision
-    ) -join "-"
-    Set-Content -LiteralPath (Join-Path $root ".music-suite-install-state") -Value $manifestHash -Encoding ascii
+    Write-Step "Step 5 of 5 - Saving installation status..."
+    # Only the dependency lists are recorded, never the git commit: see scripts/install-state.ps1.
+    $installedState = Get-MusicSuiteDependencyState -Root $root -WebDir $webDir
+    Write-MusicSuiteInstallState -Path (Join-Path $root ".music-suite-install-state") -State $installedState
     if ($completeInstall -and $completeFailures.Count -gt 0) {
         Write-Host ""
         Write-Host "The core app is installed, but the complete installation still needs:" -ForegroundColor Yellow

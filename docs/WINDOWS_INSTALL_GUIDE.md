@@ -24,6 +24,25 @@ This guide is for someone who has never installed software from GitHub. You do n
 
 ![The successful installer tells you to run start.bat](images/install-windows-complete.png)
 
+## Starting never re-installs
+
+`start.bat` starts Music Suite. It does not download anything and it never asks you to
+choose an installation size — that question belongs to `install.bat` alone.
+
+Two things can happen when you start:
+
+- **Something is genuinely missing** (the Python environment, the web app's libraries, or
+  the built web app). Startup lists exactly what is missing, then installs only those core
+  pieces. Optional AI models are not touched; add those from **Models & engines** in the
+  app whenever you want them.
+- **A dependency list changed** since you last installed — a new Python package in
+  `pyproject.toml`, or a new `pnpm-lock.yaml`. Startup says so and **starts anyway** with
+  what you already have. Run `install.bat` when you want to pick the change up.
+
+Editing the project, switching branches, or committing does not make Music Suite reinstall
+itself. Only the dependency lists are compared, not the version number, the description,
+the authors, or the commit you happen to be on.
+
 ## You do not need to install FFmpeg manually
 
 The FFmpeg website primarily publishes source code and links to several Windows builds, so it is easy to download a command-line program and mistake its brief black window for an installer. Music Suite now handles this automatically.
