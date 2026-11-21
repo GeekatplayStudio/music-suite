@@ -995,6 +995,33 @@ export class EditorEngine {
     return Math.max(0, this.startPosition + (this.ctx.currentTime - this.startedAt));
   }
 
+  /**
+   * When a position in the song will reach the outside world, on the `performance.now()`
+   * clock that Web MIDI stamps its messages with. Null while stopped.
+   *
+   * Playback is timed on the audio clock and MIDI on the performance clock; the two drift,
+   * so they are tied together through the context's own output timestamp rather than
+   * assumed to agree.
+   */
+  performanceTimeFor(position: number): number | null {
+    const ctx = this.ctx;
+    if (!this.playing || !ctx) return null;
+    const target = this.startedAt + (position - this.startPosition);
+    const stamp = ctx.getOutputTimestamp?.();
+    const at = stamp?.contextTime;
+    const clock = stamp?.performanceTime;
+    if (at !== undefined && clock !== undefined && Number.isFinite(at) && Number.isFinite(clock) && at > 0) {
+      return clock + (target - at) * 1000;
+    }
+    // Without an output timestamp the two clocks are taken to tick together from now.
+    return performance.now() + (target - ctx.currentTime) * 1000;
+  }
+
+  /** The audio clock, for measuring a round trip against what comes back on the input. */
+  contextTime(): number {
+    return this.ctx?.currentTime ?? 0;
+  }
+
   setState(next: ProjectState): void {
     const prev = this.state;
     this.state = next;
@@ -1419,6 +1446,12 @@ export class EditorEngine {
     firstFrame: number | null;
     /** Every (re)start of playback while recording: audio-clock time and timeline position. */
     anchors: { ctxTime: number; position: number }[];
+    /**
+     * How much earlier than its captured moment each sample really belongs, in seconds.
+     * Normally the engine's own output latency. A pass through outboard gear measures the
+     * whole round trip instead and passes it in, because that is the delay to undo.
+     */
+    latency: number | null;
     finished: (() => void) | null;
   } | null = null;
 
@@ -1427,10 +1460,13 @@ export class EditorEngine {
   }
 
   /**
-   * Record the default input, uncompressed, while the session plays from `from`.
-   * Rejects if the browser refuses the microphone or lacks AudioWorklet.
+   * Record an input, uncompressed, while the session plays from `from`.
+   *
+   * `deviceId` picks the input (the default one when absent), and `latency` overrides the
+   * delay compensation for gear whose round trip has been measured.
+   * Rejects if the browser refuses the input or lacks AudioWorklet.
    */
-  async startRecording(from: number): Promise<void> {
+  async startRecording(from: number, options: { deviceId?: string; latency?: number } = {}): Promise<void> {
     if (this.recording) return;
     const ctx = this.context();
     if (!(await this.loadWorklets(ctx))) throw new Error("This browser cannot record here (AudioWorklet is unavailable).");
@@ -1439,10 +1475,20 @@ export class EditorEngine {
     try {
       // Processing meant for calls damages music, so it is all switched off.
       stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          // An exact id fails loudly rather than quietly recording the wrong input.
+          ...(options.deviceId ? { deviceId: { exact: options.deviceId } } : {})
+        }
       });
     } catch {
-      throw new Error("Microphone access was refused. Allow it for this page and try again.");
+      throw new Error(
+        options.deviceId
+          ? "That audio input could not be opened. Check it is still connected, then try again."
+          : "Microphone access was refused. Allow it for this page and try again."
+      );
     }
     const source = ctx.createMediaStreamSource(stream);
     const node = new AudioWorkletNode(ctx, "ms-recorder", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
@@ -1453,6 +1499,7 @@ export class EditorEngine {
       chunks: [],
       firstFrame: null,
       anchors: [],
+      latency: options.latency !== undefined && Number.isFinite(options.latency) ? Math.max(0, options.latency) : null,
       finished: null
     };
     node.port.onmessage = (event: MessageEvent<{ done?: boolean; frame?: number; channels?: Float32Array[] }>) => {
@@ -1507,8 +1554,9 @@ export class EditorEngine {
       }
     }
 
-    // What the performer hears left the engine one output latency earlier.
-    const latency = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
+    // What the performer hears left the engine one output latency earlier. A measured
+    // round trip through outboard gear replaces that estimate when one was given.
+    const latency = session.latency ?? (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
     const began = session.firstFrame / sr;
     const total = frames / sr;
     // An edit during recording restarts playback where it already was; only a jump is a new pass.
@@ -1532,6 +1580,85 @@ export class EditorEngine {
       if (to - offset >= 0.02) segments.push({ offset, duration: to - offset, position });
     });
     return segments.length ? { buffer, segments } : null;
+  }
+
+  /**
+   * Capture a short take from an input on its own, without playing the session.
+   *
+   * For measuring how long a round trip through outboard gear takes: `onArmed` is called
+   * once samples are really flowing, and is given the audio-clock time at that moment, so
+   * the caller can make a sound and compare it with `firstTime` plus the onset it finds.
+   * The same worklet records this as records a real pass, so the buffering is the same.
+   */
+  async captureProbe(
+    seconds: number,
+    options: { deviceId?: string; onArmed?: (contextTime: number) => void } = {}
+  ): Promise<{ channels: Float32Array[]; sampleRate: number; firstTime: number }> {
+    const ctx = this.context();
+    if (ctx.state !== "running") await ctx.resume();
+    if (!(await this.loadWorklets(ctx))) throw new Error("This browser cannot record here (AudioWorklet is unavailable).");
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser does not allow audio input.");
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          ...(options.deviceId ? { deviceId: { exact: options.deviceId } } : {})
+        }
+      });
+    } catch {
+      throw new Error("That audio input could not be opened. Check it is connected and allowed for this page.");
+    }
+    const source = ctx.createMediaStreamSource(stream);
+    const node = new AudioWorkletNode(ctx, "ms-recorder", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    const chunks: Float32Array[][] = [];
+    let firstFrame: number | null = null;
+    let finished: (() => void) | null = null;
+    node.port.onmessage = (event: MessageEvent<{ done?: boolean; frame?: number; channels?: Float32Array[] }>) => {
+      if (event.data.done) {
+        finished?.();
+        return;
+      }
+      if (!event.data.channels) return;
+      if (firstFrame === null) firstFrame = event.data.frame ?? 0;
+      chunks.push(event.data.channels);
+    };
+    // The recorder's silent output must reach the destination or it is never processed.
+    source.connect(node).connect(ctx.destination);
+    try {
+      // Opening an input takes a moment; nothing is timed until samples actually arrive.
+      const armed = Date.now() + 1500;
+      while (firstFrame === null && Date.now() < armed) await new Promise((resolve) => setTimeout(resolve, 10));
+      if (firstFrame === null) throw new Error("No audio arrived from that input.");
+      options.onArmed?.(ctx.currentTime);
+      await new Promise((resolve) => setTimeout(resolve, Math.max(0.2, seconds) * 1000));
+      await new Promise<void>((resolve) => {
+        finished = resolve;
+        node.port.postMessage("flush");
+        setTimeout(resolve, 400);
+      });
+    } finally {
+      source.disconnect();
+      node.disconnect();
+      node.port.onmessage = null;
+      for (const track of stream.getTracks()) track.stop();
+    }
+    const count = chunks[0]?.length ?? 0;
+    if (!count || firstFrame === null) throw new Error("No audio arrived from that input.");
+    const frames = chunks.reduce((total, chunk) => total + chunk[0].length, 0);
+    const channels: Float32Array[] = [];
+    for (let c = 0; c < count; c++) {
+      const data = new Float32Array(frames);
+      let offset = 0;
+      for (const chunk of chunks) {
+        data.set(chunk[c] ?? chunk[0], offset);
+        offset += chunk[0].length;
+      }
+      channels.push(data);
+    }
+    return { channels, sampleRate: ctx.sampleRate, firstTime: firstFrame / ctx.sampleRate };
   }
 
   /** False when the browser could not load the gate, true-peak limiter and loudness meter. */

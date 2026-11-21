@@ -36,6 +36,7 @@ import { Piano } from "@/components/synth/piano";
 import { Inspector, type JobEntry } from "@/components/editor/inspector";
 import { MidiControl } from "@/components/editor/midi-control";
 import { PianoRoll } from "@/components/editor/piano-roll";
+import { ReampPanel } from "@/components/editor/reamp-panel";
 import { SpectralPanel } from "@/components/editor/spectral-panel";
 import { RULER_HEIGHT, Timeline } from "@/components/editor/timeline";
 import { TrackHeader } from "@/components/editor/track-header";
@@ -47,6 +48,8 @@ import { EditorEngine, playsCarrier } from "@/lib/editor/engine";
 import { type ProcessStep, favouriteStore } from "@/lib/editor/favourites";
 import { MediaStore } from "@/lib/editor/media";
 import { type MidiEvent, midiHub } from "@/lib/editor/midi";
+import { midiOutHub } from "@/lib/editor/midi-out";
+import { MidiPassDriver, trackNotes } from "@/lib/editor/reamp";
 import { type MidiOutTrack, parseMidi, writeMidi, writeMidiFile } from "@/lib/editor/smf";
 import { gmPatch } from "@/lib/editor/gm";
 import { watchSoundFont } from "@/lib/editor/soundfont";
@@ -592,6 +595,9 @@ export function EditorApp({
   const favourites = useSyncExternalStore(favouriteStore.subscribe, favouriteStore.getSnapshot, favouriteStore.getServerSnapshot);
   const punchRef = useRef<TimeRange | null>(null);
   const stoppingRef = useRef(false);
+  /** The pass currently playing a part out to a hardware keyboard, if any. */
+  const reampRef = useRef<{ driver: MidiPassDriver; sourceName: string } | null>(null);
+  const [reampRunning, setReampRunning] = useState(false);
 
   const stateRef = useRef(state);
   const aliveRef = useRef(true);
@@ -815,6 +821,21 @@ export function EditorApp({
   // Recording captures keyboard notes on an instrument track; everywhere else it records the microphone.
   // The on-screen piano counts as a keyboard: what is played on it can be recorded too.
   const recordsNotes = (keyboardConnected || showKeys) && midiTrack !== null && hasNotes(midiTrack.id) && !midiPlaysVoice;
+  // Only tracks that actually hold notes can be played out to a hardware keyboard.
+  const reampTracks = useMemo(
+    () =>
+      state.tracks
+        .map((track) => ({
+          id: track.id,
+          name: track.name,
+          noteCount: state.clips.reduce(
+            (total, clip) => (clip.trackId === track.id && clip.notes ? total + clip.notes.length : total),
+            0
+          )
+        }))
+        .filter((track) => track.noteCount > 0),
+    [state.tracks, state.clips]
+  );
   const duration = projectDuration(state);
   const totalSec = Math.max(duration * 1.2 + 20, viewWidth / pxPerSec);
 
@@ -1425,8 +1446,13 @@ export function EditorApp({
     // The stop button and the end-of-range watcher can both fire; only the first counts.
     if (stoppingRef.current) return;
     stoppingRef.current = true;
+    // A pass through a keyboard stops sending notes before the recording is closed.
+    const reamp = reampRef.current;
+    reampRef.current = null;
+    reamp?.driver.stop();
     const take = await engine.stopRecording();
     stoppingRef.current = false;
+    setReampRunning(false);
     const punch = punchRef.current;
     punchRef.current = null;
     setRecording(false);
@@ -1445,7 +1471,7 @@ export function EditorApp({
       // Passes too short to be a real attempt (stopping just after the loop wrapped) are dropped.
       const passes = take.segments.filter((segment, index) => index === 0 || segment.duration > 0.75);
       const created: Clip[] = [];
-      if (passes.length > 1 && !punch) {
+      if (passes.length > 1 && !punch && !reamp) {
         // Loop recording: every pass becomes a take on its own lane, with the newest one audible.
         const takeGroup = newId();
         passes.forEach((pass, index) => {
@@ -1478,6 +1504,13 @@ export function EditorApp({
             return;
           }
         }
+        // What came back from a keyboard lands on its own track, named after the part that
+        // played it, so the MIDI original stays where it is and can be sent again.
+        if (reamp) {
+          const added = addTrack(current, `${reamp.sourceName} (keyboard)`);
+          current = added.state;
+          trackId = added.track.id;
+        }
         // Never record on top of existing audio: a busy stretch of track gets a new track instead.
         const occupied = current.clips.some((c) => c.trackId === trackId && c.start < end && c.start + c.duration > start);
         if (!trackId || occupied) {
@@ -1487,7 +1520,7 @@ export function EditorApp({
         }
         created.push({
           ...makeClip(asset, trackId, start),
-          name: `Take ${stamp}`,
+          name: reamp ? `${reamp.sourceName} (keyboard)` : `Take ${stamp}`,
           offset: pass.offset + (start - pass.position),
           duration: end - start,
           fadeIn: punch ? 0.01 : 0,
@@ -1502,6 +1535,41 @@ export function EditorApp({
     }
     setWorking(null);
   };
+  /**
+   * Play one track's notes out to a hardware keyboard and record what it answers with.
+   *
+   * The pass starts a little before the first note so the instrument is settled by the time
+   * it matters, and stops itself once the part has finished. What comes back is shifted
+   * earlier by the measured round trip, so it lands where the notes were.
+   */
+  const startReampPass = async ({ trackId, deviceId, latency }: { trackId: string; deviceId: string; latency: number }) => {
+    if (engine.isRecording() || reampRef.current) return;
+    const current = stateRef.current;
+    const source = current.tracks.find((track) => track.id === trackId);
+    const notes = trackNotes(current, trackId);
+    if (!source || !notes.length) {
+      setNotice("That part has no notes to play out.");
+      return;
+    }
+    if (!midiOutHub.ready()) {
+      setNotice("The keyboard's MIDI output is not connected.");
+      return;
+    }
+    const from = Math.max(0, notes[0].t - 1);
+    try {
+      await engine.startRecording(from, { deviceId: deviceId || undefined, latency });
+    } catch (err) {
+      setNotice(errorMessage(err, "The pass could not start."));
+      return;
+    }
+    const driver = new MidiPassDriver(engine, notes, from, () => void stopRecording());
+    reampRef.current = { driver, sourceName: source.name };
+    driver.start();
+    setRecording(true);
+    setReampRunning(true);
+    setNotice(`Playing ${source.name} out to the keyboard. It stops on its own at the end of the part.`);
+  };
+
   const onRecordingEnded = useEffectEvent(() => void stopRecording());
 
   const toggleRecording = async () => {
@@ -1951,6 +2019,15 @@ export function EditorApp({
             playsVoice={midiPlaysVoice}
             recordsNotes={recordsNotes}
             onAddInstrument={addInstrumentTrack}
+          />
+          <ReampPanel
+            engine={engine}
+            tracks={reampTracks}
+            selectedTrackId={midiTrack?.id ?? null}
+            passRunning={reampRunning}
+            disabled={!ready || working !== null || (recording && !reampRunning)}
+            onStartPass={(options) => void startReampPass(options)}
+            onStopPass={() => void stopRecording()}
           />
           <IconButton
             label={showKeys ? "Hide the piano" : "Show a piano to play the selected instrument track"}
