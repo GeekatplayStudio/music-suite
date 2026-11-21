@@ -31,13 +31,24 @@ Songs move between workspaces with the buttons at the top of each page: for exam
 3. It works through five steps: tools (Python, FFmpeg, Node.js, Git), the Python environment, the web app (the slowest step), optional parts, and a final check. Each tool comes from its official source and is checked before it is used.
 4. When it says **Music Suite is installed!**, double-click **start.bat**.
 
-Anything left out can be added later from [Models and engines](#models-and-engines) and the AI Song Studio's Settings. See `docs/WINDOWS_INSTALL_GUIDE.md` for installer options and problems.
+Anything left out can be added later from [Models and engines](#models-and-engines) and the AI Song Studio's Settings. See `docs/WINDOWS_INSTALL_GUIDE.md` for installer options.
+
+Before downloading anything, the installer checks that:
+
+- it can write to the folder;
+- there is enough free disk space;
+- this computer can reach the Python and web package servers.
+
+If one of these fails, it says what to do. It also warns when the folder is inside OneDrive or has a very long path: both can make installs fail, and moving the folder to somewhere like `C:\MusicSuite` avoids it. A download that drops out is retried automatically.
+
+**If installing fails,** the installer shows what went wrong. Run **install.bat** again: it keeps everything already done and carries on from there. If it stops in the same place twice, restart Windows and try once more. The full record is in `logs\install.log`.
 
 ### Starting and stopping
 
 - **start.bat** starts Music Suite and opens it in your browser (normally http://127.0.0.1:3000). If something it needs is missing, it installs it first. If Music Suite is already running, it just opens the browser.
 - **stop.bat** stops it. It only stops the Music Suite it started, never anything else.
 - If a port is busy, Music Suite picks the next free one and says which.
+- **After an update,** the first start brings the libraries up to date and rebuilds the app when the new version needs it. That takes a minute or two, once; every other start takes a few seconds.
 - Use **Chrome or Edge**: hardware MIDI (keyboards) only works in those.
 
 Start options (run `start.ps1` from PowerShell): `-NoBrowser` (don't open the browser), `-ApiPort` and `-WebPort` (preferred ports, 8008 and 3000), `-StartupTimeoutSeconds` (default 300), `-NoInstall` (report what is missing instead of installing), `-StartComfyUI -ComfyUIPath <folder>` (also start ComfyUI for MusicGen).

@@ -6,6 +6,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0start.ps1" %*
 if errorlevel 1 (
   echo.
   echo Startup failed. Review the message above.
+  echo The logs folder next to start.bat has the details: api.error.log and web.error.log.
   pause
   exit /b 1
 )

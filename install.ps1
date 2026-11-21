@@ -40,9 +40,77 @@ function Add-BundledToolPaths {
         (Join-Path $toolsRoot "node"),
         (Join-Path $toolsRoot "git\cmd")
     )) {
-        if ((Test-Path -LiteralPath $folder) -and $env:Path -notlike "*$folder*") {
-            $env:Path = "$folder;$env:Path"
+        Add-PathFolder $folder
+    }
+}
+
+function Test-InstallPreflight([bool]$Complete, [bool]$FreshInstall) {
+    <#
+        Everything that would otherwise fail half an hour in, checked in the first seconds:
+        a folder that cannot be written, a full disk, no internet, OneDrive, very long paths.
+        Each problem is explained with what to do about it.
+    #>
+    $probe = Join-Path $root (".write-test-" + [guid]::NewGuid().ToString("N"))
+    try {
+        Set-Content -LiteralPath $probe -Value "ok" -ErrorAction Stop
+        Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
+    } catch {
+        throw ("Windows does not allow writing to this folder: $root" + [Environment]::NewLine +
+            "Move the Music Suite folder somewhere of your own, for example C:\MusicSuite or your Documents folder, and run install.bat there.")
+    }
+
+    $needGb = if ($Complete) { 45 } elseif ($FreshInstall) { 8 } else { 3 }
+    $drive = $null
+    try { $drive = New-Object IO.DriveInfo ([IO.Path]::GetPathRoot($root)) } catch {}
+    if ($drive -and $drive.IsReady) {
+        $freeGb = [math]::Floor($drive.AvailableFreeSpace / 1GB)
+        if ($freeGb -lt $needGb) {
+            throw ("Not enough free disk space on $($drive.Name): $freeGb GB free, and this installation needs about $needGb GB." + [Environment]::NewLine +
+                "Free some space (empty the Recycle Bin, remove large downloads) or move Music Suite to a drive with more room, then run install.bat again.")
         }
+        Write-Host "Disk space: $freeGb GB free on $($drive.Name) (about $needGb GB needed)." -ForegroundColor DarkGray
+    } else {
+        Write-Host "Could not read the free disk space; continuing." -ForegroundColor DarkGray
+    }
+
+    if ($root -match '\\OneDrive( - [^\\]+)?\\') {
+        Write-Host ""
+        Write-Host "Music Suite is inside a OneDrive folder. OneDrive tries to upload the thousands of" -ForegroundColor Yellow
+        Write-Host "library files the install creates and can lock them halfway, which makes installs fail." -ForegroundColor Yellow
+        Write-Host "If anything below fails, move the folder outside OneDrive (for example C:\MusicSuite)." -ForegroundColor Yellow
+        Write-Host ""
+    }
+
+    if ($root.Length -gt 120) {
+        $longPaths = $false
+        try { $longPaths = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name LongPathsEnabled -ErrorAction Stop).LongPathsEnabled -eq 1 } catch {}
+        if (-not $longPaths) {
+            Write-Host "The folder path is very long ($($root.Length) characters). Some library files are nested deeply" -ForegroundColor Yellow
+            Write-Host "and Windows limits paths to 260 characters. If the install fails, move the folder to a short path such as C:\MusicSuite." -ForegroundColor Yellow
+        }
+    }
+
+    $unreachable = @()
+    foreach ($site in @(
+        @{ Name = "the Python package index (pypi.org)"; Url = "https://pypi.org/simple/pip/" },
+        @{ Name = "the web package registry (registry.npmjs.org)"; Url = "https://registry.npmjs.org/pnpm" }
+    )) {
+        try {
+            $request = [Net.HttpWebRequest]::Create($site.Url)
+            $request.Method = "HEAD"
+            $request.Timeout = 20000
+            $request.UserAgent = "MusicSuiteInstaller"
+            $request.GetResponse().Dispose()
+        } catch {
+            $unreachable += $site.Name
+        }
+    }
+    if ($unreachable.Count -gt 0) {
+        $message = "This computer cannot reach " + ($unreachable -join " or ") + "." + [Environment]::NewLine +
+            "Check the internet connection. A VPN, proxy, firewall or antivirus web filter can also block it; pause it and run install.bat again."
+        if ($FreshInstall) { throw $message }
+        Write-Host $message -ForegroundColor Yellow
+        Write-Host "Continuing with what is already installed." -ForegroundColor Yellow
     }
 }
 
@@ -121,7 +189,7 @@ function Try-InstallWithWinget([string]$Id, [string]$FriendlyName) {
         return $false
     }
     Write-Host "Installing $FriendlyName via winget..."
-    & winget install --id $Id -e --source winget --accept-package-agreements --accept-source-agreements | Out-Host
+    Invoke-Native { & winget install --id $Id -e --source winget --accept-package-agreements --accept-source-agreements | Out-Host }
     if ($LASTEXITCODE -ne 0) {
         Write-Host "winget could not install $FriendlyName (exit code $LASTEXITCODE)." -ForegroundColor Yellow
         return $false
@@ -406,6 +474,14 @@ try {
         Write-Host "Selected: STANDARD installation (core app; models can be added later)." -ForegroundColor Green
     }
     Write-Host ""
+    # Scripts from a downloaded ZIP carry a "came from the internet" mark that can make
+    # Windows stop and ask about each one; the installer's own scripts are unmarked here.
+    $ownScripts = @(Get-ChildItem -LiteralPath $root -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @(".ps1", ".bat", ".cmd") })
+    $ownScripts += @(Get-ChildItem -LiteralPath (Join-Path $root "scripts") -File -ErrorAction SilentlyContinue)
+    foreach ($script_ in $ownScripts) {
+        Unblock-File -LiteralPath $script_.FullName -ErrorAction SilentlyContinue
+    }
+    Test-InstallPreflight -Complete $completeInstall -FreshInstall (-not (Test-Path -LiteralPath (Join-Path $root ".venv\Scripts\python.exe")))
     Write-Step "Step 1 of 5 - Checking system tools (Python, FFmpeg, Node.js, Git)..."
 
     if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
@@ -430,8 +506,14 @@ try {
 
     if (-not (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) -and (Get-Command corepack -ErrorAction SilentlyContinue)) {
         Write-Host "Enabling pnpm via corepack..."
-        & corepack enable
-        Assert-LastExitCode "Enabling pnpm"
+        $env:COREPACK_ENABLE_DOWNLOAD_PROMPT = "0"
+        Invoke-Native { & corepack enable 2>$null }
+        if ($LASTEXITCODE -ne 0) {
+            # Needs administrator rights when Node is installed for all users. Not a problem:
+            # pnpm is then run through corepack directly.
+            Write-Host "pnpm will run through corepack (enabling its shortcut needs administrator rights)." -ForegroundColor DarkGray
+        }
+        $global:LASTEXITCODE = 0
     }
 
     if ($completeInstall) {
@@ -445,7 +527,7 @@ try {
             Write-Host "Ollama was installed but is not available in this window yet; the lyrics model can be downloaded later." -ForegroundColor Yellow
             $completeFailures += "Ollama"
         } else {
-            & ollama.exe list 2>$null | Out-Null
+            Invoke-Native { & ollama.exe list 2>$null | Out-Null }
             if ($LASTEXITCODE -ne 0) {
                 Write-Host "Starting Ollama for the lyrics-model download..."
                 Start-Process -FilePath (Get-Command ollama.exe).Source -ArgumentList "serve" -WindowStyle Hidden
@@ -465,14 +547,22 @@ try {
         $systemPython = Find-SystemPython
         Write-Host "Creating project virtual environment..."
         $venvArgs = @($systemPython.PrefixArgs) + @("-m", "venv", (Join-Path $root ".venv"))
-        & $systemPython.Executable @venvArgs
+        Invoke-Native { & $systemPython.Executable @venvArgs }
         Assert-LastExitCode "Creating the Python environment"
     }
 
+    # A running Music Suite holds its Python libraries and web build open, and Windows will not
+    # replace a file that is in use: pip fails with "access denied" and a rebuild breaks the open
+    # tab. Stop it before touching either (start.bat starts it again).
+    if (Test-Path -LiteralPath (Join-Path $root ".music-suite-processes.json")) {
+        Write-Host "Stopping the running Music Suite so its files can be updated..."
+        try { & (Join-Path $root "stop.ps1") } catch { Write-Warning "Could not stop the running Music Suite: $_" }
+    }
+
     Write-Step "Step 2 of 5 - Checking Music Suite Python libraries..."
-    & $venvPython -m ensurepip --upgrade
+    Invoke-Native { & $venvPython -m ensurepip --upgrade }
     Assert-LastExitCode "Preparing pip"
-    & $venvPython -m pip install --upgrade pip setuptools wheel
+    Invoke-Native { & $venvPython -m pip install --upgrade pip setuptools wheel }
     Assert-LastExitCode "Updating Python installation tools"
 
     $extras = @("dev", "editor")
@@ -480,35 +570,17 @@ try {
     if ($WithPro) { $extras += "pro" }
     $extraSpec = $extras -join ","
     Write-Host "Installing or updating Music Suite Python dependencies ($extraSpec)..."
-    & $venvPython -m pip install -e ".[${extraSpec}]"
-    Assert-LastExitCode "Installing Music Suite Python libraries"
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        Invoke-Native { & $venvPython -m pip install --retries 8 --timeout 60 -e ".[${extraSpec}]" }
+        if ($LASTEXITCODE -eq 0) { break }
+        if ($attempt -eq 2) { Assert-LastExitCode "Installing Music Suite Python libraries" }
+        Write-Host "The Python libraries did not finish installing (exit code $LASTEXITCODE). Trying once more in 5 seconds..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 5
+    }
 
     $webDir = Join-Path $root "apps\web-next"
-    # A running site keeps serving pages that point at the old build's files; rebuilding under
-    # it makes the open tab fail with 500s and ChunkLoadError. Stop it first (start.bat restarts it).
-    if (Test-Path -LiteralPath (Join-Path $root ".music-suite-processes.json")) {
-        Write-Host "Stopping the running Music Suite before rebuilding the web app..."
-        try { & (Join-Path $root "stop.ps1") } catch { Write-Warning "Could not stop the running Music Suite: $_" }
-    }
     Write-Step "Step 3 of 5 - Installing and building the web app (this is the slowest step)..."
-    Push-Location $webDir
-    try {
-        if (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) {
-            & pnpm.cmd install
-            Assert-LastExitCode "Installing web libraries"
-            & pnpm.cmd build
-            Assert-LastExitCode "Building the Music Suite web app"
-        } elseif (Get-Command npm.cmd -ErrorAction SilentlyContinue) {
-            & npm.cmd install
-            Assert-LastExitCode "Installing web libraries"
-            & npm.cmd run build
-            Assert-LastExitCode "Building the Music Suite web app"
-        } else {
-            throw "pnpm or npm was not found on PATH."
-        }
-    } finally {
-        Pop-Location
-    }
+    Invoke-WebAppBuild -WebDir $webDir
 
     if (-not $ComfyUIPath -and $env:MUSIC_SUITE_COMFYUI_PATH) {
         $ComfyUIPath = $env:MUSIC_SUITE_COMFYUI_PATH
@@ -541,12 +613,12 @@ try {
                 throw "Could not locate ComfyUI's Python environment."
             }
             Write-Host "Installing Sonic Holodeck dependencies into the ComfyUI environment..."
-            & $comfyPython -m pip install --upgrade pip setuptools wheel
-            & $comfyPython -m pip install soundfile librosa protobuf pystoi torchmetrics torchdiffeq matplotlib einops datasets diffusers transformers accelerate sentencepiece huggingface_hub pydub
-            & $comfyPython -m pip install tangoflux --no-deps
-            & $comfyPython -m pip install "git+https://github.com/facebookresearch/demucs.git@main#egg=demucs" --no-deps
-            & $comfyPython -m pip install "git+https://github.com/suno-ai/bark.git" --no-deps
-            & $comfyPython -m pip install "git+https://github.com/facebookresearch/audiocraft.git" --no-deps
+            Invoke-Native { & $comfyPython -m pip install --upgrade pip setuptools wheel }
+            Invoke-Native { & $comfyPython -m pip install soundfile librosa protobuf pystoi torchmetrics torchdiffeq matplotlib einops datasets diffusers transformers accelerate sentencepiece huggingface_hub pydub }
+            Invoke-Native { & $comfyPython -m pip install tangoflux --no-deps }
+            Invoke-Native { & $comfyPython -m pip install "git+https://github.com/facebookresearch/demucs.git@main#egg=demucs" --no-deps }
+            Invoke-Native { & $comfyPython -m pip install "git+https://github.com/suno-ai/bark.git" --no-deps }
+            Invoke-Native { & $comfyPython -m pip install "git+https://github.com/facebookresearch/audiocraft.git" --no-deps }
         }
     }
 
@@ -558,10 +630,11 @@ try {
     # from AI Song Studio > Settings.
     $aiChoice = if ($CoreOnly) { "0" } elseif ($completeInstall) { "1" } elseif ($env:MUSIC_SUITE_INSTALL_AI) { $env:MUSIC_SUITE_INSTALL_AI } else { "0" }
     if ($aiChoice -eq "0") {
-        Write-Host "Skipping the local AI music engine (MUSIC_SUITE_INSTALL_AI=0)."
+        Write-Host "The local AI music engine is not part of this installation. Add it any time from"
+        Write-Host "AI Song Studio > Settings, or Models & engines, inside Music Suite."
     } else {
         $aiArgs = if ($completeInstall) { @("--yes") } elseif ($aiChoice -eq "1") { @("--yes") } else { @("--ask") }
-        & $venvPython -m audioqi.generation.setup @aiArgs
+        Invoke-Native { & $venvPython -m audioqi.generation.setup @aiArgs }
         if ($LASTEXITCODE -ne 0) {
             Write-Host "The AI music engine was not installed. Music Suite itself is ready." -ForegroundColor Yellow
             if ($completeInstall) { $completeFailures += "AI music engine and editing model" }
@@ -571,7 +644,7 @@ try {
 
     if ($completeInstall) {
         Write-Host "Downloading the Ollama lyrics model (about 8 GB)..."
-        & $venvPython -m audioqi.generation.setup --writer-only
+        Invoke-Native { & $venvPython -m audioqi.generation.setup --writer-only }
         if ($LASTEXITCODE -ne 0) {
             Write-Host "The lyrics model was not installed. Run install.bat again to retry." -ForegroundColor Yellow
             $completeFailures += "lyrics model"
@@ -579,7 +652,7 @@ try {
         $global:LASTEXITCODE = 0
 
         Write-Host "Downloading the high-quality XL music model (about 4.9 GB)..."
-        & $venvPython -m audioqi.generation.setup --quality
+        Invoke-Native { & $venvPython -m audioqi.generation.setup --quality }
         if ($LASTEXITCODE -ne 0) {
             Write-Host "The XL model was not installed. Try again from Models & engines in the app." -ForegroundColor Yellow
             $completeFailures += "high-quality XL model"
@@ -592,7 +665,7 @@ try {
     # Also available any time from Models & engines in the app.
     if (-not $CoreOnly -and ($completeInstall -or $WithAiStems -or $env:MUSIC_SUITE_INSTALL_STEMS -eq "1")) {
         Write-Host "Installing AI stem separation (about 3 GB with GPU support, plus models)..."
-        & $venvPython -m audioqi.addons install stems --models all
+        Invoke-Native { & $venvPython -m audioqi.addons install stems --models all }
         if ($LASTEXITCODE -ne 0) {
             Write-Host "AI stem separation was not installed. Try again from Models & engines in the app." -ForegroundColor Yellow
             if ($completeInstall) { $completeFailures += "AI stem separation and models" }
@@ -604,7 +677,7 @@ try {
     # MUSIC_SUITE_INSTALL_SURGE=1. Also available any time from Models & engines in the app.
     if (-not $CoreOnly -and ($completeInstall -or $env:MUSIC_SUITE_INSTALL_SURGE -eq "1")) {
         Write-Host "Installing the Surge XT synthesizer (about 300 MB)..."
-        & $venvPython -m audioqi.editor.instruments install surge-xt
+        Invoke-Native { & $venvPython -m audioqi.editor.instruments install surge-xt }
         if ($LASTEXITCODE -ne 0) {
             Write-Host "Surge XT was not installed. Try again from Models & engines in the app." -ForegroundColor Yellow
             if ($completeInstall) { $completeFailures += "Surge XT" }
@@ -614,7 +687,7 @@ try {
 
     Write-Step "Step 5 of 5 - Saving installation status..."
     # Only the dependency lists are recorded, never the git commit: see scripts/install-state.ps1.
-    $installedState = Get-MusicSuiteDependencyState -Root $root -WebDir $webDir
+    $installedState = Get-MusicSuiteDependencyState -Root $root -WebDir $webDir -WithWebBuild
     Write-MusicSuiteInstallState -Path (Join-Path $root ".music-suite-install-state") -State $installedState
     if ($completeInstall -and $completeFailures.Count -gt 0) {
         Write-Host ""
@@ -630,7 +703,24 @@ try {
     if (-not $completeInstall) {
         Write-Host "Optional AI features: open Models & engines inside Music Suite."
     }
+} catch {
+    $script:installFailed = $true
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Red
+    Write-Host "  Music Suite could not finish installing" -ForegroundColor Red
+    Write-Host "============================================================" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "What went wrong:" -ForegroundColor Yellow
+    Write-Host "  $($_.Exception.Message)"
+    Write-Host ""
+    Write-Host "What to do:" -ForegroundColor Yellow
+    Write-Host "  1. Run install.bat again. It keeps everything already done and carries on from there."
+    Write-Host "  2. If it stops at the same place, restart Windows and run install.bat once more."
+    Write-Host "  3. Still stuck? The full record of this install is in:"
+    Write-Host "     $installLogPath"
+    Write-Host ""
 } finally {
     if ($transcriptStarted) { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null }
     Pop-Location
 }
+if ($script:installFailed) { exit 1 }

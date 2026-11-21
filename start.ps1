@@ -19,6 +19,7 @@ $toolsRoot = Join-Path $root ".tools"
 $installStatePath = Join-Path $root ".music-suite-install-state"
 $processFile = Join-Path $root ".music-suite-processes.json"
 $logDir = Join-Path $root "logs"
+. (Join-Path $root "scripts\install-state.ps1")
 
 function Add-BundledToolPaths {
     foreach ($folder in @(
@@ -26,9 +27,7 @@ function Add-BundledToolPaths {
         (Join-Path $toolsRoot "node"),
         (Join-Path $toolsRoot "git\cmd")
     )) {
-        if ((Test-Path -LiteralPath $folder) -and $env:Path -notlike "*$folder*") {
-            $env:Path = "$folder;$env:Path"
-        }
+        Add-PathFolder $folder
     }
 }
 
@@ -66,8 +65,6 @@ function Get-LogTail($LogPair, [int]$LineCount = 20) {
     }
     return @($lines | Where-Object { $_ -and $_.Trim() }) -join [Environment]::NewLine
 }
-
-. (Join-Path $root "scripts\install-state.ps1")
 
 function Test-PortAvailable([int]$Port) {
     if ($Port -lt 1 -or $Port -gt 65535) { return $false }
@@ -201,38 +198,57 @@ if (Test-Path -LiteralPath $processFile) {
     }
 }
 
-# Starting must start. Only something genuinely missing is installed here, and only the
-# core of it; a dependency list that merely changed is reported and the app still starts,
-# because silently reinstalling a working copy is what made startup unusable before.
+# Starting must start. On an ordinary start nothing is installed or rebuilt. Only three
+# things lead to work here, each only when it is really so:
+#   * something the app needs is missing: the core is installed (never optional models);
+#   * an update changed the libraries this version needs: they are brought up to date,
+#     as the in-app updater promises, because new code can fail on old libraries;
+#   * an update changed the web app's source: it is built again, or the old one keeps
+#     being served and the update seems to have done nothing.
 $readiness = Get-MusicSuiteReadiness -Root $root -WebDir $webDir -StatePath $installStatePath
 
-foreach ($item in $readiness.Stale) {
-    Write-Host "Note: $($item.Detail)." -ForegroundColor Yellow
-}
-if ($readiness.Stale.Count -gt 0) {
-    Write-Host "Music Suite will start with what is already installed. To update it, run install.bat." -ForegroundColor Yellow
-    Write-Host ""
-}
-
-if (-not $readiness.Ready) {
-    Write-Host "Music Suite cannot start yet. What is missing:" -ForegroundColor Yellow
-    foreach ($item in $readiness.Missing) {
-        Write-Host "  - $($item.Detail)" -ForegroundColor Yellow
+if (-not $readiness.Ready -or $readiness.Stale.Count -gt 0) {
+    if (-not $readiness.Ready) {
+        Write-Host "Music Suite cannot start yet. What is missing:" -ForegroundColor Yellow
+        foreach ($item in $readiness.Missing) { Write-Host "  - $($item.Detail)" -ForegroundColor Yellow }
+    } else {
+        Write-Host "Music Suite was updated. Bringing its libraries up to date first:" -ForegroundColor Cyan
+        foreach ($item in $readiness.Stale) { Write-Host "  - $($item.Detail)" -ForegroundColor Cyan }
     }
     Write-Host ""
     if ($NoInstall) {
-        throw "Run install.bat to install the missing pieces, or start again without -NoInstall."
+        if (-not $readiness.Ready) { throw "Run install.bat to install the missing pieces, or start again without -NoInstall." }
+        Write-Host "Starting with what is installed (-NoInstall). Run install.bat to update it." -ForegroundColor Yellow
+    } else {
+        Write-Host "This installs only what Music Suite needs to run; optional AI models are not touched." -ForegroundColor Cyan
+        Write-Host ""
+        & (Join-Path $root "install.ps1") -CoreOnly -ComfyUIPath $ComfyUIPath
+        $installExit = $LASTEXITCODE
+        Add-BundledToolPaths
+        $readiness = Get-MusicSuiteReadiness -Root $root -WebDir $webDir -StatePath $installStatePath
+        if (-not $readiness.Ready) {
+            $stillMissing = ($readiness.Missing | ForEach-Object { $_.Detail }) -join "; "
+            throw "Music Suite could not be installed, so it cannot start: $stillMissing. The installer's message above says why; run install.bat to try again."
+        }
+        if ($installExit -ne 0) {
+            Write-Host "Updating did not fully finish (see above). Starting with what is installed." -ForegroundColor Yellow
+        }
     }
-    Write-Host "Installing just these core pieces now. Optional AI models are not touched;" -ForegroundColor Cyan
-    Write-Host "add those later from Models and engines inside the app." -ForegroundColor Cyan
+}
+
+if ($readiness.Ready -and $readiness.Rebuild -and -not $NoInstall) {
+    Write-Host "This version's web app has not been built yet. Building it now (usually 1 to 3 minutes)..." -ForegroundColor Cyan
+    try {
+        Invoke-WebAppBuild -WebDir $webDir -BuildOnly
+        $built = Get-MusicSuiteDependencyState -Root $root -WebDir $webDir -WithWebBuild
+        Write-MusicSuiteInstallState -Path $installStatePath -State $built
+        Write-Host "The web app is built." -ForegroundColor Green
+    } catch {
+        if (-not (Test-Path -LiteralPath (Join-Path $webDir ".next\BUILD_ID"))) { throw }
+        Write-Host "Building the new web app failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "Starting the previous build instead. Run install.bat to try the build again." -ForegroundColor Yellow
+    }
     Write-Host ""
-    & (Join-Path $root "install.ps1") -CoreOnly -ComfyUIPath $ComfyUIPath
-    Add-BundledToolPaths
-    $readiness = Get-MusicSuiteReadiness -Root $root -WebDir $webDir -StatePath $installStatePath
-    if (-not $readiness.Ready) {
-        $stillMissing = ($readiness.Missing | ForEach-Object { $_.Detail }) -join "; "
-        throw "The installer finished but Music Suite is still not ready: $stillMissing"
-    }
 }
 
 $selectedWebPort = Find-AvailablePort $WebPort
@@ -266,18 +282,20 @@ try {
     $apiProcess = Start-Process -FilePath $venvPython -ArgumentList $apiArgs -WorkingDirectory $root -WindowStyle Hidden -PassThru -RedirectStandardInput $apiLog.StdIn -RedirectStandardOutput $apiLog.StdOut -RedirectStandardError $apiLog.StdErr
     $apiRuntimePid = Wait-ForListener $selectedApiPort $apiProcess "Music Suite API" $apiLog
 
-    if (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) {
-        $webCommand = "pnpm.cmd exec next start -H 127.0.0.1 -p $selectedWebPort"
-    } elseif (Get-Command npm.cmd -ErrorAction SilentlyContinue) {
-        $webCommand = "npm.cmd run start -- -H 127.0.0.1 -p $selectedWebPort"
-    } else {
-        throw "pnpm or npm was not found on PATH."
-    }
+    # Node runs Next directly: no pnpm, corepack or cmd.exe wrapper has to work for the app to
+    # start, and the full path in the command line is how stop.ps1 recognises this process.
+    $node = Get-Command node.exe -ErrorAction SilentlyContinue
+    $nextBin = Join-Path $webDir "node_modules\next\dist\bin\next"
+    if (-not $node) { throw "Node.js was not found. Run install.bat." }
+    if (-not (Test-Path -LiteralPath $nextBin)) { throw "The web app's libraries are incomplete (Next.js is missing). Run install.bat." }
     $webLog = New-ServiceLogPair "web"
     $previousApiUrl = $env:MUSIC_SUITE_API_URL
     $env:MUSIC_SUITE_API_URL = "http://127.0.0.1:$selectedApiPort"
     try {
-        $webProcess = Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", $webCommand) -WorkingDirectory $webDir -WindowStyle Hidden -PassThru -RedirectStandardInput $webLog.StdIn -RedirectStandardOutput $webLog.StdOut -RedirectStandardError $webLog.StdErr
+        # Windows PowerShell does not quote arguments for Start-Process, so a folder with a
+        # space in its name would split the path in two without these quotes.
+        $webArgs = @("`"$nextBin`"", "start", "-H", "127.0.0.1", "-p", "$selectedWebPort")
+        $webProcess = Start-Process -FilePath $node.Source -ArgumentList $webArgs -WorkingDirectory $webDir -WindowStyle Hidden -PassThru -RedirectStandardInput $webLog.StdIn -RedirectStandardOutput $webLog.StdOut -RedirectStandardError $webLog.StdErr
     } finally {
         $env:MUSIC_SUITE_API_URL = $previousApiUrl
     }
