@@ -97,6 +97,8 @@ class MidiOutHub {
   private static readonly SERVER: MidiOutStatus = { state: "idle", outputs: [], selected: "", channel: DEFAULT_CHANNEL };
   /** Pitches sounding per channel, so anything held can always be stopped. */
   private held = new Map<number, Set<number>>();
+  /** When a tone was last sent from here, so the instrument's echo of it is not taken for a choice made on its panel. */
+  private toneSentAt = 0;
 
   supported(): boolean {
     return typeof navigator !== "undefined" && typeof navigator.requestMIDIAccess === "function";
@@ -213,11 +215,18 @@ class MidiOutHub {
   selectTone(tone: Tone, channel = this.status.channel): boolean {
     const wire = (channel - 1) & 0x0f;
     const program = Math.min(128, Math.max(1, Math.round(tone.program)));
+    this.toneSentAt = performance.now();
     return (
       this.send([0xb0 | wire, 0, tone.msb & 0x7f]) &&
       this.send([0xb0 | wire, 32, tone.lsb & 0x7f]) &&
       this.send([0xc0 | wire, program - 1])
     );
+  }
+
+  /** Set the instrument's volume for the channel in use (controller 7), 0-127. */
+  setVolume(level: number, channel = this.status.channel): boolean {
+    const wire = (channel - 1) & 0x0f;
+    return this.send([0xb0 | wire, 7, Math.min(127, Math.max(0, Math.round(level)))]);
   }
 
   /**
@@ -237,7 +246,13 @@ class MidiOutHub {
       const held = bank.get(wire) ?? { msb: 0, lsb: 0 };
       if (kind === 0xb0 && data[1] === 0) bank.set(wire, { ...held, msb: data[2] });
       else if (kind === 0xb0 && data[1] === 32) bank.set(wire, { ...held, lsb: data[2] });
-      else if (kind === 0xc0) onTone({ msb: held.msb, lsb: held.lsb, program: data[1] + 1 });
+      else if (kind === 0xc0) {
+        // Only a tone from a bank the instrument really has is worth sending back: a bare
+        // program change would be stored under bank 0/0 and recalled as a fallback sound.
+        // Anything arriving just after a tone was sent from here is its echo, not a choice.
+        const known = TONE_BANKS.some((entry) => entry.msb === held.msb && entry.lsb === held.lsb);
+        if (known && performance.now() - this.toneSentAt > 1000) onTone({ msb: held.msb, lsb: held.lsb, program: data[1] + 1 });
+      }
     };
     const inputs = [...access.inputs.values()];
     for (const input of inputs) input.addEventListener("midimessage", listener);
@@ -266,14 +281,15 @@ class MidiOutHub {
       }
     }
     this.held.clear();
-    for (let wire = 0; wire < 16; wire++) {
-      try {
-        port.send([0xb0 | wire, 64, 0]); // sustain pedal up
-        port.send([0xb0 | wire, 123, 0]); // all notes off
-        port.send([0xb0 | wire, 120, 0]); // all sound off
-      } catch {
-        return;
-      }
+    // Only on the channel in use. Sweeping all sixteen sent 48 messages in one burst. The
+    // keyboard's USB port once stopped answering part-way through a session of passes; the
+    // sweep was never proven to be the cause, but nothing needs it, so it is not sent.
+    const wire = (this.status.channel - 1) & 0x0f;
+    try {
+      port.send([0xb0 | wire, 64, 0]); // sustain pedal up
+      port.send([0xb0 | wire, 123, 0]); // all notes off
+    } catch {
+      /* the port went away mid-panic */
     }
   }
 

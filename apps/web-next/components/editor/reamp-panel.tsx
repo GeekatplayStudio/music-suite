@@ -3,9 +3,11 @@
 import { Cable, CircleCheck, CircleDot, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { ActionButton, IconButton, fieldClass } from "@/components/editor/controls";
+import { ActionButton, fieldClass } from "@/components/editor/controls";
 import type { EditorEngine } from "@/lib/editor/engine";
-import { midiOutHub } from "@/lib/editor/midi-out";
+import { VoicePicker } from "@/components/editor/voice-picker";
+import { HelpLink } from "@/components/help-link";
+import { type Tone, midiOutHub } from "@/lib/editor/midi-out";
 import { type AudioInputInfo, guessInstrumentInput, listAudioInputs, measureRoundTrip, peakOf } from "@/lib/editor/reamp";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +29,23 @@ interface ReampPanelProps {
   disabled: boolean;
   onStartPass: (options: { trackId: string; deviceId: string; latency: number }) => void;
   onStopPass: () => void;
+  /** The track heard on the keyboard during playback instead of on the computer, or null. */
+  keysTrackId: string | null;
+  onKeysTrack: (trackId: string | null) => void;
+  /** Most notes at once sent to the keyboard during playback; 0 is no limit. */
+  keysVoices: number;
+  onKeysVoices: (voices: number) => void;
+}
+
+const TONE_KEY = "music-suite:keyboard-tone";
+
+function storedTone(): Tone | null {
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(TONE_KEY) || "null") as Tone | null;
+    return raw && Number.isFinite(raw.msb) && Number.isFinite(raw.lsb) && Number.isFinite(raw.program) ? raw : null;
+  } catch {
+    return null;
+  }
 }
 
 function storedInput(): string {
@@ -48,8 +67,22 @@ export function ReampPanel({
   passRunning,
   disabled,
   onStartPass,
-  onStopPass
+  onStopPass,
+  keysTrackId,
+  onKeysTrack,
+  keysVoices,
+  onKeysVoices
 }: ReampPanelProps) {
+  // Read on first use; the picker only renders once the panel is opened, after hydration.
+  const [tone, setTone] = useState<Tone | null>(() => (typeof window === "undefined" ? null : storedTone()));
+  const chooseTone = (next: Tone | null) => {
+    setTone(next);
+    try {
+      window.localStorage.setItem(TONE_KEY, JSON.stringify(next));
+    } catch {
+      /* the choice just is not remembered */
+    }
+  };
   const out = useSyncExternalStore(midiOutHub.watch, midiOutHub.snapshot, midiOutHub.serverSnapshot);
   const [open, setOpen] = useState(false);
   const [inputs, setInputs] = useState<AudioInputInfo[]>([]);
@@ -160,22 +193,22 @@ export function ReampPanel({
 
   return (
     <div ref={rootRef} className="relative">
-      <IconButton
-        label={connected ? `Play out to ${out.outputs.find((o) => o.id === out.selected)?.name ?? "a keyboard"}` : "Play a part out to a hardware keyboard"}
-        active={open}
+      <ActionButton
+        className="relative h-9"
+        title="Keyboard: play your music on it, choose its voice, record a part through it"
         onClick={() => setOpen((value) => !value)}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
-        <Cable className="h-4 w-4" />
+        <Cable className="h-4 w-4" /> Keyboard
         <span
           aria-hidden="true"
           className={cn(
             "pointer-events-none absolute right-1 top-1 h-1.5 w-1.5 rounded-full",
-            passRunning ? "bg-rose-400" : connected ? "bg-emerald-400 opacity-60" : "bg-slate-500 opacity-40"
+            passRunning || keysTrackId ? "bg-rose-400" : connected ? "bg-emerald-400 opacity-60" : "bg-slate-500 opacity-40"
           )}
         />
-      </IconButton>
+      </ActionButton>
 
       {open ? (
         <div
@@ -184,9 +217,12 @@ export function ReampPanel({
           className="absolute left-0 top-11 z-50 w-96 space-y-3 rounded-xl border border-white/10 bg-slate-900 p-3 text-[11px] text-slate-300 shadow-2xl"
         >
           <div>
-            <h3 className="display-font text-xs font-semibold uppercase tracking-wider text-slate-200">Play out to a keyboard</h3>
+            <h3 className="display-font flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-slate-200">
+              Your keyboard
+              <HelpLink section="your-hardware-keyboard" label="using your hardware keyboard" />
+            </h3>
             <p className="mt-1 leading-snug text-slate-400">
-              Sends one track&apos;s notes to the keyboard and records the sound it makes back onto the timeline, in its own voices.
+              Play your music on the keyboard, choose its voice, and record any part through it back onto the timeline.
             </p>
           </div>
 
@@ -238,6 +274,46 @@ export function ReampPanel({
             )}
           </div>
 
+          {/* ---- Voice and playback ---- */}
+          <div className="space-y-2 rounded-lg border border-cyan-400/30 bg-black/30 p-2">
+            <p className="font-semibold text-slate-200">Play my music on the keyboard</p>
+            <label className="block text-slate-400">
+              What the keyboard plays when the song plays
+              <select
+                className={`${fieldClass} mt-1`}
+                aria-label="What the keyboard plays"
+                disabled={!connected}
+                value={keysTrackId ?? ""}
+                onChange={(event) => onKeysTrack(event.target.value || null)}
+              >
+                <option value="">Nothing: notes play on the computer</option>
+                {tracks.length > 1 ? <option value="all">All parts together</option> : null}
+                {tracks.map((track) => (
+                  <option key={track.id} value={track.id}>
+                    {track.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="leading-snug text-slate-400">
+              Those notes go to the keyboard instead of the computer&apos;s own sound. Press play as usual.
+              {tracks.length ? "" : " No track has notes yet: split a song and write its notes first, or use the Wizard."}
+            </p>
+            <p className="pt-1 font-semibold text-slate-200">Keyboard voice</p>
+            <VoicePicker tone={tone} onChange={chooseTone} label="the keyboard" />
+            <label className="flex items-center gap-2 text-slate-400">
+              Notes at once
+              <select className={`${fieldClass} w-28`} value={keysVoices} onChange={(event) => onKeysVoices(Number(event.target.value))} aria-label="Notes at once">
+                <option value={0}>All</option>
+                <option value={1}>1 (melody)</option>
+                <option value={2}>2</option>
+                <option value={3}>3</option>
+                <option value={4}>4</option>
+                <option value={6}>6</option>
+              </select>
+            </label>
+          </div>
+
           {/* ---- Audio in ---- */}
           <div className="space-y-2 rounded-lg bg-black/30 p-2">
             <p className="font-semibold text-slate-200">2. Audio in</p>
@@ -285,8 +361,7 @@ export function ReampPanel({
           <div className="space-y-2 rounded-lg bg-black/30 p-2">
             <p className="font-semibold text-slate-200">4. Record a pass</p>
             <p className="leading-snug text-slate-400">
-              Choose the voice <strong className="text-slate-200">on the keyboard</strong> first; this panel leaves its sound alone. One
-              part per pass. The wand button next to this one does every part in turn and switches voices for you.
+Records the part in the voice chosen above, or the keyboard&apos;s current one when none is chosen. One part per pass. The Wizard button does every part in turn and switches voices for you.
             </p>
             {tracks.length ? (
               <label className="block text-slate-400">
@@ -294,7 +369,9 @@ export function ReampPanel({
                 <select
                   className={`${fieldClass} mt-1`}
                   value={chosenTrack?.id ?? ""}
-                  onChange={(event) => setTrackId(event.target.value)}
+                  onChange={(event) => {
+                    setTrackId(event.target.value);
+                  }}
                   aria-label="Track to play out"
                 >
                   {tracks.map((track) => (
@@ -319,6 +396,8 @@ export function ReampPanel({
                 onClick={() => {
                   if (!chosenTrack) return;
                   setOpen(false);
+                  // The voice chosen above is put back first, in case the keyboard was changed since.
+                  if (tone) midiOutHub.selectTone(tone);
                   onStartPass({ trackId: chosenTrack.id, deviceId: inputId, latency: latency ?? 0 });
                 }}
               >

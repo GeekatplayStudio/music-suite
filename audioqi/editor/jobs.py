@@ -156,11 +156,14 @@ def _v_analyze(params: dict[str, Any]) -> dict[str, Any]:
 
 
 def _v_song_to_midi(params: dict[str, Any]) -> dict[str, Any]:
-    _reject_unknown(params, {"engine"})
+    _reject_unknown(params, {"engine", "source"})
     engine = params.get("engine", "auto")
     if engine not in transcribe.ENGINES:
         raise ParamError("'engine' must be auto, stems or muscriptor.")
-    return {"engine": engine}
+    source = params.get("source", "song")
+    if source not in transcribe.SOURCES:
+        raise ParamError("'source' must be song, piano, instrument or voice.")
+    return {"engine": engine, "source": source}
 
 
 def _v_match(params: dict[str, Any]) -> dict[str, Any]:
@@ -860,7 +863,9 @@ def _op_song_to_midi(ctx: _Context) -> _Outcome:
     audio, sr = ctx.load()
     report = ctx.span("process", 5, 95, "Writing the notes of every instrument.")
     report(0.0)
-    return [], transcribe.song_to_midi(audio, sr, report, engine=ctx.params["engine"])
+    return [], transcribe.song_to_midi(
+        audio, sr, report, engine=ctx.params["engine"], source=ctx.params.get("source", "song")
+    )
 
 
 def _op_structure(ctx: _Context) -> _Outcome:

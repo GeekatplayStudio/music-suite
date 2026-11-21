@@ -3,6 +3,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
+import { HelpLink } from "@/components/help-link";
 
 interface SliderProps {
   label: string;
@@ -83,10 +84,39 @@ export function IconButton({ label, shortcut, active, size = "md", className, ch
   );
 }
 
+/** Where each inspector section is explained in the user manual (docs/USER_MANUAL.md). */
+const SECTION_HELP: [RegExp, string][] = [
+  [/^Clip/, "clip"],
+  [/^MIDI clip/, "midi-clip"],
+  [/^Instrument$/, "instrument-types"],
+  [/^Plugin instrument/, "plugin-instruments-vst3"],
+  [/^Separate stems/, "separate-stems"],
+  [/^Repair/, "repair"],
+  [/^Takes/, "takes"],
+  [/^Warp/, "warp"],
+  [/^Restore/, "restore"],
+  [/^Pitch and time/, "pitch-and-time"],
+  [/^AI match/, "ai-match"],
+  [/^Plugins$/, "plugins"],
+  [/^Compose/, "compose"],
+  [/^AI edit/, "ai-edit"],
+  [/^Generate a part/, "generate-a-part"],
+  [/^Favourites/, "favourites"],
+  [/^Project$/, "project"],
+  [/^Write an arrangement/, "write-an-arrangement"],
+  [/^Create a song/, "ai-song-studio"],
+  [/^(Track|Effects|Buses|In-browser plugin)/, "track-effects-and-buses"],
+  [/^(Phase scope|Sections|Markers|Media)/, "sections-markers-and-media"]
+];
+
 export function PanelSection({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+  const help = SECTION_HELP.find(([pattern]) => pattern.test(title))?.[1];
   return (
     <section className="border-b border-white/10 px-4 py-3">
-      <h3 className="display-font text-xs font-semibold uppercase tracking-wider text-slate-300">{title}</h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="display-font text-xs font-semibold uppercase tracking-wider text-slate-300">{title}</h3>
+        {help ? <HelpLink section={help} label={title} className="-my-1" /> : null}
+      </div>
       {hint ? <p className="mt-1 text-[11px] leading-snug text-slate-400">{hint}</p> : null}
       <div className="mt-2 space-y-2">{children}</div>
     </section>

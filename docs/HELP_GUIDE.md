@@ -2,6 +2,8 @@
 
 **Maintained by Geekatplay Studio**
 
+> For using the app, read the [user manual](USER_MANUAL.md) instead (also in the app under **Help**). This guide is a technical reference and parts of it are out of date.
+
 ## 1) Session Control
 
 - `Upload`: stores source audio and metadata.

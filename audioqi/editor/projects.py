@@ -216,3 +216,79 @@ def delete_project(project_id: str) -> None:
     path = require_project(project_id)
     with _LOCK:
         shutil.rmtree(path, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------- project files
+
+#: The most a project file may unpack to, so a crafted archive cannot fill the disk.
+MAX_ARCHIVE_BYTES = 8 * 1024 * 1024 * 1024
+MAX_ARCHIVE_MEMBERS = 4000
+
+
+def export_archive(project_id: str) -> Path:
+    """The whole project as one zip: its timeline and every recording it uses.
+
+    Written under the data root's ``_exports``; the caller deletes it once it is sent.
+    """
+    import zipfile
+
+    source = require_project(project_id)
+    target_dir = editor_root() / "_exports"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / f"{new_id()}.zip"
+    with _LOCK:
+        record = _read_project(project_id)
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as archive:
+        archive.writestr("project.json", json.dumps(record, indent=2))
+        assets = source / "assets"
+        if assets.is_dir():
+            for meta in sorted(assets.glob("*.json")):
+                wav = meta.with_suffix(".wav")
+                if is_canonical_uuid(meta.stem) and wav.is_file():
+                    archive.write(meta, f"assets/{meta.name}")
+                    archive.write(wav, f"assets/{wav.name}")
+    return target
+
+
+def import_archive(path: Path) -> dict[str, Any]:
+    """Open a project file as a new project. Returns its summary.
+
+    Only the timeline and files named like this app's own recordings are taken out; anything
+    else in the archive is ignored, and nothing is written outside the new project's folder.
+    """
+    import zipfile
+
+    try:
+        archive = zipfile.ZipFile(path)
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise ParamError("This is not a Music Suite project file.") from exc
+    with archive:
+        members = archive.infolist()
+        if len(members) > MAX_ARCHIVE_MEMBERS:
+            raise ParamError("This project file holds too many files.")
+        if sum(member.file_size for member in members) > MAX_ARCHIVE_BYTES:
+            raise EditorError("This project file is too large to open.", 413)
+        try:
+            saved = json.loads(archive.read("project.json"))
+        except (KeyError, ValueError, RecursionError) as exc:
+            raise ParamError("This is not a Music Suite project file.") from exc
+        if not isinstance(saved, dict):
+            raise ParamError("This is not a Music Suite project file.")
+        state = saved.get("state")
+        record = create_project(saved.get("name") or "Opened project")
+        target = project_dir(str(record["id"]))
+        try:
+            for member in members:
+                folder, _, filename = member.filename.partition("/")
+                stem, dot, suffix = filename.rpartition(".")
+                wanted = folder == "assets" and dot and suffix in ("wav", "json")
+                if not wanted or not is_canonical_uuid(stem) or member.is_dir():
+                    continue
+                with archive.open(member) as src, (target / "assets" / filename).open("wb") as dst:
+                    shutil.copyfileobj(src, dst, 1024 * 1024)
+            if isinstance(state, dict):
+                save_state(str(record["id"]), state)
+        except Exception:
+            shutil.rmtree(target, ignore_errors=True)
+            raise
+    return _summary(_read_project(str(record["id"])))

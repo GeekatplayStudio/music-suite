@@ -211,6 +211,38 @@ def delete_project(project_id: str) -> dict[str, Any]:
     return {"deleted": True}
 
 
+@router.get("/projects/{project_id}/archive")
+def download_project(project_id: str) -> FileResponse:
+    """The whole project as one file: its timeline and every recording it uses."""
+    path = _guard(lambda: projects.export_archive(project_id))
+    name = sanitize_filename(str(projects.get_project(project_id).get("name") or "project"))
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=f"{name}.musicsuite.zip",
+        background=BackgroundTask(lambda: path.unlink(missing_ok=True)),
+    )
+
+
+@router.post("/projects/import")
+def open_project_file(file: UploadFile = File(...)) -> dict[str, Any]:
+    """Open a project file saved with the route above, as a new project."""
+    work_dir = projects.editor_root() / "_exports"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    staged = work_dir / f"{projects.new_id()}.upload.zip"
+    try:
+        written = 0
+        with staged.open("wb") as buffer:
+            while chunk := file.file.read(UPLOAD_CHUNK_BYTES):
+                written += len(chunk)
+                if written > projects.MAX_ARCHIVE_BYTES:
+                    raise HTTPException(status_code=413, detail="This project file is too large.")
+                buffer.write(chunk)
+        return _guard(lambda: projects.import_archive(staged))
+    finally:
+        staged.unlink(missing_ok=True)
+
+
 @router.post("/projects/{project_id}/assets")
 def upload_asset(project_id: str, file: UploadFile = File(...)) -> dict[str, Any]:
     project_path = _guard(lambda: projects.require_project(project_id))

@@ -347,6 +347,9 @@ export function SynthStudio() {
           <Link href="/models" className={quiet}>
             Models &amp; engines
           </Link>
+          <a href="/help#synth-studio" target="_blank" rel="noreferrer" className={quiet}>
+            Help
+          </a>
           <Link href="/" className={quiet}>
             Back to Music Suite
           </Link>

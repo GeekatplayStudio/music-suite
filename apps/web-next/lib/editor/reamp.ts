@@ -147,6 +147,69 @@ export async function measureRoundTrip(
   return { seconds: measured[Math.floor(measured.length / 2)], peak };
 }
 
+/** Where a take's loudest moment should sit: half of full scale, 6 dB below distortion. */
+const LEVEL_TARGET = 0.5;
+
+/** The notes sounding at the part's loudest moment, judged by how hard and how many are held at once. */
+function loudestMoment(notes: Note[]): Note[] {
+  let best: Note[] = [];
+  let bestWeight = 0;
+  for (const anchor of notes) {
+    const together = notes.filter((note) => note.t <= anchor.t + 0.03 && note.t + note.d > anchor.t);
+    const weight = together.reduce((sum, note) => sum + note.v, 0);
+    if (weight > bestWeight) {
+      bestWeight = weight;
+      best = together;
+    }
+  }
+  return best.slice(0, 12);
+}
+
+/**
+ * Set the keyboard's volume so the part's loudest moment comes back well below distortion.
+ *
+ * The keyboard's own output overruns the USB input on a full chord or a loud voice, and
+ * what is clipped there cannot be repaired afterwards. So before a take the loudest chord
+ * of the part is played, the level that comes back is measured, and the keyboard's MIDI
+ * volume is moved until it sits at the target. On a GO:KEYS 3 the level follows the square
+ * of the volume setting (measured), which is what the correction assumes.
+ * Returns the volume chosen and the peak last measured, or null when nothing came back.
+ */
+export async function autoLevel(
+  engine: EditorEngine,
+  notes: Note[],
+  options: { deviceId?: string } = {}
+): Promise<{ volume: number; peak: number } | null> {
+  const chord = loudestMoment(notes);
+  if (!chord.length || !midiOutHub.ready()) return null;
+  let volume = 100;
+  let peak = 0;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    midiOutHub.setVolume(volume);
+    const take = await engine.captureProbe(1.1, {
+      deviceId: options.deviceId,
+      onArmed: () => {
+        for (const note of chord) midiOutHub.noteOn(note.p, note.v);
+        window.setTimeout(() => {
+          for (const note of chord) midiOutHub.noteOff(note.p);
+        }, 550);
+      }
+    });
+    midiOutHub.allOff();
+    peak = peakOf(take.channels);
+    if (peak < 0.002) return null;
+    if (peak >= LEVEL_TARGET * 0.7 && peak <= LEVEL_TARGET * 1.4) break;
+    // At full scale the true level is unknown, only that it is too high: come down firmly.
+    const next = peak >= 0.98 ? volume * 0.6 : volume * Math.sqrt(LEVEL_TARGET / peak);
+    const clamped = Math.min(127, Math.max(20, Math.round(next)));
+    if (clamped === volume) break;
+    volume = clamped;
+  }
+  // Let the last chord die away so it is not on the start of the take.
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  return { volume, peak };
+}
+
 /**
  * Every note a track will play, at its position in the song rather than in its clip.
  *
@@ -189,6 +252,7 @@ export class MidiPassDriver {
     private readonly engine: EditorEngine,
     notes: Note[],
     private readonly from: number,
+    /** Called once the part has played, after which the driver stops. Without it the driver follows the playhead until stopped. */
     private readonly onEnd?: () => void
   ) {
     this.notes = notes;
@@ -214,6 +278,11 @@ export class MidiPassDriver {
       midiOutHub.allOff();
       this.sentUntil = position;
     }
+    // A jump forwards: the notes that were skipped are not all sent at once.
+    if (position > this.sentUntil + 0.5) {
+      midiOutHub.allOff();
+      this.sentUntil = position;
+    }
     const to = Math.max(this.sentUntil, position) + LOOKAHEAD;
     midiOutHub.scheduleNotes(this.notes, this.sentUntil, to, (at) => {
       const clock = this.engine.performanceTimeFor(at);
@@ -222,9 +291,9 @@ export class MidiPassDriver {
     });
     this.sentUntil = to;
     const finished = notesEnd(this.notes);
-    if (finished > 0 && position > finished + 0.4) {
+    if (this.onEnd && finished > 0 && position > finished + 0.4) {
       this.stop();
-      this.onEnd?.();
+      this.onEnd();
     }
   }
 
@@ -259,4 +328,117 @@ export function capVoices(notes: Note[], voices: number): Note[] {
     kept.push(note);
   }
   return kept;
+}
+
+/**
+ * The same key struck twice needs lifting in between. When a note runs up to or past the
+ * next one on its pitch, its note-off lands on top of the new note-on and the keyboard cuts
+ * the new note short. Each such note is ended a moment before its successor starts.
+ */
+export function clearRepeats(notes: Note[], gap = 0.03): Note[] {
+  const out = notes.map((note) => ({ ...note })).sort((a, b) => a.t - b.t || a.p - b.p);
+  const last = new Map<number, Note>();
+  for (const note of out) {
+    const pitch = Math.round(note.p);
+    const before = last.get(pitch);
+    if (before && before.t + before.d > note.t - gap) before.d = Math.max(0.02, note.t - gap - before.t);
+    last.set(pitch, note);
+  }
+  return out;
+}
+
+/** How a part is reshaped on its way to the keyboard. */
+export interface PartShape {
+  /** "auto" moves the part by whole octaves into a singing range; a number is octaves up or down. */
+  octave: "auto" | number;
+  /** "written" keeps the lengths found; "full" gives short notes room to speak; "legato" holds each note until the next. */
+  length: "written" | "full" | "legato";
+  /** Sing a third above the written line, inside the song's key, instead of the line itself. */
+  harmony: boolean;
+  /** Most notes at once; 0 is no limit. */
+  voices: number;
+}
+
+/** Where a sung line sits comfortably on a keyboard voice: around the C above middle C. */
+const SINGING_CENTRE = 67;
+const MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const MINOR = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+
+/**
+ * The key a set of notes is in, from how long each pitch class sounds, matched against the
+ * usual major and minor profiles. Returns the pitch classes of its scale.
+ */
+export function scaleOf(notes: Note[]): Set<number> {
+  const held = new Array<number>(12).fill(0);
+  for (const note of notes) held[((Math.round(note.p) % 12) + 12) % 12] += note.d;
+  let best = { score: -Infinity, tonic: 0, minor: false };
+  for (let tonic = 0; tonic < 12; tonic++) {
+    for (const minor of [false, true]) {
+      const profile = minor ? MINOR : MAJOR;
+      let score = 0;
+      for (let step = 0; step < 12; step++) score += held[(tonic + step) % 12] * profile[step];
+      if (score > best.score) best = { score, tonic, minor };
+    }
+  }
+  const steps = best.minor ? [0, 2, 3, 5, 7, 8, 10] : [0, 2, 4, 5, 7, 9, 11];
+  return new Set(steps.map((step) => (best.tonic + step) % 12));
+}
+
+/**
+ * A part made ready for a keyboard voice: harmonised if asked, moved to the right octave,
+ * its notes given the length they need, and thinned to what the voice can carry.
+ * `context` is every note in the song, which is what decides the key.
+ */
+export function shapeNotes(notes: Note[], shape: PartShape, context: Note[] = notes): Note[] {
+  if (!notes.length) return notes;
+  let shaped = notes.map((note) => ({ ...note }));
+
+  if (shape.harmony) {
+    const scale = scaleOf(context.length ? context : notes);
+    shaped = shaped.map((note) => {
+      // Two scale steps up: a third, major or minor as the key has it at that point.
+      let pitch = Math.round(note.p);
+      let steps = 0;
+      while (steps < 2) {
+        pitch += 1;
+        if (scale.has(((pitch % 12) + 12) % 12)) steps += 1;
+      }
+      return { ...note, p: pitch, v: note.v * 0.85 };
+    });
+  }
+
+  let shift = 0;
+  if (shape.octave === "auto") {
+    const sorted = shaped.map((note) => note.p).sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    shift = Math.round((SINGING_CENTRE - median) / 12) * 12;
+  } else {
+    shift = shape.octave * 12;
+  }
+  if (shift) shaped = shaped.map((note) => ({ ...note, p: Math.min(127, Math.max(0, note.p + shift)) }));
+
+  shaped = capVoices(shaped, shape.voices);
+
+  if (shape.length !== "written") {
+    shaped.sort((a, b) => a.t - b.t || a.p - b.p);
+    for (let index = 0; index < shaped.length; index++) {
+      const note = shaped[index];
+      // The next note that starts clearly later is where this one may be held to.
+      let next: Note | undefined;
+      for (let ahead = index + 1; ahead < shaped.length; ahead++) {
+        if (shaped[ahead].t > note.t + 0.03) {
+          next = shaped[ahead];
+          break;
+        }
+      }
+      const room = next ? next.t - note.t - 0.01 : note.d + 0.5;
+      if (shape.length === "legato") {
+        // Held to the next note, but a long silence in the tune stays a silence.
+        note.d = room <= 1.2 ? Math.max(note.d, room) : Math.max(note.d, 0.3);
+      } else {
+        note.d = Math.max(note.d, Math.min(0.28, Math.max(0.05, room)));
+      }
+    }
+  }
+  return shaped;
 }

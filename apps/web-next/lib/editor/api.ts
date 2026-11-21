@@ -79,6 +79,13 @@ export const editorApi = {
   renameProject: (id: string, name: string) =>
     request<ProjectSummary>(`/projects/${id}/rename`, json({ name })),
   deleteProject: (id: string) => request<{ deleted: boolean }>(`/projects/${id}`, { method: "DELETE" }),
+  /** Where the whole project downloads from, as one file. */
+  projectFileUrl: (id: string) => `${BASE}/projects/${id}/archive`,
+  openProjectFile: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return request<ProjectSummary>("/projects/import", { method: "POST", body });
+  },
   saveState: (id: string, state: ProjectState) =>
     request<{ ok: boolean; updated_at: string }>(`/projects/${id}/state`, json(state)),
   uploadAsset: (id: string, file: File) => {

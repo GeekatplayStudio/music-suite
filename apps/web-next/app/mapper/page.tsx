@@ -37,6 +37,9 @@ export default async function MapperPage({ searchParams }: MapperPageProps) {
         >
           Back to Music Suite
         </Link>
+        <a href="/help#song-geometry-mapper" target="_blank" rel="noreferrer" className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300">
+          Help
+        </a>
       </header>
       <iframe
         className="min-h-0 w-full flex-1 border-0 bg-black"

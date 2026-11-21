@@ -1386,3 +1386,44 @@ def test_comfyui_address_must_be_loopback(monkeypatch: pytest.MonkeyPatch) -> No
         generation.base_url()
     monkeypatch.setenv("MUSIC_SUITE_COMFYUI_URL", "http://localhost:9000/")
     assert generation.base_url() == "http://localhost:9000"
+
+
+def test_a_project_is_saved_to_a_file_and_opened_again(
+    client: TestClient, tmp_path: Path
+) -> None:
+    pid, asset = _setup(client, tmp_path)[:2]
+    state = {"tracks": [{"id": "t1", "name": "Song"}], "clips": [{"assetId": asset["id"]}]}
+    assert client.post(f"/editor/projects/{pid}/state", json=state).status_code == 200
+    saved = client.get(f"/editor/projects/{pid}/archive")
+    assert saved.status_code == 200 and saved.content[:2] == b"PK"
+
+    opened = client.post(
+        "/editor/projects/import", files={"file": ("demo.musicsuite.zip", saved.content)}
+    )
+    assert opened.status_code == 200, opened.text
+    new_id = opened.json()["id"]
+    assert new_id != pid
+    detail = client.get(f"/editor/projects/{new_id}").json()
+    assert detail["state"] == state
+    assert [a["id"] for a in detail["assets"]] == [asset["id"]]
+    audio = client.get(f"/editor/projects/{new_id}/assets/{asset['id']}/audio")
+    assert audio.status_code == 200
+
+
+def test_a_file_that_is_not_a_project_is_refused(client: TestClient) -> None:
+    import io
+    import zipfile
+
+    assert (
+        client.post("/editor/projects/import", files={"file": ("x.zip", b"not a zip")}).status_code
+        == 422
+    )
+    # Files that try to land outside the project are ignored, not written.
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("project.json", '{"name": "Sneaky", "state": null}')
+        archive.writestr("../escaped.wav", b"x")
+        archive.writestr("assets/../../escaped.json", b"x")
+    opened = client.post("/editor/projects/import", files={"file": ("x.zip", buffer.getvalue())})
+    assert opened.status_code == 200
+    assert client.get(f"/editor/projects/{opened.json()['id']}").json()["assets"] == []

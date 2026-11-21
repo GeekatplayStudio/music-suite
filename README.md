@@ -17,6 +17,8 @@
 
 Extract the ZIP, then double-click **`install.bat`**. Beginner guides: [English](docs/WINDOWS_INSTALL_GUIDE.md) · [Русский](docs/WINDOWS_INSTALL_GUIDE_RU.md)
 
+The [user manual](docs/USER_MANUAL.md) explains every workspace and setting. It is also built into the app: press **Help** on any page, or the **?** next to a setting.
+
 <img src="docs/images/geometry-mapper.png" alt="Song Geometry Mapper rendering a full-song 3D spectral map" width="100%">
 
 <sub>Song Geometry Mapper — a full-song 3D spectral map with an always-on readout, a seekable waveform scrubber, and structural arcs linking passages that recur.</sub>
@@ -146,7 +148,7 @@ This is the practical “what can I do with it?” list. **✅ Verified** means 
 
 ### Known limits and verification gaps
 
-- ⚠️ **Audio-to-MIDI is monophonic today.** Single-note melodies are verified; chords/polyphonic transcription are not reliable because Basic Pitch is not currently compatible with this dependency stack.
+- ⚠️ **Audio-to-MIDI is approximate on dense mixes.** A solo piano is written down with about 92–96% of its notes right and none invented (measured, including a round trip through a Roland GO:KEYS 3). Clear parts in a full mix come out close; dense parts are approximate because the stem split itself blends instruments. Chords need the AI note transcription pack.
 - ⚠️ **Stem count is not the same as guaranteed isolation quality.** The 12-stem path and a real GPU split are verified, but lead-versus-backing-vocal quality still needs broader testing on vocal-heavy material.
 - ⚠️ **Paid cloud generation has limited live coverage.** ElevenLabs, fal.ai and Lyria safety, validation, polling, download and import paths are contract-tested; real paid requests were not run in the recorded verification pass.
 - ⚠️ **ComfyUI “Generate a part” is stand-in tested.** Its workflow and failure handling are covered, but the recorded pass did not use a real ComfyUI installation.
@@ -163,6 +165,39 @@ Detailed evidence and the hand-test log live in [Studio Editor roadmap](docs/EDI
 ---
 
 ## Screenshots
+
+### Studio Editor
+
+Tracks, clips and the piano roll, with the inspector on the right. Here a solo piano has been written down as notes by the Keyboard wizard: 43 notes, on their own track under the audio.
+
+<img src="docs/images/studio-editor.png" alt="Studio Editor with a piano recording, its notes on a MIDI track, and the piano roll open" width="100%">
+
+### Your hardware keyboard and the Keyboard wizard
+
+Play your music on a USB keyboard such as a Roland GO:KEYS 3, pick any of its voices, and record its sound back in time. The wizard takes a song through it step by step, and can write a new sing-along part (the tune, a harmony or held chords) to add on top of the song.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/keyboard-wizard.png" alt="Keyboard wizard asking what kind of recording it is" width="100%"></td>
+<td width="50%"><img src="docs/images/keyboard-panel.png" alt="Keyboard panel: play music on the keyboard, choose its voice, notes at once, record a pass" width="100%"></td>
+</tr>
+<tr>
+<td align="center"><sub>Keyboard wizard</sub></td>
+<td align="center"><sub>Keyboard panel</sub></td>
+</tr>
+</table>
+
+### AI Song Studio
+
+Describe a song, or start from one you have, and generate it on this computer or with an online service.
+
+<img src="docs/images/ai-song-studio.png" alt="AI Song Studio create tab" width="100%">
+
+### Built-in user manual
+
+Every workspace has a **Help** button, and the **?** next to a setting opens the manual at the part that explains it. The same manual is [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
+
+<img src="docs/images/help.png" alt="The Help page with its contents list and search" width="100%">
 
 ### Unified workspace
 
@@ -255,7 +290,8 @@ Open it from the **Studio Editor** button in the workspace (it opens the selecte
 | **Plugins** | VST3 and Audio Units rendered in an isolated process: effects on audio clips, and instruments such as Surge XT that play a MIDI clip into a new audio track (Surge XT installs in one click; search its 3,000 sounds and hear each one live with Play and Stop, or open the plugin's own window). Web Audio Module effects that run live in the browser (opt-in, see below) |
 | **Synth Studio** | A page of its own for designing sounds: Surge XT's full interface (every control, graph and its patch browser) in Music Suite's colours, with its own piano for trying sounds; every synth control on one responsive screen, a piano that plays by mouse, touch or computer keys and fits its octaves to the screen width, presets and saved sounds shared with the editor, a tab to audition Surge XT's 3,000 sounds with Play and Stop, live playing of Surge XT from the piano or a MIDI keyboard (about 15–25 ms from key to sound), favourites shared with the editor, and export/import of any sound as a `.mssound` file |
 | **Generate** | Describe a part and a local ComfyUI (MusicGen, via the bundled Sonic Holodeck nodes) generates it at the project tempo |
-| **Export** | Mixdown, highlighted range or every track as WAV (24-bit or 32-bit float), FLAC or MP3; or send the mix straight to AI Mastering |
+| **Hardware keyboard** | Play your music on a USB keyboard such as a Roland GO:KEYS 3 in any of its voices (with a limit on notes at once), record it back in time with automatic level, and use the Keyboard wizard to re-voice a song part by part or add a sing-along part (the tune, a harmony or held chords) on top of it |
+| **Export** | Mixdown, highlighted range, every track or one track as WAV (24-bit or 32-bit float), FLAC or MP3; a song from just the tracks you tick; MIDI for one track or all; the whole project as one file to reopen later; or send the mix straight to AI Mastering |
 
 Press `?` in the editor for the full list of keyboard shortcuts.
 

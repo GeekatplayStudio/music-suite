@@ -67,6 +67,7 @@ import {
   UpdateStatus
 } from "@/lib/types";
 import { startSongUrl } from "@/lib/handoff";
+import { HelpLink } from "@/components/help-link";
 
 const ALL_CHARTS: Array<{ key: string; title: string; height: number }> = [
   { key: "waveform", title: "Waveform + Envelope", height: 680 },
@@ -2371,6 +2372,14 @@ export default function HomePage() {
               <Cpu className="mr-2 h-4 w-4" />
               Models &amp; engines
             </Button>
+            <Button
+              variant="secondary"
+              title="The user manual: every workspace and setting explained"
+              onClick={() => window.open("/help#analyser-and-mastering", "_blank", "noreferrer")}
+            >
+              <CircleHelp className="mr-2 h-4 w-4" />
+              Help
+            </Button>
             <Button variant="danger" onClick={() => void onClearHistory()} disabled={isBusy || runs.length === 0}>
               <Trash2 className="mr-2 h-4 w-4" />
               Clear History
@@ -2695,7 +2704,10 @@ export default function HomePage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">AI Mastering</CardTitle>
+              <CardTitle className="flex items-center justify-between text-lg">
+                AI Mastering
+                <HelpLink section="ai-mastering" label="the mastering settings" />
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">

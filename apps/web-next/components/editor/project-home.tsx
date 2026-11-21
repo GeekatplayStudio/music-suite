@@ -1,6 +1,6 @@
 "use client";
 
-import { AudioWaveform, Loader2, Plus, Scissors, Trash2 } from "lucide-react";
+import { AudioWaveform, FolderOpen, Loader2, Plus, Scissors, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -53,6 +53,19 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
       router.push(`/editor?project=${project.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The project could not be created.");
+      setBusy(false);
+    }
+  };
+
+  /** Open a project saved to a file from the editor's Export menu, as a new session. */
+  const openFile = async (file: File) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const project = await editorApi.openProjectFile(file);
+      router.push(`/editor?project=${project.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The project file could not be opened.");
       setBusy(false);
     }
   };
@@ -113,6 +126,9 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
         >
           Models &amp; engines
         </Link>
+        <a href="/help#studio-editor" target="_blank" rel="noreferrer" className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300">
+          Help
+        </a>
         <Link
           href="/"
           className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
@@ -236,6 +252,21 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
             <ActionButton type="submit" variant="primary" className="h-11 px-5 text-sm" disabled={busy}>
               <Plus className="h-4 w-4" /> New session
             </ActionButton>
+            <label
+              className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-slate-800 px-5 text-sm font-semibold text-slate-100 hover:bg-slate-700 ${busy ? "pointer-events-none opacity-50" : ""}`}
+            >
+              <FolderOpen className="h-4 w-4" /> Open a project file…
+              <input
+                type="file"
+                accept=".zip,application/zip"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) void openFile(file);
+                }}
+              />
+            </label>
           </form>
 
           <section aria-label="Sessions">

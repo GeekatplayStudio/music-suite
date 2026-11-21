@@ -31,13 +31,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useEffectEvent, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 
-import { ActionButton, IconButton } from "@/components/editor/controls";
+import { ActionButton, IconButton, fieldClass } from "@/components/editor/controls";
 import { SheetMusic } from "@/components/editor/sheet-music";
 import { Piano } from "@/components/synth/piano";
 import { Inspector, type JobEntry } from "@/components/editor/inspector";
 import { MidiControl } from "@/components/editor/midi-control";
 import { PianoRoll } from "@/components/editor/piano-roll";
 import { KeyboardWizard } from "@/components/editor/keyboard-wizard";
+import { HelpLink } from "@/components/help-link";
 import { ReampPanel } from "@/components/editor/reamp-panel";
 import { SpectralPanel } from "@/components/editor/spectral-panel";
 import { RULER_HEIGHT, Timeline } from "@/components/editor/timeline";
@@ -51,9 +52,10 @@ import { type ProcessStep, favouriteStore } from "@/lib/editor/favourites";
 import { MediaStore } from "@/lib/editor/media";
 import { type MidiEvent, midiHub } from "@/lib/editor/midi";
 import { midiOutHub } from "@/lib/editor/midi-out";
-import { MidiPassDriver, capVoices, trackNotes } from "@/lib/editor/reamp";
+import { MidiPassDriver, type PartShape, autoLevel, capVoices, clearRepeats, shapeNotes, trackNotes } from "@/lib/editor/reamp";
 import { type MidiOutTrack, parseMidi, writeMidi, writeMidiFile } from "@/lib/editor/smf";
 import { gmPatch } from "@/lib/editor/gm";
+import { SING_STYLES, type SingStyle, singAlong } from "@/lib/editor/singalong";
 import { watchSoundFont } from "@/lib/editor/soundfont";
 import { restoreSoundFont } from "@/lib/editor/soundfont-store";
 import {
@@ -508,15 +510,33 @@ function levelToMeter(peak: number): number {
   return clamp((20 * Math.log10(peak) + 60) / 60, 0, 1);
 }
 
-type ExportKind = "wav24" | "wav32" | "tracks" | "range" | "mp3" | "flac" | "midi" | "mastering" | "studio";
+/** The tracks the hardware keyboard plays instead of the computer: one, or every pitched note track for "all". */
+function keyboardTracks(state: ProjectState, choice: string | null): Set<string> {
+  if (choice === null) return new Set();
+  if (choice !== "all") return new Set([choice]);
+  return new Set(
+    state.tracks.filter((track) => track.synth.kind !== "drums" && state.clips.some((clip) => clip.trackId === track.id && clip.notes)).map((track) => track.id)
+  );
+}
 
-const EXPORT_ITEMS: { kind: ExportKind; label: string; needsRange?: boolean; needsNotes?: boolean }[] = [
+function withKeyboardMuted(state: ProjectState, choice: string | null): ProjectState {
+  const onKeys = keyboardTracks(state, choice);
+  return onKeys.size ? { ...state, tracks: state.tracks.map((track) => (onKeys.has(track.id) ? { ...track, mute: true } : track)) } : state;
+}
+
+type ExportKind = "project" | "chosen" | "wav24" | "wav32" | "tracks" | "track" | "trackmidi" | "range" | "mp3" | "flac" | "midi" | "mastering" | "studio";
+
+const EXPORT_ITEMS: { kind: ExportKind; label: string; needsRange?: boolean; needsNotes?: boolean; needsTrack?: boolean }[] = [
+  { kind: "project", label: "Whole project · one file to reopen later" },
+  { kind: "chosen", label: "Song from chosen tracks · WAV, FLAC or MP3…" },
   { kind: "wav24", label: "Mixdown · WAV 24-bit" },
   { kind: "wav32", label: "Mixdown · WAV 32-bit float" },
   { kind: "flac", label: "Mixdown · FLAC" },
   { kind: "mp3", label: "Mixdown · MP3 320 kbps" },
   { kind: "range", label: "Highlighted range · WAV 24-bit", needsRange: true },
   { kind: "tracks", label: "Each track · WAV 24-bit" },
+  { kind: "track", label: "Selected track · WAV 24-bit", needsTrack: true },
+  { kind: "trackmidi", label: "Selected track · MIDI file", needsTrack: true, needsNotes: true },
   { kind: "midi", label: "Every instrument · MIDI file", needsNotes: true },
   { kind: "mastering", label: "Send mix to the analyser and mastering →" },
   { kind: "studio", label: "Start an AI song from the mix →" }
@@ -588,6 +608,8 @@ export function EditorApp({
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  /** The "song from chosen tracks" dialog: which tracks go into the file, and its format. Null when closed. */
+  const [mixPick, setMixPick] = useState<{ ids: Set<string>; format: "wav24" | "wav32" | "flac" | "mp3" } | null>(null);
   const [working, setWorking] = useState<string | null>(null);
   const [showSpectral, setShowSpectral] = useState(false);
   const [wamWindow, setWamWindow] = useState<string | null>(null);
@@ -598,9 +620,19 @@ export function EditorApp({
   const punchRef = useRef<TimeRange | null>(null);
   const stoppingRef = useRef(false);
   /** The pass currently playing a part out to a hardware keyboard, if any. */
-  const reampRef = useRef<{ driver: MidiPassDriver; sourceName: string } | null>(null);
+  const reampRef = useRef<{ driver: MidiPassDriver; sourceName: string; partId: string } | null>(null);
+  /** The take track each part's last pass through the keyboard landed on, by the part's track. */
+  const takesRef = useRef<Record<string, string>>({});
+  const auditionRef = useRef(false);
   const [reampRunning, setReampRunning] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  /** How the last pass through the keyboard ended: counted so each one is seen once. */
+  const [passResult, setPassResult] = useState<{ count: number; silent: boolean; clipped: boolean }>({ count: 0, silent: false, clipped: false });
+  /** The note track heard on the hardware keyboard during playback instead of on the computer, if any. */
+  const [keysTrackId, setKeysTrackId] = useState<string | null>(null);
+  /** Most notes at once the keyboard is given during playback; 0 is no limit. */
+  const [keysVoices, setKeysVoices] = useState(0);
+  const passStartingRef = useRef(false);
 
   const stateRef = useRef(state);
   const aliveRef = useRef(true);
@@ -616,8 +648,22 @@ export function EditorApp({
 
   useEffect(() => {
     stateRef.current = state;
-    engine.setState(state);
-  }, [engine, state]);
+    // A track the keyboard is playing is silent on the computer, or it would be heard twice.
+    engine.setState(withKeyboardMuted(state, keysTrackId));
+  }, [engine, state, keysTrackId]);
+
+  // Playback through the keyboard: while the song plays, the chosen track's notes go out
+  // over MIDI in step with the playhead. A recording pass sends its own notes instead.
+  useEffect(() => {
+    if (!playing || !keysTrackId || recording || passStartingRef.current || auditionRef.current || engine.isRecording()) return;
+    const live = stateRef.current;
+    const merged = [...keyboardTracks(live, keysTrackId)].flatMap((id) => trackNotes(live, id));
+    const notes = clearRepeats(capVoices(merged, keysVoices));
+    if (!notes.length || !midiOutHub.ready()) return;
+    const driver = new MidiPassDriver(engine, notes, engine.position());
+    driver.start();
+    return () => driver.stop();
+  }, [engine, playing, keysTrackId, keysVoices, recording]);
 
   const commit = useCallback((next: ProjectState, key?: string) => {
     dispatch({ type: "set", state: next, key: key || undefined, at: performance.now() });
@@ -1460,6 +1506,25 @@ export function EditorApp({
     const punch = punchRef.current;
     punchRef.current = null;
     setRecording(false);
+    if (reamp) {
+      // A pass that came back as silence is not saved: an empty track helps nobody.
+      let peak = 0;
+      if (take) {
+        for (let channel = 0; channel < take.buffer.numberOfChannels; channel++) {
+          const data = take.buffer.getChannelData(channel);
+          for (let i = 0; i < data.length; i += 7) peak = Math.max(peak, Math.abs(data[i]));
+        }
+      }
+      const silent = peak < 0.002;
+      // At full scale the keyboard's output has overrun the input and the take is distorted.
+      const clipped = peak >= 0.995;
+      setPassResult((prev) => ({ count: prev.count + 1, silent, clipped }));
+      if (clipped) setNotice(`${reamp.sourceName}: the keyboard came back too loud and the take is distorted. Turn its volume down a little and record again.`);
+      if (silent) {
+        setNotice(`${reamp.sourceName}: the keyboard made no sound, so nothing was saved.`);
+        return;
+      }
+    }
     if (!take) {
       setNotice("Nothing was recorded.");
       return;
@@ -1514,6 +1579,7 @@ export function EditorApp({
           const added = addTrack(current, `${reamp.sourceName} (keyboard)`);
           current = added.state;
           trackId = added.track.id;
+          takesRef.current[reamp.partId] = added.track.id;
         }
         // Never record on top of existing audio: a busy stretch of track gets a new track instead.
         const occupied = current.clips.some((c) => c.trackId === trackId && c.start < end && c.start + c.duration > start);
@@ -1550,18 +1616,29 @@ export function EditorApp({
     trackId,
     deviceId,
     latency,
-    maxVoices = 0
+    shape,
+    label,
+    replace
   }: {
+    /** Throw away this part's earlier take first: it is being recorded again. */
+    replace?: boolean;
     trackId: string;
     deviceId: string;
     latency: number;
-    /** At most this many notes at once; 0 sends the part as written. */
-    maxVoices?: number;
+    /** How the part is reshaped for the keyboard; absent sends it as written. */
+    shape?: PartShape;
+    /** What the take is called, when it is not simply the part's name. */
+    label?: string;
   }) => {
     if (engine.isRecording() || reampRef.current) return;
     const current = stateRef.current;
     const source = current.tracks.find((track) => track.id === trackId);
-    const notes = capVoices(trackNotes(current, trackId), maxVoices);
+    const written = trackNotes(current, trackId);
+    // The key is judged from every pitched note in the song, not from this part alone.
+    const everything = current.tracks
+      .filter((track) => track.synth.kind !== "drums")
+      .flatMap((track) => trackNotes(current, track.id));
+    const notes = clearRepeats(shape ? shapeNotes(written, shape, everything) : written);
     if (!source || !notes.length) {
       setNotice("That part has no notes to play out.");
       return;
@@ -1570,19 +1647,80 @@ export function EditorApp({
       setNotice("The keyboard's MIDI output is not connected.");
       return;
     }
+    const earlier = takesRef.current[trackId];
+    if (replace && earlier && current.tracks.some((track) => track.id === earlier)) {
+      commit(removeTrack(current, earlier));
+      delete takesRef.current[trackId];
+      await delay(80);
+    }
     const from = Math.max(0, notes[0].t - 1);
+    passStartingRef.current = true;
     try {
+      // The keyboard's volume is set from the part's loudest chord, so the take cannot distort.
+      setNotice(`Setting the keyboard's level for ${source.name}…`);
+      await autoLevel(engine, notes, { deviceId: deviceId || undefined });
       await engine.startRecording(from, { deviceId: deviceId || undefined, latency });
     } catch (err) {
+      passStartingRef.current = false;
       setNotice(errorMessage(err, "The pass could not start."));
       return;
     }
+    passStartingRef.current = false;
     const driver = new MidiPassDriver(engine, notes, from, () => void stopRecording());
-    reampRef.current = { driver, sourceName: source.name };
+    reampRef.current = { driver, sourceName: label ?? source.name, partId: trackId };
     driver.start();
     setRecording(true);
     setReampRunning(true);
     setNotice(`Playing ${source.name} out to the keyboard. It stops on its own at the end of the part.`);
+  };
+
+  /** Wizard: hear a part's take, on its own or with the rest of the song, without changing the project. */
+  const auditionTake = (partId: string, alone: boolean) => {
+    const takeId = takesRef.current[partId];
+    const current = stateRef.current;
+    const clip = current.clips.find((c) => c.trackId === takeId);
+    if (!clip) return;
+    const withNotes = new Set(current.clips.filter((c) => c.notes).map((c) => c.trackId));
+    auditionRef.current = true;
+    engine.setState({
+      ...current,
+      tracks: current.tracks.map((track) =>
+        withNotes.has(track.id) ? { ...track, mute: true, solo: false } : track.id === takeId ? { ...track, mute: false, solo: alone } : { ...track, solo: false }
+      )
+    });
+    void engine.play(Math.max(0, clip.start - 0.3));
+  };
+
+  const stopAudition = () => {
+    engine.pause();
+    auditionRef.current = false;
+    engine.setState(withKeyboardMuted(stateRef.current, keysTrackId));
+  };
+
+  /**
+   * Wizard: write a part that goes with the song instead of replacing anything in it, from
+   * the notes already found. Returns the new note track, or null when there is nothing to
+   * build it from. Making it again replaces the one made before.
+   */
+  const wizardSingAlong = (style: SingStyle): string | null => {
+    let current = stateRef.current;
+    const isOurs = (trackName: string) => /^Sing-along/.test(trackName) && !/\(keyboard\)$/.test(trackName);
+    const parts = current.tracks
+      .filter((track) => !isOurs(track.name) && current.clips.some((clip) => clip.trackId === track.id && clip.notes))
+      .map((track) => ({ name: track.name, drums: track.synth.kind === "drums", notes: trackNotes(current, track.id) }));
+    const notes = singAlong(parts, style, current.bpm, current.beatsPerBar);
+    if (!notes.length) {
+      setNotice("There are no notes to build a sing-along part from. Write the song's notes first.");
+      return null;
+    }
+    for (const old of current.tracks.filter((track) => isOurs(track.name))) current = removeTrack(current, old.id);
+    const label = SING_STYLES.find((entry) => entry.id === style)?.label.toLowerCase() ?? style;
+    const added = addTrack(current, `Sing-along: ${label}`);
+    // Heard on the computer as a choir until the keyboard records it.
+    current = updateTrack(added.state, added.track.id, { synth: { kind: "synth", patch: gmPatch(52), program: 52 }, mute: true });
+    const length = Math.max(1, ...notes.map((note) => note.t + note.d));
+    commit({ ...current, clips: [...current.clips, makeMidiClip(added.track.id, 0, length, notes, added.track.name)] });
+    return added.track.id;
   };
 
   /** Wizard: put a song file on the timeline. Returns its clip, or null when it could not be read. */
@@ -1597,21 +1735,24 @@ export function EditorApp({
    * Wizard: split the song into audio stems and write each part's notes, with the settings
    * that measured best: the most stems this machine can make, and the stems method for notes.
    */
-  const wizardPrepare = async (clipId: string): Promise<boolean> => {
+  const wizardPrepare = async (clipId: string, source: "song" | "piano" | "instrument" | "voice"): Promise<boolean> => {
     const clip = stateRef.current.clips.find((c) => c.id === clipId);
     if (!clip) return false;
-    const stems = Math.max(...(capabilities?.separation.stem_options ?? [4]));
-    const split = await runJob("separate", { stems }, `Splitting ${clip.name} into ${stems} stems`, [clipId]);
-    if (!split) return false;
-    await delay(120);
-    return runJob("song_to_midi", { engine: "stems" }, `Writing the notes of ${clip.name}`, [clipId]);
+    if (source === "song") {
+      // Four stems: the same split the notes are written from, so stems and notes line up.
+      const split = await runJob("separate", { stems: 4 }, `Splitting ${clip.name} into stems`, [clipId]);
+      if (!split) return false;
+      await delay(120);
+    }
+    // One instrument on its own is written down as it stands; splitting it tears it apart.
+    return runJob("song_to_midi", { engine: "stems", source }, `Writing the notes of ${clip.name}`, [clipId]);
   };
 
   /**
    * Wizard: leave the finished song playing. The note tracks fall silent, and so does the
    * original stem of every part the keyboard replaced; the stems it did not replace stay.
    */
-  const wizardFinish = (recorded: string[]) => {
+  const wizardFinish = (recorded: string[], addOnly: boolean) => {
     const current = stateRef.current;
     const partName = (name: string) => name.replace(/ \(MIDI\)$/, "").trim().toLowerCase();
     const replaced = new Set(
@@ -1621,10 +1762,19 @@ export function EditorApp({
     if (replaced.has("other instruments")) replaced.add("other");
     if (replaced.has("instruments")) replaced.add("instrumental");
     const withNotes = new Set(current.clips.filter((clip) => clip.notes).map((clip) => clip.trackId));
+    const isStem = (name: string) => {
+      const stem = name.trim().toLowerCase();
+      return replaced.has(stem) || (["kick", "snare", "toms", "hi-hat", "ride", "crash"].includes(stem) && replaced.has("drums"));
+    };
+    // A recording of one instrument has no stems: what the keyboard replaced is the recording itself.
+    const noStems = !addOnly && !current.tracks.some((track) => isStem(track.name));
     commit({
       ...current,
       tracks: current.tracks.map((track) => {
         if (withNotes.has(track.id)) return { ...track, mute: true };
+        if (noStems && !/\(keyboard\)$/.test(track.name)) return { ...track, mute: true };
+        // Adding to the song: everything that was playing keeps playing under the new voices.
+        if (addOnly) return track;
         // "Instruments" is what a two-stem split calls everything that is not the voice.
         const stem = track.name.trim().toLowerCase();
         const kitPiece = ["kick", "snare", "toms", "hi-hat", "ride", "crash"].includes(stem) && replaced.has("drums");
@@ -1702,12 +1852,50 @@ export function EditorApp({
   };
 
   const hasMidiClips = state.clips.some((clip) => clip.notes?.length);
+  /** The track "Selected track" exports mean: the selected clip's, or the selected track. */
+  const exportTrack = state.tracks.find((t) => t.id === (primaryClip?.trackId ?? selectedTrackId)) ?? null;
 
   const exportAudio = async (kind: ExportKind) => {
     setExportOpen(false);
     const clean = (value: string) => value.replace(/[^\w .-]+/g, "_");
     const safeName = clean(name || "mix");
+    const chosen = state.tracks.find((t) => t.id === (primaryClip?.trackId ?? selectedTrackId)) ?? null;
+    if (kind === "chosen") {
+      // Starts from what is heard now: every track with something on it that is not silenced.
+      const anySolo = state.tracks.some((t) => t.solo);
+      const audible = state.tracks.filter((t) => state.clips.some((c) => c.trackId === t.id) && !t.mute && (!anySolo || t.solo));
+      setMixPick({ ids: new Set(audible.map((t) => t.id)), format: "wav24" });
+      return;
+    }
     try {
+      if (kind === "project") {
+        // What is on screen is saved first, so the file holds the project as it is now.
+        setWorking("Saving the project…");
+        await editorApi.saveState(projectId, stateRef.current);
+        const link = document.createElement("a");
+        link.href = editorApi.projectFileUrl(projectId);
+        link.download = "";
+        link.click();
+        setWorking(null);
+        setNotice("The project file is downloading. Reopen it from the sessions page with “Open a project file”.");
+        return;
+      }
+      if (kind === "trackmidi") {
+        const part = chosen ? midiParts().find((entry) => entry.name === chosen.name) : null;
+        if (!chosen || !part) {
+          setNotice("Select a track that has notes first.");
+          return;
+        }
+        downloadBlob(
+          writeMidiFile([part], { bpm: state.bpm, beatsPerBar: state.beatsPerBar, beatUnit: state.beatUnit ?? 4, name: chosen.name }),
+          `${safeName} - ${clean(chosen.name)}.mid`
+        );
+        return;
+      }
+      if (kind === "track" && !chosen) {
+        setNotice("Select a track first.");
+        return;
+      }
       if (kind === "midi") {
         const parts = midiParts();
         if (!parts.length) {
@@ -1726,7 +1914,11 @@ export function EditorApp({
         return;
       }
       await captureWamStates();
-      if (kind === "tracks") {
+      if (kind === "track" && chosen) {
+        setWorking(`Rendering ${chosen.name}…`);
+        const buffer = await engine.render({ trackId: chosen.id });
+        downloadBlob(encodeWav(buffer, 24), `${safeName} - ${clean(chosen.name)}.wav`);
+      } else if (kind === "tracks") {
         const used = state.tracks.filter((t) => state.clips.some((c) => c.trackId === t.id));
         for (const [index, track] of used.entries()) {
           setWorking(`Rendering ${track.name} (${index + 1} of ${used.length})…`);
@@ -1762,6 +1954,38 @@ export function EditorApp({
     } catch (err) {
       setNotice(errorMessage(err, "Export failed."));
     }
+    setWorking(null);
+  };
+
+  /** Export one file holding only the ticked tracks, whatever is muted or soloed on screen. */
+  const exportChosen = async () => {
+    const pick = mixPick;
+    if (!pick || !pick.ids.size) return;
+    setMixPick(null);
+    const clean = (value: string) => value.replace(/[^\w .-]+/g, "_");
+    const safeName = clean(name || "mix");
+    const current = stateRef.current;
+    try {
+      await captureWamStates();
+      setWorking(`Rendering ${pick.ids.size} track${pick.ids.size === 1 ? "" : "s"} into one file…`);
+      // The mixer is told which tracks sound for this render only; the project is not changed.
+      engine.setState({ ...current, tracks: current.tracks.map((t) => ({ ...t, solo: false, mute: !pick.ids.has(t.id) })) });
+      const buffer = await engine.render();
+      const wav = encodeWav(buffer, pick.format === "wav32" ? 32 : 24);
+      if (pick.format === "mp3" || pick.format === "flac") {
+        setWorking(`Encoding ${pick.format.toUpperCase()}…`);
+        downloadBlob(await editorApi.encode(wav, pick.format), `${safeName}.${pick.format}`);
+      } else {
+        downloadBlob(wav, `${safeName}.wav`);
+      }
+      if (engine.renderWarnings.length) {
+        setNotice(`Exported without these in-browser plugins, which could not run offline: ${engine.renderWarnings.join(", ")}.`);
+      }
+    } catch (err) {
+      setNotice(errorMessage(err, "Export failed."));
+    }
+    const latest = stateRef.current;
+    engine.setState(withKeyboardMuted(latest, keysTrackId));
     setWorking(null);
   };
 
@@ -2084,13 +2308,14 @@ export function EditorApp({
             recordsNotes={recordsNotes}
             onAddInstrument={addInstrumentTrack}
           />
-          <IconButton
-            label="Keyboard wizard: song in, keyboard voices out, step by step"
-            active={showWizard}
+          <ActionButton
+            variant="primary"
+            className="h-9"
+            title="Keyboard wizard: add a sing-along voice to a song, or replace its parts with keyboard voices, step by step"
             onClick={() => setShowWizard(true)}
           >
-            <WandSparkles className="h-4 w-4" />
-          </IconButton>
+            <WandSparkles className="h-4 w-4" /> Wizard
+          </ActionButton>
           <ReampPanel
             engine={engine}
             tracks={reampTracks}
@@ -2099,6 +2324,10 @@ export function EditorApp({
             disabled={!ready || working !== null || (recording && !reampRunning)}
             onStartPass={(options) => void startReampPass(options)}
             onStopPass={() => void stopRecording()}
+            keysTrackId={keysTrackId}
+            onKeysTrack={setKeysTrackId}
+            keysVoices={keysVoices}
+            onKeysVoices={setKeysVoices}
           />
           <IconButton
             label={showKeys ? "Hide the piano" : "Show a piano to play the selected instrument track"}
@@ -2238,15 +2467,17 @@ export function EditorApp({
               <Download className="h-4 w-4" /> Export
             </ActionButton>
             {exportOpen ? (
-              <div role="menu" className="absolute right-0 top-11 z-50 w-64 rounded-xl border border-white/10 bg-slate-900 p-1 shadow-2xl">
+              <div role="menu" className="absolute right-0 top-11 z-50 w-72 rounded-xl border border-white/10 bg-slate-900 p-1 shadow-2xl">
                 {EXPORT_ITEMS.map((item) => (
                   <button
                     key={item.kind}
                     type="button"
                     role="menuitem"
-                    disabled={(item.needsRange && !range) || (item.needsNotes && !hasMidiClips)}
+                    disabled={(item.needsRange && !range) || (item.needsNotes && !hasMidiClips) || (item.needsTrack && !exportTrack)}
                     title={
-                      item.needsRange && !range
+                      item.needsTrack && !exportTrack
+                        ? "Click a track or one of its clips first"
+                        : item.needsRange && !range
                         ? "Highlight a range with the Range tool first"
                         : item.needsNotes && !hasMidiClips
                           ? "This project has no MIDI clips to write"
@@ -2255,7 +2486,7 @@ export function EditorApp({
                     className="flex h-9 w-full items-center rounded-lg px-3 text-left text-xs text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:text-slate-500 disabled:hover:bg-transparent"
                     onClick={() => void exportAudio(item.kind)}
                   >
-                    {item.label}
+                    {item.needsTrack && exportTrack ? item.label.replace("Selected track", exportTrack.name) : item.label}
                   </button>
                 ))}
               </div>
@@ -2264,6 +2495,7 @@ export function EditorApp({
           <IconButton label="Keyboard shortcuts" shortcut="?" onClick={() => setShowHelp(true)}>
             <Keyboard className="h-4 w-4" />
           </IconButton>
+          <HelpLink section="studio-editor" label="the Studio Editor manual" className="h-9 w-9 rounded-lg" />
         </div>
       </header>
 
@@ -2621,6 +2853,58 @@ export function EditorApp({
         </div>
       ) : null}
 
+      {mixPick ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label="Export a song from chosen tracks">
+          <div className="flex max-h-full w-full max-w-md flex-col rounded-2xl border border-white/10 bg-slate-900 text-sm text-slate-200 shadow-2xl">
+            <div className="border-b border-white/10 px-5 py-3">
+              <h2 className="display-font text-sm font-semibold uppercase tracking-wider">Song from chosen tracks</h2>
+              <p className="mt-1 text-[12px] text-slate-400">The ticked tracks are mixed into one file. Tracks that are muted now start unticked.</p>
+            </div>
+            <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-5 py-3">
+              {state.tracks
+                .filter((track) => state.clips.some((clip) => clip.trackId === track.id))
+                .map((track) => (
+                  <li key={track.id}>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-cyan-400"
+                        checked={mixPick.ids.has(track.id)}
+                        onChange={(event) => {
+                          const ids = new Set(mixPick.ids);
+                          if (event.target.checked) ids.add(track.id);
+                          else ids.delete(track.id);
+                          setMixPick({ ...mixPick, ids });
+                        }}
+                      />
+                      {track.name}
+                      {track.mute ? <span className="text-[11px] text-slate-500">muted</span> : null}
+                    </label>
+                  </li>
+                ))}
+            </ul>
+            <div className="flex items-center justify-between gap-2 border-t border-white/10 px-5 py-3">
+              <select
+                className={cn(fieldClass, "w-44")}
+                aria-label="File format"
+                value={mixPick.format}
+                onChange={(event) => setMixPick({ ...mixPick, format: event.target.value as "wav24" | "wav32" | "flac" | "mp3" })}
+              >
+                <option value="wav24">WAV 24-bit</option>
+                <option value="wav32">WAV 32-bit float</option>
+                <option value="flac">FLAC</option>
+                <option value="mp3">MP3 320 kbps</option>
+              </select>
+              <div className="flex gap-2">
+                <ActionButton onClick={() => setMixPick(null)}>Cancel</ActionButton>
+                <ActionButton variant="primary" disabled={!mixPick.ids.size} onClick={() => void exportChosen()}>
+                  Export {mixPick.ids.size} track{mixPick.ids.size === 1 ? "" : "s"}
+                </ActionButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {showHelp ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
@@ -2648,7 +2932,7 @@ export function EditorApp({
       {showWizard ? (
         <KeyboardWizard
           engine={engine}
-          songs={state.clips.filter((clip) => !clip.notes && clip.duration > 20).map((clip) => ({ clipId: clip.id, name: clip.name }))}
+          songs={state.clips.filter((clip) => !clip.notes && clip.duration > 1).map((clip) => ({ clipId: clip.id, name: clip.name }))}
           parts={reampTracks}
           progress={
             jobs.find((entry) => entry.job.status === "queued" || entry.job.status === "running")
@@ -2660,11 +2944,20 @@ export function EditorApp({
           }
           passRunning={reampRunning}
           editorBusy={working !== null}
+          passResult={passResult}
           onClose={() => setShowWizard(false)}
           onImport={wizardImport}
           onPrepare={wizardPrepare}
           onStartPass={(options) => void startReampPass(options)}
           onStopPass={() => void stopRecording()}
+          onSingAlong={wizardSingAlong}
+          onPlayResult={() => {
+            stopAudition();
+            void engine.play(0);
+          }}
+          onAudition={auditionTake}
+          onStopAudition={stopAudition}
+          playing={playing}
           onFinish={wizardFinish}
         />
       ) : null}

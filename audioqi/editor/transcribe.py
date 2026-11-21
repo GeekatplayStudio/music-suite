@@ -887,17 +887,26 @@ def song_to_midi(
     *,
     snap: bool = True,
     engine: str = "auto",
+    source: str = "song",
 ) -> dict[str, Any]:
     """A recording as one track of notes per instrument.
+
+    ``source`` says what the recording is. "song" is a full mix, split into stems first.
+    "piano", "instrument" and "voice" are one instrument on its own, which is transcribed
+    as it stands: splitting a solo recording only tears it into pieces.
 
     ``engine`` "auto" and "stems" split the song into stems and transcribe each, checking
     every note against the stem it came from. "muscriptor" asks for the whole-mix model.
     """
     if engine not in ENGINES:
         raise EditorError("Engine must be auto, stems or muscriptor.")
+    if source not in SOURCES:
+        raise EditorError("Source must be song, piano, instrument or voice.")
     report = progress or (lambda _fraction: None)
     if float(np.max(np.abs(audio))) < 1e-4:
         raise EditorError("This audio is silent, so there are no notes to find.")
+    if source != "song":
+        return _solo(audio, sample_rate, report, source, snap)
     status = whole_mix_status()
     if engine == "muscriptor" and status != "ready":
         raise EditorError(WHOLE_MIX_ACCESS, 409)
@@ -923,19 +932,101 @@ def song_to_midi(
     return result
 
 
+#: What a recording can be said to hold: a full mix, or one instrument on its own.
+SOURCES = ("song", "piano", "instrument", "voice")
+_SOLO: dict[str, tuple[str, int, str]] = {
+    "piano": ("Piano", 0, "piano"),
+    "instrument": ("Instrument", 0, "poly"),
+    "voice": ("Voice", 73, "mono"),
+}
+
+
+#: A stem holding at least this share of a recording's energy is the whole recording.
+ALONE_SHARE = 0.9
+
+
+def _one_instrument(levels: dict[str, float]) -> str | None:
+    """What a recording is when one stem holds nearly all of it; None for a real mix.
+
+    A lone voice is a "voice". Anything else is "keys": a piano or another instrument,
+    told apart afterwards by which transcriber's notes the audio bears out.
+    """
+    energy = {name: level * level for name, level in levels.items()}
+    total = sum(energy.values())
+    if total <= 0:
+        return None
+    name, most = max(energy.items(), key=lambda item: item[1])
+    if most / total < ALONE_SHARE or name == "drums" or name in DRUM_PITCHES:
+        return None
+    return "voice" if name == "vocals" else "keys"
+
+
+def _solo(
+    audio: np.ndarray, sample_rate: int, report: Progress, source: str, snap: bool
+) -> dict[str, Any]:
+    """One instrument on its own, written down without splitting it first."""
+    from audioqi.editor import analysis
+
+    seconds = audio.shape[0] / float(sample_rate)
+    report(0.1)
+    if source == "keys":
+        # Not told which: the piano model is the more exact when it is a piano, and says
+        # so by most of its notes being found in the audio. Otherwise the general one.
+        raw, engine = transcribe_pitched(audio, sample_rate, "piano")
+        notes = heard_notes(raw, audio, sample_rate)
+        source = "piano"
+        if not notes or len(notes) < 0.75 * len(raw):
+            source = "instrument"
+            raw, engine = transcribe_pitched(audio, sample_rate, "poly")
+            notes = heard_notes(raw, audio, sample_rate)
+        label, program, _kind = _SOLO[source]
+    else:
+        label, program, kind = _SOLO[source]
+        raw, engine = transcribe_pitched(audio, sample_rate, kind)
+        notes = heard_notes(raw, audio, sample_rate)
+    report(0.7)
+    notes = _tidy(notes, seconds)
+    if not notes:
+        raise EditorError("No notes were found in this audio.")
+    measured = analysis.analyze(audio, sample_rate)
+    tracks = [{"name": label, "role": source, "program": program, "drums": False, "notes": notes}]
+    grid = snap_to_grid(tracks, list(measured.get("beats") or [])) if snap else None
+    if grid:
+        tracks[0]["notes"] = _tidy(tracks[0]["notes"], seconds)
+    report(1.0)
+    return {
+        "bpm": measured.get("bpm"),
+        "key": measured.get("key_label"),
+        "grid": grid,
+        "tracks": tracks,
+        "engines": {label: engine},
+        "stems": "none (one instrument)",
+        "skipped": [],
+        "seconds": round(seconds, 3),
+        "note_count": len(tracks[0]["notes"]),
+    }
+
+
 def _stems_song(
     audio: np.ndarray,
     sample_rate: int,
     progress: Progress | None = None,
     *,
     snap: bool = True,
+    stem_count: int | None = None,
 ) -> dict[str, Any]:
     """Split a recording into stems and transcribe each. Returns tracks and what wrote them."""
     report = progress or (lambda _fraction: None)
     seconds = audio.shape[0] / float(sample_rate)
     if float(np.max(np.abs(audio))) < 1e-4:
         raise EditorError("This audio is silent, so there are no notes to find.")
-    count = max(engines.stem_options())
+    # Four stems, not six, even when six can be made. The six-stem model guesses which of
+    # guitar, piano and "other" each sound belongs to, and guesses differently from moment
+    # to moment: a solo piano with known notes came back split across all three, and the
+    # fragments transcribed to 6 percent of its notes at 3 percent of their length. As one
+    # "other" stem the same piano gave 96 percent.
+    options = engines.stem_options()
+    count = stem_count or (4 if 4 in options else max(options))
     kit_available = separation.detail_available() and count >= 4
     stems, stem_engine = separation.separate(
         audio,
@@ -951,6 +1042,14 @@ def _stems_song(
     drums = stems.get("drums")
     levels = {name: _rms(stem) for name, stem in stems.items()}
     loudest = max(levels.values(), default=0.0)
+
+    # One instrument on its own shows up as one stem holding nearly all of the sound. It is
+    # then written down from the recording itself, whole, rather than from a stem of it.
+    alone = _one_instrument(levels)
+    if alone is not None:
+        result = _solo(audio, sample_rate, lambda f: report(0.6 + 0.4 * f), alone, snap)
+        result["detected"] = alone
+        return result
 
     # The song's own key and beats, used to clean the notes up once they are written.
     from audioqi.editor import analysis
@@ -993,7 +1092,12 @@ def _stems_song(
     report(0.6 + 0.38 * len(order) / total)
     if kit or drums is not None:
         source = drums if drums is not None else np.sum(list(kit.values()), axis=0)
-        notes, engine = drum_notes(source, sample_rate, kit or None)
+        # A song with no drums still leaves a whisper in the drum stem, and hit detection
+        # works on relative level, so it would write a full kit part from that whisper.
+        if loudest <= 0 or _rms(source) < loudest * SILENT_RATIO:
+            notes, engine = [], "none"
+        else:
+            notes, engine = drum_notes(source, sample_rate, kit or None)
         notes = _tidy(notes, seconds)
         if notes:
             used["Drums"] = engine

@@ -617,6 +617,9 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
           <Link href="/models" className={quietButton}>
             Models &amp; engines
           </Link>
+          <a href="/help#ai-song-studio" target="_blank" rel="noreferrer" className={quietButton}>
+            Help
+          </a>
           <Link href={projectId ? `/editor?project=${projectId}` : "/"} className={quietButton}>
             {projectId ? "Back to the editor" : "Back to Music Suite"}
           </Link>

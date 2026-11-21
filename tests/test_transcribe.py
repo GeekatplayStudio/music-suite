@@ -209,15 +209,21 @@ def test_kit_pieces_map_to_general_midi_drums_and_bleed_is_ignored() -> None:
 # --------------------------------------------------------------------------- the whole song
 
 
-def _fake_song(monkeypatch: pytest.MonkeyPatch, stems: dict[str, np.ndarray]) -> list[str]:
+def _fake_song(
+    monkeypatch: pytest.MonkeyPatch, stems: dict[str, np.ndarray], mix: bool = True
+) -> list[str]:
     asked: list[str] = []
+    if mix:
+        # A fake song may have a single stem and still stand for a full mix.
+        monkeypatch.setattr(transcribe, "_one_instrument", lambda _levels: None)
     # Whatever this machine has installed, these tests are about the stems method.
     monkeypatch.setattr(transcribe, "whole_mix_status", lambda: "not-installed")
     monkeypatch.setattr(engines, "stem_options", lambda: [2, 4, 6])
     monkeypatch.setattr(separation, "detail_available", lambda: True)
 
     def separate(_audio: Any, _sr: int, count: int, _report: Any, **options: Any) -> Any:
-        assert count == 6 and options == {"drum_kit_pass": True}
+        # Four stems even though six are on offer: the six-stem split scatters one instrument.
+        assert count == 4 and options == {"drum_kit_pass": True}
         return stems, "fake separator"
 
     def pitched(_audio: np.ndarray, _sr: int, kind: str) -> Any:
@@ -567,3 +573,51 @@ def test_auto_uses_the_stems_method_even_when_the_whole_mix_model_is_ready(
     monkeypatch.setattr(transcribe, "whole_mix_status", lambda: "ready")
     monkeypatch.setattr(transcribe, "whole_mix_tracks", lambda *_a: pytest.fail("not asked for"))
     assert transcribe.song_to_midi(_tone(60, 1.0), SR)["stems"] == "fake separator"
+
+
+def test_one_instrument_is_written_down_without_splitting_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(separation, "separate", lambda *_a, **_k: pytest.fail("must not split"))
+    monkeypatch.setattr(analysis, "analyze", lambda _audio, _sr: {"beats": [], "key_label": None})
+    asked: list[str] = []
+
+    def pitched(_audio: np.ndarray, _sr: int, kind: str) -> Any:
+        asked.append(kind)
+        return [_note(0.5, 60)], f"fake-{kind}"
+
+    monkeypatch.setattr(transcribe, "transcribe_pitched", pitched)
+    result = transcribe.song_to_midi(_tone(60, 2.0), SR, source="piano")
+    assert asked == ["piano"]
+    assert [(t["name"], len(t["notes"])) for t in result["tracks"]] == [("Piano", 1)]
+    with pytest.raises(EditorError, match="song, piano, instrument or voice"):
+        transcribe.song_to_midi(_tone(60, 2.0), SR, source="kazoo")
+
+
+def test_a_song_without_drums_gets_no_drum_part(monkeypatch: pytest.MonkeyPatch) -> None:
+    whisper = _tone(60, 2.0, level=0.0005)
+    _fake_song(monkeypatch, {"other": _tone(60, 2.0), "kick": whisper, "snare": whisper})
+    monkeypatch.setattr(transcribe, "drum_notes", lambda *_a: pytest.fail("only bleed"))
+    result = transcribe.song_to_midi(_tone(60, 2.0), SR)
+    assert [t["name"] for t in result["tracks"]] == ["Other instruments"]
+    assert "Drums" in result["skipped"]
+
+
+def test_one_instrument_in_a_song_is_recognised_and_not_split(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Told it is a full song, but one stem holds everything: it is a piano on its own.
+    loud, silent = _tone(60, 2.0), _tone(60, 2.0, level=0.0005)
+    stems = {"vocals": silent, "bass": silent, "other": loud, "kick": silent}
+    asked = _fake_song(monkeypatch, stems, mix=False)
+    result = transcribe.song_to_midi(_tone(60, 2.0), SR)
+    assert result["detected"] == "keys"
+    assert [t["name"] for t in result["tracks"]] == ["Piano"]
+    assert asked == ["piano"] and result["stems"] == "none (one instrument)"
+
+
+def test_a_voice_on_its_own_is_recognised(monkeypatch: pytest.MonkeyPatch) -> None:
+    loud, silent = _tone(60, 2.0), _tone(60, 2.0, level=0.0005)
+    asked = _fake_song(monkeypatch, {"vocals": loud, "bass": silent, "other": silent}, mix=False)
+    result = transcribe.song_to_midi(_tone(60, 2.0), SR)
+    assert [t["name"] for t in result["tracks"]] == ["Voice"] and asked == ["mono"]
