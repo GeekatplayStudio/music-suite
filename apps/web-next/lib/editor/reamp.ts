@@ -147,8 +147,19 @@ export async function measureRoundTrip(
   return { seconds: measured[Math.floor(measured.length / 2)], peak };
 }
 
-/** Where a take's loudest moment should sit: half of full scale, 6 dB below distortion. */
-const LEVEL_TARGET = 0.5;
+/**
+ * Where the loudest moment of the level check should sit: about 10 dB below distortion.
+ * The check is a moment of the part, while the take is all of it: held chords overlap as
+ * one fades and the next starts, and sustained voices keep swelling, so the take comes
+ * back louder than the check. This much headroom absorbs that.
+ */
+export const LEVEL_TARGET = 0.32;
+/** Accepted around the target, so a near miss does not cost another check. */
+const LEVEL_BAND = [0.75, 1.25] as const;
+/** The lowest MIDI volume worth sending; below it the keyboard's own knob is the problem. */
+export const MIN_VOLUME = 10;
+/** Level follows the square of the volume setting on a GO:KEYS 3 (measured), so 0.7 is -6 dB. */
+export const QUIETER = 0.7;
 
 /** The notes sounding at the part's loudest moment, judged by how hard and how many are held at once. */
 function loudestMoment(notes: Note[]): Note[] {
@@ -178,33 +189,37 @@ function loudestMoment(notes: Note[]): Note[] {
 export async function autoLevel(
   engine: EditorEngine,
   notes: Note[],
-  options: { deviceId?: string } = {}
+  options: { deviceId?: string; startVolume?: number } = {}
 ): Promise<{ volume: number; peak: number } | null> {
   const chord = loudestMoment(notes);
   if (!chord.length || !midiOutHub.ready()) return null;
-  let volume = 100;
+  // Held as long as the part holds it (within reason): sustained voices swell after the attack.
+  const hold = Math.min(1.6, Math.max(0.55, Math.max(...chord.map((note) => note.d))));
+  let volume = Math.min(127, Math.max(MIN_VOLUME, Math.round(options.startVolume ?? 100)));
   let peak = 0;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 6; attempt++) {
     midiOutHub.setVolume(volume);
-    const take = await engine.captureProbe(1.1, {
+    const take = await engine.captureProbe(hold + 0.6, {
       deviceId: options.deviceId,
       onArmed: () => {
         for (const note of chord) midiOutHub.noteOn(note.p, note.v);
         window.setTimeout(() => {
           for (const note of chord) midiOutHub.noteOff(note.p);
-        }, 550);
+        }, hold * 1000);
       }
     });
     midiOutHub.allOff();
     peak = peakOf(take.channels);
     if (peak < 0.002) return null;
-    if (peak >= LEVEL_TARGET * 0.7 && peak <= LEVEL_TARGET * 1.4) break;
+    if (peak >= LEVEL_TARGET * LEVEL_BAND[0] && peak <= LEVEL_TARGET * LEVEL_BAND[1]) break;
     // At full scale the true level is unknown, only that it is too high: come down firmly.
-    const next = peak >= 0.98 ? volume * 0.6 : volume * Math.sqrt(LEVEL_TARGET / peak);
-    const clamped = Math.min(127, Math.max(20, Math.round(next)));
+    const next = peak >= 0.98 ? volume * 0.5 : volume * Math.sqrt(LEVEL_TARGET / peak);
+    const clamped = Math.min(127, Math.max(MIN_VOLUME, Math.round(next)));
     if (clamped === volume) break;
     volume = clamped;
   }
+  // The last correction is sent too: it was worked out after the last check.
+  midiOutHub.setVolume(volume);
   // Let the last chord die away so it is not on the start of the take.
   await new Promise((resolve) => setTimeout(resolve, 350));
   return { volume, peak };
@@ -283,13 +298,19 @@ export class MidiPassDriver {
       midiOutHub.allOff();
       this.sentUntil = position;
     }
-    const to = Math.max(this.sentUntil, position) + LOOKAHEAD;
-    midiOutHub.scheduleNotes(this.notes, this.sentUntil, to, (at) => {
-      const clock = this.engine.performanceTimeFor(at);
-      // Stopped mid-pass: send it now rather than at a time that no longer means anything.
-      return clock ?? performance.now();
-    });
-    this.sentUntil = to;
+    // The queue reaches a fixed distance past the playhead. It must be measured from the
+    // playhead, not from where the queue already ends: that grew it by LOOKAHEAD every tick,
+    // four times faster than time passes, until it looked like a jump backwards and every
+    // note was silenced (all notes off about five times a second; measured on a GO:KEYS 3).
+    const to = position + LOOKAHEAD;
+    if (to > this.sentUntil) {
+      midiOutHub.scheduleNotes(this.notes, this.sentUntil, to, (at) => {
+        const clock = this.engine.performanceTimeFor(at);
+        // Stopped mid-pass: send it now rather than at a time that no longer means anything.
+        return clock ?? performance.now();
+      });
+      this.sentUntil = to;
+    }
     const finished = notesEnd(this.notes);
     if (this.onEnd && finished > 0 && position > finished + 0.4) {
       this.stop();
@@ -347,6 +368,16 @@ export function clearRepeats(notes: Note[], gap = 0.03): Note[] {
   return out;
 }
 
+/** Extra notes stacked on every note of a part, played together in the same voice. */
+export type Layer = "third-up" | "fifth-down" | "octave-up" | "octave-down";
+
+export const LAYERS: { id: Layer; label: string }[] = [
+  { id: "third-up", label: "3rd above" },
+  { id: "fifth-down", label: "5th below" },
+  { id: "octave-up", label: "Octave above" },
+  { id: "octave-down", label: "Octave below" }
+];
+
 /** How a part is reshaped on its way to the keyboard. */
 export interface PartShape {
   /** "auto" moves the part by whole octaves into a singing range; a number is octaves up or down. */
@@ -355,8 +386,128 @@ export interface PartShape {
   length: "written" | "full" | "legato";
   /** Sing a third above the written line, inside the song's key, instead of the line itself. */
   harmony: boolean;
-  /** Most notes at once; 0 is no limit. */
+  /** Most notes at once, per layer; 0 is no limit. */
   voices: number;
+  /**
+   * The shortest a note may be, in seconds; 0 leaves lengths alone. A keyboard voice that
+   * says a word (a Minion voice) is cut off at its note's end, so a word needs this long.
+   */
+  minLength?: number;
+  /**
+   * What happens when a note made longer runs into the next one. True lets them ring over
+   * each other; false skips the next one, so fewer notes are sung but every word finishes.
+   * Notes that were already long (held chords) are never skipped and never cause a skip.
+   */
+  overlap?: boolean;
+  /** Notes added on top of each note: a third above, a fifth below, an octave either way. */
+  layers?: Layer[];
+  /**
+   * The voice sounds one note at a time: a new note takes over and cuts off the one before
+   * (measured on the GO:KEYS 3 Extra voices bank, the Minion voices). Then no note starts
+   * until the one before has had its shortest length, and layers are not stacked: each is
+   * recorded as a take of its own.
+   */
+  mono?: boolean;
+  /** Only this layer's notes, in the part's rhythm: one layer's own take on a one-note voice. */
+  layerOnly?: Layer;
+}
+
+/** The GO:KEYS 3 Extra voices bank (the Minion voices) plays one note at a time (measured). */
+export function isMonoTone(tone: { msb: number; lsb: number } | null | undefined): boolean {
+  return Boolean(tone && tone.msb === 71 && tone.lsb === 99);
+}
+
+/**
+ * One note at a time, each allowed to finish. A note that would start while the one before
+ * is still within its shortest length is skipped; of notes struck together the loudest (then
+ * the highest) is kept. Each kept note ends just before the next one starts, so the voice is
+ * never asked to play two at once.
+ */
+export function oneAtATime(notes: Note[], minLength: number): Note[] {
+  const sorted = [...notes].sort((a, b) => a.t - b.t || b.v - a.v || b.p - a.p);
+  const kept: Note[] = [];
+  let busyUntil = -Infinity;
+  for (const source of sorted) {
+    if (source.t < busyUntil - 0.02) continue;
+    const note = { ...source, d: Math.max(source.d, minLength) };
+    const before = kept[kept.length - 1];
+    if (before && before.t + before.d > note.t - 0.01) before.d = Math.max(0.02, note.t - 0.01 - before.t);
+    kept.push(note);
+    busyUntil = note.t + Math.max(note.d, minLength);
+  }
+  return kept;
+}
+
+/** ``steps`` notes of the scale up (or down, when negative) from ``pitch``. */
+function scaleStep(pitch: number, steps: number, scale: Set<number>): number {
+  let out = Math.round(pitch);
+  const direction = steps < 0 ? -1 : 1;
+  for (let moved = 0; moved < Math.abs(steps); ) {
+    out += direction;
+    if (scale.has(((out % 12) + 12) % 12)) moved += 1;
+  }
+  return out;
+}
+
+/** Where a layer puts a note: a third above or a fifth below in the key, or an octave either way. */
+function layerPitch(pitch: number, layer: Layer, scale: Set<number>): number {
+  if (layer === "third-up") return scaleStep(pitch, 2, scale);
+  if (layer === "fifth-down") return scaleStep(pitch, -4, scale);
+  return pitch + (layer === "octave-up" ? 12 : -12);
+}
+
+/** Each note with the asked-for layers stacked on it, a little quieter than the note itself. */
+export function addLayers(notes: Note[], layers: Layer[], scale: Set<number>): Note[] {
+  if (!layers.length) return notes;
+  const out: Note[] = [];
+  for (const note of notes) {
+    out.push(note);
+    for (const layer of layers) {
+      const pitch = layerPitch(note.p, layer, scale);
+      if (pitch < 0 || pitch > 127) continue;
+      out.push({ ...note, p: pitch, v: note.v * 0.8 });
+    }
+  }
+  return out;
+}
+
+/** Only one layer's notes, at the part's own times and lengths. */
+export function layerAlone(notes: Note[], layer: Layer, scale: Set<number>): Note[] {
+  return notes
+    .map((note) => ({ ...note, p: layerPitch(note.p, layer, scale) }))
+    .filter((note) => note.p >= 0 && note.p <= 127);
+}
+
+/**
+ * Notes given at least ``minLength`` seconds. With ``overlap`` off, a lengthened note that
+ * would still be sounding when the next short note starts makes that next note (and anything
+ * struck with it) be skipped, so the word in progress finishes. Notes that were already at
+ * least ``minLength`` long, such as held chords, neither skip nor get skipped.
+ */
+export function lengthenNotes(notes: Note[], minLength: number, overlap: boolean): Note[] {
+  if (minLength <= 0) return notes;
+  const sorted = [...notes].sort((a, b) => a.t - b.t || a.p - b.p);
+  const out: Note[] = [];
+  let busyUntil = -Infinity;
+  let groupStart = -Infinity;
+  let groupKept = true;
+  for (const source of sorted) {
+    const note = { ...source };
+    if (note.d >= minLength) {
+      out.push(note);
+      continue;
+    }
+    // Notes struck together (a word and its harmony) are kept or skipped together.
+    if (note.t - groupStart > 0.03) {
+      groupStart = note.t;
+      groupKept = overlap || note.t >= busyUntil - 0.02;
+    }
+    if (!groupKept) continue;
+    note.d = minLength;
+    busyUntil = Math.max(busyUntil, note.t + note.d);
+    out.push(note);
+  }
+  return out;
 }
 
 /** Where a sung line sits comfortably on a keyboard voice: around the C above middle C. */
@@ -392,9 +543,10 @@ export function scaleOf(notes: Note[]): Set<number> {
 export function shapeNotes(notes: Note[], shape: PartShape, context: Note[] = notes): Note[] {
   if (!notes.length) return notes;
   let shaped = notes.map((note) => ({ ...note }));
+  const layers = shape.layers ?? [];
+  const scale = scaleOf(context.length ? context : notes);
 
   if (shape.harmony) {
-    const scale = scaleOf(context.length ? context : notes);
     shaped = shaped.map((note) => {
       // Two scale steps up: a third, major or minor as the key has it at that point.
       let pitch = Math.round(note.p);
@@ -440,5 +592,13 @@ export function shapeNotes(notes: Note[], shape: PartShape, context: Note[] = no
       }
     }
   }
-  return shaped;
+  if (shape.mono) {
+    // One note at a time, each word allowed to finish; a layer is its own take in the same rhythm.
+    shaped = oneAtATime(shaped, shape.minLength ?? 0);
+    return shape.layerOnly ? layerAlone(shaped, shape.layerOnly, scale) : shaped;
+  }
+  // Lengthened before layering, so a word and the notes stacked on it are kept or skipped together.
+  shaped = lengthenNotes(shaped, shape.minLength ?? 0, shape.overlap ?? true);
+  if (shape.layerOnly) return layerAlone(shaped, shape.layerOnly, scale);
+  return addLayers(shaped, layers, scale);
 }

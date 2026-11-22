@@ -100,6 +100,43 @@ function chordsOf(parts: SongPart[], bar: number): Note[] {
   return out.sort((a, b) => a.t - b.t || a.p - b.p);
 }
 
+/** One line of a sing-along: what it is called and its notes. */
+export interface SingLine {
+  label: string;
+  notes: Note[];
+}
+
+/**
+ * The ticked styles as separate lines, each one note at a time, so a voice that sounds one
+ * note at a time can record each as its own take and the takes play together. Held chords
+ * become three lines (low, middle, high). Lines with no notes are left out.
+ */
+export function singAlongLines(parts: SongPart[], styles: SingStyle[], bpm: number, beatsPerBar: number): SingLine[] {
+  const lines: SingLine[] = [];
+  for (const entry of SING_STYLES) {
+    if (!styles.includes(entry.id)) continue;
+    const notes = singAlong(parts, entry.id, bpm, beatsPerBar);
+    if (entry.id !== "chords") {
+      lines.push({ label: entry.label.toLowerCase(), notes });
+      continue;
+    }
+    // Each chord's notes, lowest first, dealt out to the low, middle and high lines.
+    const byStart = new Map<number, Note[]>();
+    for (const note of notes) {
+      const key = Math.round(note.t * 100);
+      byStart.set(key, [...(byStart.get(key) ?? []), note]);
+    }
+    const split: Note[][] = [[], [], []];
+    for (const group of byStart.values()) {
+      group.sort((a, b) => a.p - b.p).slice(0, 3).forEach((note, index) => split[index].push(note));
+    }
+    ["low", "middle", "high"].forEach((name, index) => {
+      lines.push({ label: `${entry.label.toLowerCase()} (${name})`, notes: split[index].sort((a, b) => a.t - b.t) });
+    });
+  }
+  return lines.filter((line) => line.notes.length);
+}
+
 /** The notes of a sing-along part in the given style. Empty when the song has nothing to build it from. */
 export function singAlong(parts: SongPart[], style: SingStyle, bpm: number, beatsPerBar: number): Note[] {
   if (style === "chords") return chordsOf(parts, (60 / Math.max(30, bpm)) * Math.max(1, beatsPerBar));

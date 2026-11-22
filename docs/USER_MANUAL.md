@@ -909,12 +909,12 @@ The keyboard plays one voice at a time, so a song with several parts is recorded
 2. **Timing:** **Measure the delay**. The keyboard answers a few tens of milliseconds late; measuring it once lets every take land exactly in time.
 3. **Record a pass:** choose the part and press **Record … through the keyboard**. It plays the part out and records what comes back onto a new track called "<part> (keyboard)". The notes track stays as it was, so you can record it again.
 
-**Automatic level:** before each take, the app plays the part's loudest chord, measures what comes back, and sets the keyboard's volume over MIDI so the loudest moment sits at about half of full scale. That leaves 6 dB of headroom so takes do not distort. It adds a few seconds of test chords before each take. A very quiet voice may stay below the target even at full volume.
+**Automatic level:** before each take, the app plays the part's loudest chord, held as long as the part holds it (up to about 1.6 seconds, so voices that swell are measured), measures what comes back, and sets the keyboard's volume over MIDI so that moment sits at about a third of full scale. That leaves room for held chords that overlap and voices that keep swelling, so a whole take still stays below distortion. It adds a few seconds of test chords before each take. A very quiet voice may stay below the target even at full volume.
 
 **Checks after each take:**
 
 - *Silent:* the take is not saved, and you are told the keyboard stopped answering (see [Troubleshooting](#troubleshooting)).
-- *Distorted:* you are told to turn the keyboard down and record again.
+- *Distorted:* the take is still saved and you are told. In the wizard it is recorded again by itself, each time about 6 dB quieter, up to three tries; only if even a low MIDI volume distorts are you asked to turn the keyboard's own volume knob down.
 
 ## Keyboard wizard
 
@@ -942,7 +942,7 @@ Choose what to do:
 | Sing a harmony | A third above the melody, inside the song's key. |
 | Hold the chords | Long notes that follow the song's chords bar by bar, three at a time, like a backing choir. |
 
-Press **Write the sing-along part**. It is built from the song's own notes, so its key, tempo and chords come from the song. **Write it again** replaces it, for example after choosing another style. The new part starts on the keyboard's **Extra voices** bank, where the GO:KEYS 3 Minion edition keeps its character voices; step through it for the one you want. This doubles, harmonises or accompanies the song's existing melody; it does not compose a new counter-melody, and it is only as good as the notes written down in step 1.
+Tick one or more of them. Each ticked style becomes its own part, recorded in turn, and the takes play together: the tune, its harmony and held chords underneath. Held chords become three parts (low, middle, high), because the Minion voices sound one note at a time. Press **Write the sing-along part**. It is built from the song's own notes, so its key, tempo and chords come from the song. **Write it again** replaces it, for example after choosing another style. The new part starts on the keyboard's **Extra voices** bank, where the GO:KEYS 3 Minion edition keeps its character voices; step through it for the one you want. This doubles, harmonises or accompanies the song's existing melody; it does not compose a new counter-melody, and it is only as good as the notes written down in step 1.
 
 **Re-voice the song's parts.** The song's own parts are played by the keyboard in voices you choose. Tick the parts to include. **Silence what the keyboard replaces** mutes each original part once its keyboard take is in; left unticked, the original keeps playing in full under the takes.
 
@@ -954,7 +954,13 @@ For each part:
 | Notes at once | 1 (melody), 2, 3, 4, All | Vocal, bass and lead lines: 1; sing-along chords: 3; everything else: All | Thins chords for voices that blur them. |
 | Octave | Singing range, 2 up, 1 up, As written, 1 down | Lines: Singing range; others: As written | Moves the part by whole octaves. Singing range centres it around the G above middle C. |
 | Note length | Held to the next, Room to speak, As written | Lines: Held to the next; others: As written | *Held to the next* joins the notes (a long silence stays a silence); *Room to speak* gives short notes at least a quarter of a second. |
-| Harmony (a third above) | on / off | off | Plays a third above the part instead of the part itself. |
+| One note at a time | on / off | On for the keyboard's Extra voices (the Minion voices); off otherwise | Measured on the GO:KEYS 3: these voices sound one note at a time, and a new note cuts off the word still being said. With this on, no note starts until the one before has had its shortest length, and each layer is recorded as a take of its own. |
+| Shortest note | 0 to 2 seconds | Sung sing-along parts: 0.6 s; others: as shaped | Every note lasts at least this long. A voice that says a word (a Minion voice) is cut off when its note ends, so give it long enough for the word. |
+| When a note runs into the next | Skip the next note (words finish), Let them overlap | Sing-along: Skip | *Skip* drops a short note that would start while a word is still being said, so fewer notes are sung but each word is whole. *Overlap* keeps every note and lets them ring over each other. Held chords are never skipped. |
+| Move it a third up | on / off | off | Plays a third above the part instead of the part itself. |
+| Add layers | 3rd above, 5th below, Octave above, Octave below | none | Notes added to every note of the part, a little quieter; a third and a fifth follow the song's key. With *One note at a time* on, each layer is recorded as its own take in the same rhythm, on its own track; otherwise they are played together in one take. |
+
+Some Minion voices say a short word that ends by itself (about 0.3 to 0.8 seconds, measured) however long the key is held. A longer *Shortest note* does not lengthen such a word; it gives it room to finish before the next note.
 
 ### Step 4: Record
 
@@ -966,7 +972,7 @@ For each part:
 
 **Record all without stopping** records every part in turn without waiting for you.
 
-Before each take the keyboard's level is set automatically (see [Your hardware keyboard](#your-hardware-keyboard)). If a take comes back silent the wizard stops instead of saving empty tracks.
+Before each take the keyboard's level is set automatically (see [Your hardware keyboard](#your-hardware-keyboard)). If a take comes back distorted, the wizard records that part again by itself, about 6 dB quieter each time, up to three tries, and only then asks you to turn the keyboard's own volume knob down. If a take comes back silent the wizard stops instead of saving empty tracks.
 
 ### Step 5: Done
 
@@ -1213,7 +1219,7 @@ For things the app does not offer as a setting, set a Windows environment variab
 | "No keyboard was found on MIDI" | Check the USB cable and that the keyboard is on. Use Chrome or Edge, and allow MIDI when asked. |
 | Test notes are not heard | Check the **Channel** (4 for a GO:KEYS 3) and the keyboard's volume. |
 | A take comes back silent, or the keyboard stops answering part-way through a session | Windows' connection to the keyboard's MIDI has stuck. Unplug the keyboard's USB cable, wait five seconds and plug it back in (or switch the keyboard off and on), then **Check the keyboard** again. If it still does not answer, restart the computer. |
-| A take sounds distorted | Turn the keyboard's volume down a little and record again. Automatic level normally prevents this; a voice that swells well past its first half second can still go over. |
+| A take sounds distorted | The wizard re-records it quieter by itself (up to three tries). If it still says so, the keyboard's own volume knob is very high: turn it down to about half and record again. |
 | The take is late or early | **Measure the delay** again, with nothing else playing. |
 | The keyboard plays the wrong sound | Choose the voice in the app rather than on the keyboard, and press **Listen** before recording. |
 

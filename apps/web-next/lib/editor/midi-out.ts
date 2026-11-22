@@ -223,10 +223,16 @@ class MidiOutHub {
     );
   }
 
+  /** The last volume sent with {@link setVolume}, or null before any was sent. */
+  volume: number | null = null;
+
   /** Set the instrument's volume for the channel in use (controller 7), 0-127. */
   setVolume(level: number, channel = this.status.channel): boolean {
     const wire = (channel - 1) & 0x0f;
-    return this.send([0xb0 | wire, 7, Math.min(127, Math.max(0, Math.round(level)))]);
+    const value = Math.min(127, Math.max(0, Math.round(level)));
+    const sent = this.send([0xb0 | wire, 7, value]);
+    if (sent) this.volume = value;
+    return sent;
   }
 
   /**

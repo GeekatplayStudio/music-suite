@@ -9,7 +9,17 @@ import type { EditorEngine } from "@/lib/editor/engine";
 import { VoicePicker } from "@/components/editor/voice-picker";
 import { type Tone, midiOutHub } from "@/lib/editor/midi-out";
 import { SING_STYLES, type SingStyle } from "@/lib/editor/singalong";
-import { type PartShape, guessInstrumentInput, listAudioInputs, measureRoundTrip } from "@/lib/editor/reamp";
+import {
+  LAYERS,
+  type Layer,
+  isMonoTone,
+  MIN_VOLUME,
+  QUIETER,
+  type PartShape,
+  guessInstrumentInput,
+  listAudioInputs,
+  measureRoundTrip
+} from "@/lib/editor/reamp";
 import { cn } from "@/lib/utils";
 
 export interface WizardPart {
@@ -33,9 +43,21 @@ interface KeyboardWizardProps {
   onClose: () => void;
   onImport: (file: File) => Promise<string | null>;
   /** How the last pass ended; `count` goes up by one for each pass. */
-  passResult: { count: number; silent: boolean; clipped: boolean };
+  passResult: { count: number; silent: boolean; clipped: boolean; volume: number | null };
   onPrepare: (clipId: string, source: SourceKind) => Promise<boolean>;
-  onStartPass: (options: { trackId: string; deviceId: string; latency: number; shape: PartShape; label: string; replace: boolean }) => void;
+  onStartPass: (options: {
+    trackId: string;
+    deviceId: string;
+    latency: number;
+    shape: PartShape;
+    label: string;
+    replace: boolean;
+    /** Where this take is filed when a part has several (a layer's own take). */
+    takeKey?: string;
+    /** A set keyboard volume instead of a measured one (a quieter retry). */
+    level?: number;
+    managed?: boolean;
+  }) => void;
   onStopPass: () => void;
   /** Play a part's take back, alone or with the rest of the song. */
   onAudition: (partId: string, alone: boolean) => void;
@@ -43,7 +65,7 @@ interface KeyboardWizardProps {
   playing: boolean;
   onFinish: (recordedTrackIds: string[], addOnly: boolean) => void;
   /** Write a part that goes with the song; returns its track, or null when it could not be made. */
-  onSingAlong: (style: SingStyle) => string | null;
+  onSingAlong: (styles: SingStyle[]) => string | null;
   /** Play the finished song from the start. */
   onPlayResult: () => void;
 }
@@ -57,6 +79,9 @@ const SOURCES: { id: SourceKind; label: string; hint: string }[] = [
 ];
 
 type Step = "song" | "keyboard" | "voices" | "record" | "done";
+/** Takes of one part before the wizard asks for the keyboard's own volume to come down. */
+const MAX_TRIES = 3;
+
 const STEPS: { id: Step; label: string }[] = [
   { id: "song", label: "Song" },
   { id: "keyboard", label: "Keyboard" },
@@ -83,8 +108,22 @@ function isSingAlong(part: WizardPart): boolean {
 function defaultChoice(part: WizardPart): PartChoice {
   if (isSingAlong(part)) {
     // The keyboard's extra voices are where its character voices live.
-    const chords = /chords/i.test(part.name);
-    return { include: true, tone: { msb: 71, lsb: 99, program: 1 }, voices: chords ? 3 : 1, octave: chords ? 0 : "auto", length: chords ? "written" : "legato", harmony: false };
+    const sung = /tune|harmony/i.test(part.name);
+    // Every sing-along part is one line: a chord's notes are parts of their own.
+    return {
+      include: true,
+      tone: { msb: 71, lsb: 99, program: 1 },
+      voices: 1,
+      octave: sung ? "auto" : 0,
+      length: sung ? "legato" : "written",
+      harmony: false,
+      // A character voice says a word per note and plays one note at a time: each word gets
+      // long enough to finish, and nothing starts on top of it.
+      minLength: sung ? 0.6 : 0,
+      overlap: false,
+      layers: [],
+      mono: true
+    };
   }
   if (part.drums) {
     return { include: false, tone: { msb: 86, lsb: 65, program: 1 }, voices: 0, octave: 0, length: "written", harmony: false };
@@ -127,7 +166,7 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
   const [replaceToo, setReplaceToo] = useState(false);
   /** "add" writes a new voice to go with the song and replaces nothing; "replace" re-voices the song's own parts. */
   const [goal, setGoal] = useState<"add" | "replace">("add");
-  const [style, setStyle] = useState<SingStyle>("tune");
+  const [styles, setStyles] = useState<SingStyle[]>(["tune"]);
   const addOnly = goal === "add" || !replaceToo;
   const [working, setWorking] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -245,34 +284,84 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
       midiOutHub.selectTone(choice.tone);
       await wait(450);
     }
-    const before = liveRef.current.passResult.count;
     const plain = part.name.replace(/ \(MIDI\)$/, "");
-    props.onStartPass({
-      trackId: part.id,
-      deviceId: inputId,
-      latency,
-      shape: { voices: choice.voices, octave: choice.octave, length: choice.length, harmony: choice.harmony },
-      label: choice.harmony ? `${plain} harmony` : plain,
-      // A part recorded a second time replaces its first take.
-      replace: true
-    });
-    if (!(await until(() => liveRef.current.passRunning, 25_000))) {
-      if (!cancelRef.current) setProblem(`The pass for ${part.name} did not start. The message at the top of the editor says why.`);
-      return "stopped";
-    }
-    // A pass ends itself when its part has played; an hour is only a backstop.
-    if (!(await until(() => !liveRef.current.passRunning, 3_600_000))) return "stopped";
-    await until(() => liveRef.current.passResult.count > before, 5000);
-    if (liveRef.current.passResult.silent) {
-      setProblem(
-        `The keyboard made no sound for ${plain}. Its MIDI connection has stopped answering: ` +
-          "switch the keyboard off and on (or unplug and replug its USB cable), then check the keyboard again."
-      );
-      setLatency(null);
-      return "silent";
-    }
-    if (liveRef.current.passResult.clipped) {
-      setProblem(`${plain} came back too loud and is distorted. Turn the keyboard's volume down a little and record again.`);
+    const layers = choice.layers ?? [];
+    // A one-note voice cannot stack layers: each layer is a take of its own, in the same rhythm.
+    const passes: { layerOnly?: Layer; label: string; takeKey: string }[] = [
+      { label: choice.harmony ? `${plain} harmony` : plain, takeKey: part.id },
+      ...(choice.mono
+        ? layers.map((layer) => ({
+            layerOnly: layer,
+            label: `${plain} (${LAYERS.find((entry) => entry.id === layer)?.label ?? layer})`,
+            takeKey: `${part.id}:${layer}`
+          }))
+        : [])
+    ];
+    for (const pass of passes) {
+      if (cancelRef.current) break;
+      // A take that distorts is recorded again by itself, each time about 6 dB quieter. Only when
+      // even a low MIDI volume distorts is the keyboard's own volume knob the thing to turn down.
+      let level: number | undefined;
+      for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
+        const before = liveRef.current.passResult.count;
+        props.onStartPass({
+          trackId: part.id,
+          deviceId: inputId,
+          latency,
+          shape: {
+            voices: choice.voices,
+            octave: choice.octave,
+            length: choice.length,
+            harmony: choice.harmony,
+            minLength: choice.minLength ?? 0,
+            overlap: choice.overlap ?? true,
+            layers: choice.mono ? [] : layers,
+            mono: Boolean(choice.mono),
+            layerOnly: pass.layerOnly
+          },
+          label: pass.label,
+          takeKey: pass.takeKey,
+          // A part recorded a second time replaces its first take.
+          replace: true,
+          level,
+          managed: true
+        });
+        if (!(await until(() => liveRef.current.passRunning, 25_000))) {
+          if (!cancelRef.current) setProblem(`The pass for ${part.name} did not start. The message at the top of the editor says why.`);
+          return "stopped";
+        }
+        // A pass ends itself when its part has played; an hour is only a backstop.
+        if (!(await until(() => !liveRef.current.passRunning, 3_600_000))) return "stopped";
+        await until(() => liveRef.current.passResult.count > before, 5000);
+        const result = liveRef.current.passResult;
+        if (result.silent) {
+          setProblem(
+            `The keyboard made no sound for ${plain}. Its MIDI connection has stopped answering: ` +
+              "switch the keyboard off and on (or unplug and replug its USB cable), then check the keyboard again."
+          );
+          setLatency(null);
+          return "silent";
+        }
+        if (!result.clipped) {
+          setProblem(null);
+          break;
+        }
+        const used = result.volume ?? 100;
+        const next = Math.round(used * QUIETER);
+        if (attempt === MAX_TRIES || next < MIN_VOLUME || cancelRef.current) {
+          setProblem(
+            `${pass.label} still came back distorted with the keyboard's MIDI volume at ${used} of 127. ` +
+              "The keyboard's own volume knob is set very high: turn it down to about half and record again."
+          );
+          break;
+        }
+        setProblem(`${pass.label} came back too loud, so it is being recorded again a little quieter (try ${attempt + 1} of ${MAX_TRIES}).`);
+        level = next;
+        // The take just saved must finish saving before the next one replaces it.
+        await until(() => !liveRef.current.editorBusy, 120_000);
+      }
+      // The take just made must finish saving before the next layer's take starts.
+      await until(() => !liveRef.current.passRunning && !liveRef.current.editorBusy, 120_000);
     }
     await until(() => !liveRef.current.editorBusy, 120_000);
     return cancelRef.current ? "stopped" : "ok";
@@ -365,7 +454,8 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                             allowNone
                             drums={part.drums}
                             label={part.name}
-                            onChange={(tone) => setChoice(part, { tone })}
+                            // A one-note voice is recorded one note at a time; another voice keeps its last setting.
+                            onChange={(tone) => setChoice(part, isMonoTone(tone) ? { tone, mono: true } : { tone })}
                           />
                           {part.drums ? null : (
                             <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 text-slate-400">
@@ -407,8 +497,69 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                               </label>
                               <label className="flex items-center gap-1">
                                 <input type="checkbox" className="h-4 w-4 accent-cyan-400" checked={choice.harmony} onChange={(event) => setChoice(part, { harmony: event.target.checked })} />
-                                Harmony (a third above)
+                                Move it a third up
                               </label>
+                              <label
+                                className="flex w-full items-center gap-2"
+                                title="Measured on the GO:KEYS 3 Minion voices: a new note cuts off the one still sounding."
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4 accent-cyan-400"
+                                  checked={Boolean(choice.mono)}
+                                  onChange={(event) => setChoice(part, { mono: event.target.checked })}
+                                />
+                                One note at a time (this voice cuts a word off when the next note starts)
+                              </label>
+                              <label className="flex w-full flex-wrap items-center gap-2" title="A voice that says a word is cut off when its note ends: give each note long enough for its word.">
+                                Shortest note
+                                <input
+                                  type="range"
+                                  className="w-40 accent-cyan-400"
+                                  min={0}
+                                  max={2}
+                                  step={0.05}
+                                  value={choice.minLength ?? 0}
+                                  aria-label="Shortest note, in seconds"
+                                  onChange={(event) => setChoice(part, { minLength: Number(event.target.value) })}
+                                />
+                                <span className="w-24 tabular-nums text-slate-200">
+                                  {(choice.minLength ?? 0) > 0 ? `${(choice.minLength ?? 0).toFixed(2)} s` : "As shaped"}
+                                </span>
+                                {(choice.minLength ?? 0) > 0 && !choice.mono ? (
+                                  <select
+                                    className={cn(fieldClass, "w-56")}
+                                    aria-label="When a note runs into the next"
+                                    value={choice.overlap ?? true ? "overlap" : "skip"}
+                                    onChange={(event) => setChoice(part, { overlap: event.target.value === "overlap" })}
+                                  >
+                                    <option value="skip">Skip the next note (words finish)</option>
+                                    <option value="overlap">Let them overlap</option>
+                                  </select>
+                                ) : null}
+                              </label>
+                              <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1" role="group" aria-label="Layers">
+                                <span title="Notes stacked on every note of the part">
+                                  Add layers{choice.mono ? " (each recorded as its own take)" : ""}
+                                </span>
+                                {LAYERS.map((layer) => {
+                                  const on = (choice.layers ?? []).includes(layer.id);
+                                  return (
+                                    <label key={layer.id} className="flex items-center gap-1">
+                                      <input
+                                        type="checkbox"
+                                        className="h-4 w-4 accent-cyan-400"
+                                        checked={on}
+                                        onChange={(event) => {
+                                          const rest = (choice.layers ?? []).filter((id: Layer) => id !== layer.id);
+                                          setChoice(part, { layers: event.target.checked ? [...rest, layer.id] : rest });
+                                        }}
+                                      />
+                                      {layer.label}
+                                    </label>
+                                  );
+                                })}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -569,25 +720,37 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                   <p className="text-slate-300">
                     What should the new voice do? It is written from the song&apos;s own notes, so it is in its key, on its beat and follows its chords.
                   </p>
+                  <div className="space-y-1" role="group" aria-label="What the new voice does">
+                    {SING_STYLES.map((entry) => (
+                      <label key={entry.id} className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 h-4 w-4 accent-cyan-400"
+                          checked={styles.includes(entry.id)}
+                          onChange={(event) =>
+                            setStyles((prev) => (event.target.checked ? [...prev, entry.id] : prev.filter((id) => id !== entry.id)))
+                          }
+                        />
+                        <span>
+                          <span className="text-slate-200">{entry.label}</span>
+                          <span className="block text-slate-400">{entry.hint}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <select className={cn(fieldClass, "w-44")} aria-label="What the new voice does" value={style} onChange={(event) => setStyle(event.target.value as SingStyle)}>
-                      {SING_STYLES.map((entry) => (
-                        <option key={entry.id} value={entry.id}>
-                          {entry.label}
-                        </option>
-                      ))}
-                    </select>
                     <ActionButton
                       variant={shown.length ? "secondary" : "primary"}
+                      disabled={!styles.length}
                       onClick={() => {
                         setProblem(null);
-                        if (!props.onSingAlong(style)) setProblem("The new part could not be written: the song has no notes to build it from.");
+                        if (!props.onSingAlong(styles)) setProblem("The new part could not be written: the song has no notes to build it from.");
                       }}
                     >
                       {shown.length ? "Write it again" : "Write the sing-along part"}
                     </ActionButton>
+                    <span className="text-slate-400">Each ticked style is its own part, recorded in turn and played together.</span>
                   </div>
-                  <p className="text-slate-400">{SING_STYLES.find((entry) => entry.id === style)?.hint}</p>
                 </div>
               ) : (
                 <>

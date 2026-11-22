@@ -166,7 +166,7 @@ the original:
 | The take is late or early | Measure the delay again. It changes if you switch audio device or the system changes buffer size. |
 | The take sounds like a piano, not a Minion | A program change under a bank the keyboard does not have moved it to its fallback sound. Re-select the voice, on the keyboard or in the wizard. |
 | Notes play but the wrong ones | The transcription is wrong, not the keyboard. Fix it in the piano roll. |
-| The take is distorted | Keyboard volume too high into the USB input. Bring it down to about three-quarters and measure again. |
+| The take is distorted | The keyboard's output overran the USB input. The level check normally prevents this, and the wizard re-records a distorted part quieter by itself (up to three tries). If it still distorts, the keyboard's own volume knob is very high: turn it down to about half. |
 | Only the first note of a chord sounds | Expected on a monophonic voice. Some character voices are one-note-at-a-time. |
 
 ---

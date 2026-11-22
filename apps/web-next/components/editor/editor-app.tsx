@@ -55,7 +55,7 @@ import { midiOutHub } from "@/lib/editor/midi-out";
 import { MidiPassDriver, type PartShape, autoLevel, capVoices, clearRepeats, shapeNotes, trackNotes } from "@/lib/editor/reamp";
 import { type MidiOutTrack, parseMidi, writeMidi, writeMidiFile } from "@/lib/editor/smf";
 import { gmPatch } from "@/lib/editor/gm";
-import { SING_STYLES, type SingStyle, singAlong } from "@/lib/editor/singalong";
+import { type SingStyle, singAlongLines } from "@/lib/editor/singalong";
 import { watchSoundFont } from "@/lib/editor/soundfont";
 import { restoreSoundFont } from "@/lib/editor/soundfont-store";
 import {
@@ -620,14 +620,19 @@ export function EditorApp({
   const punchRef = useRef<TimeRange | null>(null);
   const stoppingRef = useRef(false);
   /** The pass currently playing a part out to a hardware keyboard, if any. */
-  const reampRef = useRef<{ driver: MidiPassDriver; sourceName: string; partId: string } | null>(null);
+  const reampRef = useRef<{ driver: MidiPassDriver; sourceName: string; partId: string; managed?: boolean } | null>(null);
   /** The take track each part's last pass through the keyboard landed on, by the part's track. */
   const takesRef = useRef<Record<string, string>>({});
   const auditionRef = useRef(false);
   const [reampRunning, setReampRunning] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   /** How the last pass through the keyboard ended: counted so each one is seen once. */
-  const [passResult, setPassResult] = useState<{ count: number; silent: boolean; clipped: boolean }>({ count: 0, silent: false, clipped: false });
+  const [passResult, setPassResult] = useState<{ count: number; silent: boolean; clipped: boolean; volume: number | null }>({
+    count: 0,
+    silent: false,
+    clipped: false,
+    volume: null
+  });
   /** The note track heard on the hardware keyboard during playback instead of on the computer, if any. */
   const [keysTrackId, setKeysTrackId] = useState<string | null>(null);
   /** Most notes at once the keyboard is given during playback; 0 is no limit. */
@@ -1518,8 +1523,10 @@ export function EditorApp({
       const silent = peak < 0.002;
       // At full scale the keyboard's output has overrun the input and the take is distorted.
       const clipped = peak >= 0.995;
-      setPassResult((prev) => ({ count: prev.count + 1, silent, clipped }));
-      if (clipped) setNotice(`${reamp.sourceName}: the keyboard came back too loud and the take is distorted. Turn its volume down a little and record again.`);
+      setPassResult((prev) => ({ count: prev.count + 1, silent, clipped, volume: midiOutHub.volume }));
+      if (clipped && !reamp.managed) {
+        setNotice(`${reamp.sourceName}: the keyboard came back too loud and the take is distorted. Record it again: the level is measured afresh, or turn the keyboard's volume down a little.`);
+      }
       if (silent) {
         setNotice(`${reamp.sourceName}: the keyboard made no sound, so nothing was saved.`);
         return;
@@ -1618,10 +1625,19 @@ export function EditorApp({
     latency,
     shape,
     label,
-    replace
+    replace,
+    level,
+    managed,
+    takeKey
   }: {
+    /** Where this take is filed, when one part has several (a layer's own take); defaults to the part. */
+    takeKey?: string;
     /** Throw away this part's earlier take first: it is being recorded again. */
     replace?: boolean;
+    /** Use this keyboard volume (MIDI 0-127) instead of measuring one: a retry after distortion. */
+    level?: number;
+    /** The caller (the wizard) handles a distorted take itself, so no message is shown here. */
+    managed?: boolean;
     trackId: string;
     deviceId: string;
     latency: number;
@@ -1647,18 +1663,25 @@ export function EditorApp({
       setNotice("The keyboard's MIDI output is not connected.");
       return;
     }
-    const earlier = takesRef.current[trackId];
+    const filed = takeKey ?? trackId;
+    const earlier = takesRef.current[filed];
     if (replace && earlier && current.tracks.some((track) => track.id === earlier)) {
       commit(removeTrack(current, earlier));
-      delete takesRef.current[trackId];
+      delete takesRef.current[filed];
       await delay(80);
     }
     const from = Math.max(0, notes[0].t - 1);
     passStartingRef.current = true;
     try {
-      // The keyboard's volume is set from the part's loudest chord, so the take cannot distort.
-      setNotice(`Setting the keyboard's level for ${source.name}…`);
-      await autoLevel(engine, notes, { deviceId: deviceId || undefined });
+      if (level !== undefined) {
+        // A retry: the measured level proved too loud for the whole part, so a lower one is used.
+        midiOutHub.setVolume(level);
+        await delay(120);
+      } else {
+        // The keyboard's volume is set from the part's loudest chord, so the take should not distort.
+        setNotice(`Setting the keyboard's level for ${source.name}…`);
+        await autoLevel(engine, notes, { deviceId: deviceId || undefined });
+      }
       await engine.startRecording(from, { deviceId: deviceId || undefined, latency });
     } catch (err) {
       passStartingRef.current = false;
@@ -1667,7 +1690,7 @@ export function EditorApp({
     }
     passStartingRef.current = false;
     const driver = new MidiPassDriver(engine, notes, from, () => void stopRecording());
-    reampRef.current = { driver, sourceName: label ?? source.name, partId: trackId };
+    reampRef.current = { driver, sourceName: label ?? source.name, partId: takeKey ?? trackId, managed: Boolean(managed) };
     driver.start();
     setRecording(true);
     setReampRunning(true);
@@ -1702,25 +1725,30 @@ export function EditorApp({
    * the notes already found. Returns the new note track, or null when there is nothing to
    * build it from. Making it again replaces the one made before.
    */
-  const wizardSingAlong = (style: SingStyle): string | null => {
+  const wizardSingAlong = (styles: SingStyle[]): string | null => {
     let current = stateRef.current;
     const isOurs = (trackName: string) => /^Sing-along/.test(trackName) && !/\(keyboard\)$/.test(trackName);
     const parts = current.tracks
       .filter((track) => !isOurs(track.name) && current.clips.some((clip) => clip.trackId === track.id && clip.notes))
       .map((track) => ({ name: track.name, drums: track.synth.kind === "drums", notes: trackNotes(current, track.id) }));
-    const notes = singAlong(parts, style, current.bpm, current.beatsPerBar);
-    if (!notes.length) {
+    // Each style is its own part (held chords as three), so a one-note voice records each in turn.
+    const lines = singAlongLines(parts, styles, current.bpm, current.beatsPerBar);
+    if (!lines.length) {
       setNotice("There are no notes to build a sing-along part from. Write the song's notes first.");
       return null;
     }
     for (const old of current.tracks.filter((track) => isOurs(track.name))) current = removeTrack(current, old.id);
-    const label = SING_STYLES.find((entry) => entry.id === style)?.label.toLowerCase() ?? style;
-    const added = addTrack(current, `Sing-along: ${label}`);
-    // Heard on the computer as a choir until the keyboard records it.
-    current = updateTrack(added.state, added.track.id, { synth: { kind: "synth", patch: gmPatch(52), program: 52 }, mute: true });
-    const length = Math.max(1, ...notes.map((note) => note.t + note.d));
-    commit({ ...current, clips: [...current.clips, makeMidiClip(added.track.id, 0, length, notes, added.track.name)] });
-    return added.track.id;
+    let first: string | null = null;
+    for (const line of lines) {
+      const added = addTrack(current, `Sing-along: ${line.label}`);
+      // Heard on the computer as a choir until the keyboard records it.
+      current = updateTrack(added.state, added.track.id, { synth: { kind: "synth", patch: gmPatch(52), program: 52 }, mute: true });
+      const length = Math.max(1, ...line.notes.map((note) => note.t + note.d));
+      current = { ...current, clips: [...current.clips, makeMidiClip(added.track.id, 0, length, line.notes, added.track.name)] };
+      first ??= added.track.id;
+    }
+    commit(current);
+    return first;
   };
 
   /** Wizard: put a song file on the timeline. Returns its clip, or null when it could not be read. */
