@@ -22,6 +22,17 @@ Everything runs locally. The only things that reach the internet are the online 
 
 Songs move between workspaces with the buttons at the top of each page: for example **Studio Editor** on the analyser adds the selected song to a session, and **Send mix to the analyser and mastering** in the editor's Export menu sends a mix back.
 
+### Language, colours and extra windows
+
+The **language and colours** button (a globe with the current language, beside the header buttons in every workspace) sets:
+
+- **Language:** English or Русский. The AI Song Studio, Models & engines and the editor's sessions page are translated so far; the rest of the app follows in later updates, and messages that come from the engines stay in English for now.
+- **Colour theme:** Midnight cyan (the original), Amber studio, Violet night, Forest or Magenta. Status colours keep their meaning in every theme: red for errors, amber for warnings, green for success.
+
+Both are saved in this browser.
+
+**Panels in their own windows (for a second monitor).** In the Studio Editor, the **pop-out** button (a box with an arrow) opens a panel in a separate window that you can drag to another monitor: the **inspector** (button in the header), the **piano roll, sheet music and spectral view** (button beside each panel's close button) and the **on-screen piano** (beside *Hide*). The panel keeps working exactly as before, and keys you press in its window (Space, undo, shortcuts) still reach the editor. Close the window, or press **Bring it back**, to return it. The first time, a message explains that each extra window uses more memory, processor and graphics power. Works in Chrome and Edge; allow pop-ups for Music Suite if the browser blocks the window.
+
 ### Installing (Windows)
 
 1. Double-click **install.bat** in the Music Suite folder.

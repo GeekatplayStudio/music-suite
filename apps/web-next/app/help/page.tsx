@@ -10,8 +10,8 @@ export const metadata: Metadata = {
   title: "Help | Music Suite"
 };
 
-// The manual is read once, when the app is built, from the same file that is in the repository.
-export const dynamic = "force-static";
+// The manual is read from the same file that is in the repository. The page is rendered per
+// request (not ahead of time) so it follows the language and colour theme saved in cookies.
 
 export default function Page() {
   const source = readFileSync(path.join(process.cwd(), "..", "..", "docs", "USER_MANUAL.md"), "utf8");

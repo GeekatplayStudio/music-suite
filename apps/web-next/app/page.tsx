@@ -69,6 +69,7 @@ import {
   UpdateStatus
 } from "@/lib/types";
 import { startSongUrl } from "@/lib/handoff";
+import { AppPrefs } from "@/components/app-prefs";
 import { HelpLink } from "@/components/help-link";
 
 const ALL_CHARTS: Array<{ key: string; title: string; height: number }> = [
@@ -2375,6 +2376,7 @@ export default function HomePage() {
               <Cpu className="mr-2 h-4 w-4" />
               Models &amp; engines
             </Button>
+            <AppPrefs />
             <Button
               variant="secondary"
               title="The user manual: every workspace and setting explained"

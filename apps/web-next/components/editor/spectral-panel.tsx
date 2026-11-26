@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { ActionButton } from "@/components/editor/controls";
 import { type Spectrogram, computeSpectrogram, fractionToHz, hzToFraction } from "@/lib/editor/spectrogram";
@@ -26,13 +26,15 @@ interface SpectralPanelProps {
   busy: boolean;
   onRepair: (params: Record<string, unknown>, title: string) => void;
   onClose: () => void;
+  /** Extra controls before the close button (the pop-out button). */
+  headerExtra?: ReactNode;
 }
 
 function formatHz(hz: number): string {
   return hz >= 1000 ? `${(hz / 1000).toFixed(hz >= 10000 ? 0 : 1)} kHz` : `${Math.round(hz)} Hz`;
 }
 
-export function SpectralPanel({ clip, buffer, getPosition, busy, onRepair, onClose }: SpectralPanelProps) {
+export function SpectralPanel({ clip, buffer, getPosition, busy, onRepair, onClose, headerExtra }: SpectralPanelProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [width, setWidth] = useState(600);
@@ -177,6 +179,7 @@ export function SpectralPanel({ clip, buffer, getPosition, busy, onRepair, onClo
         <ActionButton variant="primary" disabled={!box || busy} onClick={() => repair("heal")} title="Replace the selection with a blend of the sound just before and after it">
           Heal
         </ActionButton>
+        {headerExtra}
         <button
           type="button"
           aria-label="Close spectral view"

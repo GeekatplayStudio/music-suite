@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
 import { ActionButton, Slider } from "@/components/editor/controls";
 import { midiHub } from "@/lib/editor/midi";
@@ -45,6 +45,8 @@ interface PianoRollProps {
   onPreview: (pitch: number) => void;
   onSeek: (time: number) => void;
   onClose: () => void;
+  /** Extra controls before the close button (the pop-out button). */
+  headerExtra?: ReactNode;
 }
 
 type Drag =
@@ -58,7 +60,7 @@ function pitchName(pitch: number, drums: boolean): string {
 }
 
 export function PianoRoll(props: PianoRollProps) {
-  const { clip, color, bpm, beatsPerBar, beatUnit = 4, snap, drums, getPosition, onNotes, onPreview, onSeek, onClose } = props;
+  const { clip, color, bpm, beatsPerBar, beatUnit = 4, snap, drums, getPosition, onNotes, onPreview, onSeek, onClose, headerExtra } = props;
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [width, setWidth] = useState(600);
@@ -236,7 +238,9 @@ export function PianoRoll(props: PianoRollProps) {
       event.stopImmediatePropagation();
       if (!event.repeat) stepInput(60 + offset, 0.8, true);
     };
-    window.addEventListener("keydown", onKey, true);
+    // The window the piano roll is shown in: the page, or its own window when popped out.
+    const view = wrapRef.current?.ownerDocument.defaultView ?? window;
+    view.addEventListener("keydown", onKey, true);
     // A connected MIDI keyboard enters notes the same way. It is already heard through the
     // editor's live play-through, so it is not previewed a second time here.
     void midiHub.connect();
@@ -244,7 +248,7 @@ export function PianoRoll(props: PianoRollProps) {
       if (event.kind === "on") stepInput(event.pitch, event.velocity, false);
     });
     return () => {
-      window.removeEventListener("keydown", onKey, true);
+      view.removeEventListener("keydown", onKey, true);
       unsubscribe();
     };
   }, [typing]);
@@ -439,6 +443,7 @@ export function PianoRoll(props: PianoRollProps) {
         <ActionButton aria-label="Zoom in" disabled={zoom >= 32} onClick={() => setZoom((z) => Math.min(32, z * 2))}>
           +
         </ActionButton>
+        {headerExtra}
         <button
           type="button"
           aria-label="Close piano roll"

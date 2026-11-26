@@ -1,7 +1,7 @@
 "use client";
 
 import { FileDown, Loader2, Printer, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { toSheet } from "@/lib/editor/notation";
 import { type PaperSize, defaultPaper, exportPdf, printSheet } from "@/lib/editor/sheet-pages";
@@ -22,7 +22,8 @@ export function SheetMusic({
   beatUnit = 4,
   keyLabel,
   onSeek,
-  onClose
+  onClose,
+  headerExtra
 }: {
   clip: Clip;
   bpm: number;
@@ -33,6 +34,8 @@ export function SheetMusic({
   /** Jump to a time on the timeline (a bar was clicked). */
   onSeek: (time: number) => void;
   onClose: () => void;
+  /** Extra controls before the close button (the pop-out button). */
+  headerExtra?: ReactNode;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
@@ -147,6 +150,7 @@ export function SheetMusic({
         <button type="button" className={tool} disabled={working !== null} onClick={() => void produce("pdf")} title="Save this sheet music as a PDF file">
           {working === "pdf" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <FileDown className="h-3.5 w-3.5" aria-hidden />} PDF
         </button>
+        {headerExtra}
         <button
           type="button"
           aria-label="Close the sheet music"

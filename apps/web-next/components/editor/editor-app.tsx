@@ -27,6 +27,9 @@ import {
   ZoomIn,
   ZoomOut
 } from "lucide-react";
+import { AppPrefs } from "@/components/app-prefs";
+import { DetachButton, DetachedPlaceholder, useDetachable } from "@/components/detachable";
+import { useI18n } from "@/lib/i18n";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useEffectEvent, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
@@ -614,6 +617,12 @@ export function EditorApp({
   const [showSpectral, setShowSpectral] = useState(false);
   const [wamWindow, setWamWindow] = useState<string | null>(null);
   const [showPiano, setShowPiano] = useState(true);
+  // Panels that can move to windows of their own (another monitor).
+  const { t } = useI18n();
+  const lowerPop = useDetachable("lower", t("detach.titles.lower"), { width: 1200, height: 560 });
+  const inspectorPop = useDetachable("inspector", t("detach.titles.inspector"), { width: 420, height: 900 });
+  const keysPop = useDetachable("keys", t("detach.titles.keys"), { width: 1100, height: 280 });
+  const lowerButton = <DetachButton state={lowerPop} label={t("detach.panels.lower")} />;
   const [recording, setRecording] = useState(false);
   const [recentSteps, setRecentSteps] = useState<ProcessStep[]>([]);
   const favourites = useSyncExternalStore(favouriteStore.subscribe, favouriteStore.getSnapshot, favouriteStore.getServerSnapshot);
@@ -2520,6 +2529,12 @@ export function EditorApp({
               </div>
             ) : null}
           </div>
+          <DetachButton
+            state={inspectorPop}
+            label={t("detach.panels.inspector")}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
+          />
+          <AppPrefs />
           <IconButton label="Keyboard shortcuts" shortcut="?" onClick={() => setShowHelp(true)}>
             <Keyboard className="h-4 w-4" />
           </IconButton>
@@ -2626,8 +2641,11 @@ export function EditorApp({
             </div>
           </div>
 
-          {showPiano && primaryClip?.notes ? (
+          {lowerPop.detached ? <DetachedPlaceholder state={lowerPop} label={t("detach.titles.lower")} /> : null}
+          {lowerPop.render(
+          showPiano && primaryClip?.notes ? (
             <PianoRoll
+              headerExtra={lowerButton}
               key={`${primaryClip.id}:${state.tracks.find((t) => t.id === primaryClip.trackId)?.synth.kind}`}
               clip={primaryClip}
               color={state.tracks.find((t) => t.id === primaryClip.trackId)?.color ?? "#22d3ee"}
@@ -2652,6 +2670,7 @@ export function EditorApp({
             />
           ) : showSheet && primaryClip?.notes ? (
             <SheetMusic
+              headerExtra={lowerButton}
               clip={primaryClip}
               bpm={state.bpm}
               beatsPerBar={state.beatsPerBar}
@@ -2662,6 +2681,7 @@ export function EditorApp({
             />
           ) : showSpectral ? (
             <SpectralPanel
+              headerExtra={lowerButton}
               clip={primaryClip}
               buffer={primaryClip ? engine.buffer(primaryClip.assetId) : undefined}
               getPosition={getPosition}
@@ -2669,9 +2689,16 @@ export function EditorApp({
               onRepair={(params, title) => runJobs("spectral_repair", params, title)}
               onClose={() => setShowSpectral(false)}
             />
-          ) : null}
+          ) : lowerPop.detached ? (
+            <div className="flex flex-1 items-center justify-center gap-3 p-6 text-sm text-slate-400">
+              {t("detach.emptyLower")}
+              {lowerButton}
+            </div>
+          ) : null
+          )}
 
-          {showKeys ? (
+          {showKeys && keysPop.detached ? <DetachedPlaceholder state={keysPop} label={t("detach.titles.keys")} /> : null}
+          {showKeys ? keysPop.render(
             <section className="shrink-0 border-t border-white/10 bg-slate-950/80 px-2 pb-2 pt-1.5" aria-label="Piano">
               <div className="mb-1 flex items-center gap-2 text-[11px] text-slate-400">
                 <span className="min-w-0 flex-1 truncate">
@@ -2684,6 +2711,7 @@ export function EditorApp({
                     "Add an instrument (MIDI) track to play it here."
                   )}
                 </span>
+                <DetachButton state={keysPop} label={t("detach.panels.keys")} />
                 <button
                   type="button"
                   onClick={() => setShowKeys(false)}
@@ -2728,6 +2756,8 @@ export function EditorApp({
           </footer>
         </div>
 
+        {inspectorPop.render(
+        <div className={inspectorPop.detached ? "flex min-h-0 flex-1 [&>aside]:w-full [&>aside]:border-l-0" : "contents"}>
         <Inspector
           state={state}
           assets={assets}
@@ -2826,6 +2856,8 @@ export function EditorApp({
           onDuplicate={duplicate}
           onDelete={() => removeSelection(false)}
         />
+        </div>
+        )}
       </div>
 
       {menu && menuItems.length ? (

@@ -80,9 +80,10 @@ export function Piano({
       const drop = () => {
         for (const id of [...heldRef.current.keys()]) actions.current.release(id);
       };
-      window.addEventListener("blur", drop);
+      const view = hostRef.current?.ownerDocument.defaultView ?? window;
+      view.addEventListener("blur", drop);
       return () => {
-        window.removeEventListener("blur", drop);
+        view.removeEventListener("blur", drop);
         drop();
       };
     }
@@ -102,13 +103,15 @@ export function Piano({
     const allUp = () => {
       for (const id of [...heldRef.current.keys()]) actions.current.release(id);
     };
-    window.addEventListener("keydown", down);
-    window.addEventListener("keyup", up);
-    window.addEventListener("blur", allUp);
+    // The window the piano is shown in: the page, or its own window when popped out.
+    const view = hostRef.current?.ownerDocument.defaultView ?? window;
+    view.addEventListener("keydown", down);
+    view.addEventListener("keyup", up);
+    view.addEventListener("blur", allUp);
     return () => {
-      window.removeEventListener("keydown", down);
-      window.removeEventListener("keyup", up);
-      window.removeEventListener("blur", allUp);
+      view.removeEventListener("keydown", down);
+      view.removeEventListener("keyup", up);
+      view.removeEventListener("blur", allUp);
       allUp();
     };
   }, [keyOctave, typing]);

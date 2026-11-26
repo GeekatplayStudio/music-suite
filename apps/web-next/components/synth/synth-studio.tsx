@@ -1,5 +1,6 @@
 "use client";
 
+import { AppPrefs } from "@/components/app-prefs";
 import Link from "next/link";
 import { useCallback, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { Download, Loader2, Piano as PianoIcon, Play, Power, RotateCcw, SlidersHorizontal, Square, Waves } from "lucide-react";
@@ -353,6 +354,7 @@ export function SynthStudio() {
           <Link href="/" className={quiet}>
             Back to Music Suite
           </Link>
+          <AppPrefs />
         </nav>
       </header>
 

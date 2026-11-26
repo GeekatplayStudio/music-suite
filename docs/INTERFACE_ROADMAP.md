@@ -1,7 +1,8 @@
 # Interface roadmap: languages, colour themes, multiple screens
 
-Planned work, from viewer feedback (YouTube, 2026-11-26) and requests. Nothing here is built
-yet. Sizes are rough, measured from the code on 2026-11-26:
+Planned work, from viewer feedback (YouTube, 2026-11-26) and requests.
+
+**Done (2026-11-26):** the translation system with English and Russian and a language switch in every header (AI Song Studio, Models & engines, the sessions page and the live and downloads panels translated); five colour themes; pop-out windows for the editor's inspector, lower panel and on-screen piano, with the resource warning. The rest of each plan below is still to do. Sizes are rough, measured from the code on 2026-11-26:
 
 | Measure | Count |
 |---|---|
@@ -21,8 +22,8 @@ the language.
 
 | Step | What | Size |
 |---|---|---|
-| 1 | Add `next-intl` (App Router support), a language setting (browser language by default, a switch in each header), and English as the source catalogue. | small |
-| 2 | Move the interface strings into the catalogue, screen by screen: AI Song Studio and the editor's header first (most seen), then the inspector, the analyser, Models & engines, Synth Studio, the mapper. Plurals and numbers through the library, not string joins. | large (about 1,200 strings) |
+| 1 | **Done.** A small built-in system instead of `next-intl` (`lib/i18n`): English is the source; TypeScript refuses a language file with a missing or extra key. The language comes from a cookie (the browser language at first), so pages render translated from the first frame. Switch in every header. | small |
+| 2 | Move the interface strings into the catalogue, screen by screen. **Done:** AI Song Studio main screen, Start from a song, live and local-download panels, Models & engines, the editor's sessions page (about 300 strings, with Russian plural forms). **Next:** the editor itself and its inspector, the analyser, Synth Studio, the album and settings tabs, the mapper. | large (about 1,200 strings) |
 | 3 | Backend messages: give each message a stable key with English text, send the key with the text, and translate in the browser. Messages built from values (file names, sizes) keep the values separate. | medium (about 400 messages) |
 | 4 | Russian translation of the catalogue, checked by a native speaker. Then further languages from requests. | medium per language |
 | 5 | Check layouts: Russian runs about 30% longer than English, so buttons and the editor header must wrap or truncate cleanly. | small |
@@ -38,9 +39,8 @@ component. Themes need those colours to come from shared names first.
 
 | Step | What | Size |
 |---|---|---|
-| 1 | Define semantic colour tokens (surface, panel, text, muted text, accent, accent text, warning, danger, success, track colours) as CSS variables, exposed to Tailwind 4 through `@theme`. | small |
-| 2 | Replace the hard-coded colour classes with the tokens, component by component (about 1,180). Mechanical but wide: one area per change, checked on screen. | large |
-| 3 | A theme picker (header and Settings): the current *Midnight cyan*, plus for example *Amber studio*, *Violet*, *Forest*, and a light theme. Saved per browser. | small |
+| 1-3 | **Done, by a shorter route.** Tailwind 4 colour classes read CSS variables, so `app/themes.css` re-maps the accent (cyan) and surface (slate) palettes per theme; about 900 of the 1,180 hard-coded colours follow without editing components. Themes: Midnight cyan, Amber studio, Violet night, Forest, Magenta; picked in every header, saved per browser. | small |
+| 3b | A light theme. Needs the remaining white/black overlays and fixed hex colours moved to tokens first. | medium |
 | 4 | Charts and canvases: the waveform, piano roll, spectral view, meters, Plotly charts and visualisers draw with their own colours; read them from the tokens. | medium |
 | 5 | Contrast check of every theme (text and controls meet WCAG AA). | small |
 | 6 | Surge XT's skin can follow the chosen theme (it is generated from Surge's own dark skin today). | small |
@@ -54,7 +54,7 @@ in step (for example the editor on one monitor and its visuals and mixer on anot
 
 | Step | What | Size |
 |---|---|---|
-| 1 | **Pop-out panels** with the Document Picture-in-Picture API (Chrome and Edge): a panel such as the meters, the visualiser or the on-screen piano moves into its own always-on-top window that shares the page's state directly, so nothing needs syncing. | medium |
+| 1 | **Done, for the editor.** Pop-out panels: the inspector, the lower panel (piano roll, sheet music, spectral view) and the on-screen piano open in windows of their own, rendered from the same page (a React portal into a window it opened), so state and playback are shared with nothing to sync; unused keys are passed back to the editor; closing the window brings the panel back. Several can be open at once. **Next:** the analyser's Visual AI and charts, the mixer. | medium |
 | 2 | **Linked windows** for bigger views (mixer, piano roll, visuals, analyser charts): open with `window.open`, kept in step through `BroadcastChannel` (playhead, selection, transport, track changes; audio levels and spectrum sent as small frames about 30 times a second). The editor window stays in charge; the others follow. | large |
 | 3 | **Place windows on chosen monitors** with the Window Management API (Chrome and Edge, asks permission once): remember which panel goes on which screen and reopen the layout. | medium |
 | 4 | **Layouts:** save and restore a window arrangement per session ("Editing", "Mixing", "Performance"). | small |

@@ -21,6 +21,7 @@ import {
   Wand2
 } from "lucide-react";
 
+import { AppPrefs } from "@/components/app-prefs";
 import { AlbumPanel } from "@/components/generation/album-panel";
 import { LivePanel } from "@/components/generation/live-panel";
 import { PlanEditor } from "@/components/generation/plan-editor";
@@ -46,6 +47,7 @@ import {
   type ProviderSchema
 } from "@/lib/generation/api";
 import { analyseClip, type ClipRef, type Incoming, placeIncoming, placeInEditorUrl } from "@/lib/handoff";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 type Tab = "create" | "live" | "album" | "history" | "settings";
@@ -155,28 +157,29 @@ function SendActions({
   onAnalyse: (clip: ClipRef) => void;
   onStartFrom: (clip: ClipRef) => void;
 }) {
+  const { t } = useI18n();
   return (
-    <div className="mt-1 flex flex-wrap gap-1" role="group" aria-label={`Send ${clip.name}`}>
-      <Link href={placeInEditorUrl(clip)} className={linkButton} title="Add it on a new track in a new or existing editor session">
-        <Plus className="h-3.5 w-3.5" aria-hidden /> Add to a session
+    <div className="mt-1 flex flex-wrap gap-1" role="group" aria-label={t("studio.send.label", { name: clip.name })}>
+      <Link href={placeInEditorUrl(clip)} className={linkButton} title={t("studio.send.addTitle")}>
+        <Plus className="h-3.5 w-3.5" aria-hidden /> {t("studio.send.add")}
       </Link>
       <Link
         href={placeInEditorUrl(clip, true)}
         className={linkButton}
-        title="Add it to a session and split it into vocals, drums, bass and the rest"
+        title={t("studio.send.splitTitle")}
       >
-        <Scissors className="h-3.5 w-3.5" aria-hidden /> Split into stems
+        <Scissors className="h-3.5 w-3.5" aria-hidden /> {t("studio.send.split")}
       </Link>
-      <button type="button" className={linkButton} onClick={() => onAnalyse(clip)} title="Open a copy in the analyser and measure it">
-        <BarChart3 className="h-3.5 w-3.5" aria-hidden /> Analyse
+      <button type="button" className={linkButton} onClick={() => onAnalyse(clip)} title={t("studio.send.analyseTitle")}>
+        <BarChart3 className="h-3.5 w-3.5" aria-hidden /> {t("studio.send.analyse")}
       </button>
       <button
         type="button"
         className={linkButton}
         onClick={() => onStartFrom(clip)}
-        title="Make another song from this one: restyle, extend, add a part…"
+        title={t("studio.send.startFromTitle")}
       >
-        <FileAudio className="h-3.5 w-3.5" aria-hidden /> Start a song from it
+        <FileAudio className="h-3.5 w-3.5" aria-hidden /> {t("studio.send.startFrom")}
       </button>
     </div>
   );
@@ -197,18 +200,19 @@ function ResultCard({
   onAnalyse: (clip: ClipRef) => void;
   onStartFrom: (clip: ClipRef) => void;
 }) {
+  const { t, tp } = useI18n();
   return (
-    <section className="glass rounded-2xl border border-cyan-300/30 p-4" aria-label={`Result: ${result.title}`}>
+    <section className="glass rounded-2xl border border-cyan-300/30 p-4" aria-label={t("studio.result.label", { title: result.title })}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="display-font text-base font-semibold text-slate-100">{result.title}</h3>
           <p className="text-xs text-slate-400">
-            {result.assets.length} version{result.assets.length === 1 ? "" : "s"} · made in {formatSeconds(result.secondsTaken)}
+            {tp("studio.result.versions", result.assets.length)} · {t("studio.result.madeIn", { time: formatSeconds(result.secondsTaken) })}
           </p>
         </div>
         <Link href={`/editor?project=${result.projectId}`} className={primaryButton}>
           <AudioWaveform className="h-4 w-4" aria-hidden />
-          Open in Studio Editor
+          {t("studio.result.openEditor")}
         </Link>
       </div>
       <ul className="mt-3 space-y-3">
@@ -219,7 +223,7 @@ function ResultCard({
             typeof meta.bpm === "number" && meta.bpm > 0 ? `${meta.bpm} BPM` : null,
             typeof meta.keyscale === "string" && meta.keyscale ? meta.keyscale : null,
             typeof meta.output_lufs === "number" ? `${meta.output_lufs.toFixed(1)} LUFS` : null,
-            seed !== null ? `seed ${seed}` : null
+            seed !== null ? t("studio.result.seed", { seed }) : null
           ].filter(Boolean);
           return (
             <li key={asset.id} className="rounded-xl bg-slate-900/70 p-3">
@@ -232,7 +236,7 @@ function ResultCard({
                 preload="none"
                 src={editorApi.assetAudioUrl(result.projectId, asset.id)}
                 className="mt-2 h-10 w-full"
-                aria-label={`Play ${asset.name}`}
+                aria-label={t("studio.result.play", { name: asset.name })}
               />
               <SendActions
                 clip={{ projectId: result.projectId, assetId: asset.id, name: stripName(asset.name) }}
@@ -241,7 +245,7 @@ function ResultCard({
               />
               {seed !== null ? (
                 <button type="button" className={linkButton} onClick={() => onReuseSeed(seed)}>
-                  Keep this seed for the next version
+                  {t("studio.result.keepSeed")}
                 </button>
               ) : null}
             </li>
@@ -254,6 +258,7 @@ function ResultCard({
 
 export function GenerateStudio({ projectId, start = null }: { projectId: string | null; start?: Incoming | null }) {
   const router = useRouter();
+  const { t, tp } = useI18n();
   const [tab, setTab] = useState<Tab>("create");
   const [source, setSource] = useState<SourceSong | null>(null);
   const [sourceWorking, setSourceWorking] = useState<string | null>(null);
@@ -283,20 +288,20 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
       setOverview(next);
       setLoadError(null);
     } catch (err) {
-      if (aliveRef.current) setLoadError(message(err, "AI generation could not be loaded."));
+      if (aliveRef.current) setLoadError(message(err, t("studio.errors.load")));
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     aliveRef.current = true;
     generationApi
       .overview()
       .then((next) => aliveRef.current && setOverview(next))
-      .catch((err: unknown) => aliveRef.current && setLoadError(message(err, "AI generation could not be loaded.")));
+      .catch((err: unknown) => aliveRef.current && setLoadError(message(err, t("studio.errors.load"))));
     return () => {
       aliveRef.current = false;
     };
-  }, []);
+  }, [t]);
 
   // While the engine installs, keep the progress fresh.
   const installing = overview?.setup.running ?? false;
@@ -353,7 +358,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
       const { plan: drafted } = await generationApi.draftPlan(provider.id, submitValues(provider.schema, values));
       setValue("plan", drafted);
     } catch (err) {
-      setError(message(err, "The plan could not be drafted."));
+      setError(message(err, t("studio.errors.draftPlan")));
     } finally {
       setDrafting(false);
     }
@@ -378,11 +383,11 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
         .catch((err: unknown) => {
           // The estimate checks the request the same way generating would, so show why.
           setEstimate(null);
-          setEstimateError(message(err, "The cost could not be estimated."));
+          setEstimateError(message(err, t("studio.errors.estimate")));
         });
     }, 400);
     return () => clearTimeout(timer);
-  }, [online, provider, values, task, usesSource, source]);
+  }, [online, provider, values, task, usesSource, source, t]);
 
   const hidden = (field: FieldSpec) =>
     field.type === "plan" ||
@@ -407,11 +412,11 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
       if (mode === "lyrics") setRevise("");
       setWriterNote(
         engine.startsWith("ollama:")
-          ? `Written on this computer by ${engine.slice(7)}. Edit anything before generating.`
-          : "Drafted by the music engine's planner. For fuller lyrics, set up Ollama in Settings."
+          ? t("studio.writer.ollama", { model: engine.slice(7) })
+          : t("studio.writer.planner")
       );
     } catch (err) {
-      setError(message(err, "The song could not be written."));
+      setError(message(err, t("studio.errors.write")));
     } finally {
       setWriting(false);
     }
@@ -420,7 +425,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
   const startTask = async (requestedTask: string) => {
     if (!provider) return;
     setError(null);
-    const songTitle = title.trim() || "Generated song";
+    const songTitle = title.trim() || t("studio.defaults.songTitle");
     try {
       // Starting from a song keeps everything in that song's session, next to the original.
       const target = source?.projectId ?? projectId ?? (await editorApi.createProject(songTitle)).id;
@@ -437,7 +442,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
         muteAssetId: source && MUTES_ORIGINAL.has(requestedTask) ? source.assetId : null
       });
     } catch (err) {
-      setError(message(err, "Generation could not be started."));
+      setError(message(err, t("studio.errors.start")));
     }
   };
   const generate = () => startTask(task);
@@ -462,18 +467,18 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
             const score = result.outputs?.[0]?.abc;
             if (result.outputs?.[0]?.task === "plan" && typeof score === "string") {
               setValuesByProvider(all => ({ ...all, yue2: { ...(all.yue2 ?? {}), abc: score } }));
-              setWriterNote("The composition plan is ready. Review and edit the ABC score, then generate the song.");
+              setWriterNote(t("studio.writer.abcReady"));
               setJob(null); setHistory(null); return;
             }
             try {
               await placeInProject(jobProject, latest.result_assets, result.outputs?.[0] ?? {}, jobMutes);
             } catch {
-              setError("The song was generated, but could not be placed on the timeline. Add it from the editor's asset list.");
+              setError(t("studio.errors.place"));
             }
             setResults((list) => [
               {
                 projectId: jobProject,
-                title: result.title ?? "Generated song",
+                title: result.title ?? t("studio.defaults.songTitle"),
                 assets: latest.result_assets,
                 outputs: result.outputs ?? [],
                 secondsTaken: result.seconds_taken ?? 0
@@ -485,7 +490,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
           } else if (latest.status === "failed") {
             stopped = true;
             clearInterval(timer);
-            setError(latest.error ?? "Generation failed.");
+            setError(latest.error ?? t("studio.errors.failed"));
             setJob(null);
           } else {
             setJob((current) => (current ? { ...current, job: latest } : current));
@@ -497,22 +502,22 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
       stopped = true;
       clearInterval(timer);
     };
-  }, [jobId, jobProject, jobMutes]);
+  }, [jobId, jobProject, jobMutes, t]);
 
   /* ---------- Starting from a song ---------- */
 
   /** Read the song's tempo, key, metre, length and style into the form. */
   const adoptSource = async (clip: ClipRef) => {
     setSource({ ...clip, measured: null });
-    setSourceWorking("Reading tempo, key and style…");
+    setSourceWorking(t("studio.sourceStatus.reading"));
     setError(null);
     try {
       const found = await generationApi.inspire(clip.projectId, clip.assetId);
       setSource({ ...clip, measured: found.measured });
       if (provider) mergeValues(fitToSchema(provider.schema, found.fields));
-      if (!title.trim()) setTitle(`${clip.name} (new version)`.slice(0, 80));
+      if (!title.trim()) setTitle(t("studio.defaults.newVersion", { name: clip.name }).slice(0, 80));
     } catch (err) {
-      setError(message(err, "The song could not be read. You can still use it; fill in the form yourself."));
+      setError(message(err, t("studio.errors.read")));
     } finally {
       setSourceWorking(null);
     }
@@ -520,8 +525,8 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
 
   /** Upload a song into this session (or a new one) on its own track and start from it. */
   const uploadSource = async (file: File) => {
-    const name = file.name.replace(/\.[^.]+$/, "").slice(0, 120) || "Song";
-    setSourceWorking(`Uploading ${name}…`);
+    const name = file.name.replace(/\.[^.]+$/, "").slice(0, 120) || t("studio.defaults.songName");
+    setSourceWorking(t("studio.sourceStatus.uploading", { name }));
     setError(null);
     try {
       const target = projectId ?? (await editorApi.createProject(name)).id;
@@ -530,7 +535,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
       await editorApi.saveState(target, addAssetOnNewTrack(project.state ?? emptyProjectState(), asset).state);
       await adoptSource({ projectId: target, assetId: asset.id, name });
     } catch (err) {
-      setError(message(err, "The song could not be uploaded."));
+      setError(message(err, t("studio.errors.upload")));
       setSourceWorking(null);
     }
   };
@@ -540,7 +545,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
     try {
       router.push(`/?run=${await analyseClip(clip)}`);
     } catch (err) {
-      setError(message(err, "The song could not be sent to the analyser."));
+      setError(message(err, t("studio.errors.analyse")));
     }
   };
 
@@ -562,12 +567,12 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
         await adoptSource(start);
         return;
       }
-      setSourceWorking(`Bringing in ${start.name || "the song"}…`);
+      setSourceWorking(t("studio.sourceStatus.bringing", { name: start.name || t("studio.defaults.theSong") }));
       try {
         const placed = await placeIncoming(projectId, start);
         await adoptSource({ projectId: placed.projectId, assetId: placed.asset.id, name: start.name || stripName(placed.asset.name) });
       } catch (err) {
-        setError(message(err, "The song could not be brought in."));
+        setError(message(err, t("studio.errors.bringIn")));
         setSourceWorking(null);
       }
     })();
@@ -584,7 +589,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
     generationApi
       .history()
       .then(setHistory)
-      .catch((err: unknown) => setError(message(err, "History could not be loaded.")));
+      .catch((err: unknown) => setError(message(err, t("studio.errors.history"))));
   };
 
   const reuse = (record: HistoryRecord) => {
@@ -600,11 +605,11 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
   };
 
   const tabs: { id: Tab; label: string; icon: typeof Sparkles }[] = [
-    { id: "create", label: "Create", icon: Sparkles },
-    { id: "live", label: "Live", icon: AudioWaveform },
-    { id: "album", label: "Album", icon: Disc3 },
-    { id: "history", label: "History", icon: History },
-    { id: "settings", label: "Settings", icon: Settings2 }
+    { id: "create", label: t("studio.tabs.create"), icon: Sparkles },
+    { id: "live", label: t("studio.tabs.live"), icon: AudioWaveform },
+    { id: "album", label: t("studio.tabs.album"), icon: Disc3 },
+    { id: "history", label: t("studio.tabs.history"), icon: History },
+    { id: "settings", label: t("studio.tabs.settings"), icon: Settings2 }
   ];
   const elapsed = job ? Math.max(0, (now - job.startedAt) / 1000) : 0;
   const needsInstall = provider?.id === "acestep_local" && !provider.status.ready;
@@ -614,36 +619,37 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="display-font text-2xl font-semibold text-slate-100">
-            Music Suite <span className="text-cyan-300">/ AI Song Studio</span>
+            {t("common.appName")} <span className="text-cyan-300">/ {t("common.workspaces.studio")}</span>
           </p>
           <p className="mt-1 text-sm text-slate-400">
-            Describe a song, edit the lyrics, and generate it on this computer. Results open in the Studio Editor.
+            {t("studio.header.subtitle")}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/synth" className={quietButton}>
-            Synth Studio
+            {t("common.workspaces.synth")}
           </Link>
           <Link href="/models" className={quietButton}>
-            Models &amp; engines
+            {t("common.workspaces.models")}
           </Link>
           <a href="/help#ai-song-studio" target="_blank" rel="noreferrer" className={quietButton}>
-            Help
+            {t("common.workspaces.help")}
           </a>
           <Link href={projectId ? `/editor?project=${projectId}` : "/"} className={quietButton}>
-            {projectId ? "Back to the editor" : "Back to Music Suite"}
+            {projectId ? t("studio.header.backToEditor") : t("common.back")}
           </Link>
+          <AppPrefs />
         </div>
       </header>
       <LocalDownloads settings={tab === 'settings'} onChanged={refresh} />
       {tab === "live" && <LivePanel projectId={source?.projectId ?? projectId} assetId={source?.assetId}
         onSaved={async (target, asset) => {
           await placeInProject(target, [asset], {});
-          setResults(previous => [{ projectId: target, title: "Magenta live take", assets: [asset], outputs: [], secondsTaken: 0 }, ...previous]);
+          setResults(previous => [{ projectId: target, title: t("studio.defaults.liveTake"), assets: [asset], outputs: [], secondsTaken: 0 }, ...previous]);
           setTab("create");
         }} />}
 
-      <div role="tablist" aria-label="AI Song Studio sections" className="flex gap-1 rounded-2xl bg-slate-900/80 p-1">
+      <div role="tablist" aria-label={t("studio.tabs.label")} className="flex gap-1 rounded-2xl bg-slate-900/80 p-1">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -676,7 +682,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
 
       {!overview && !loadError ? (
         <p className="flex items-center justify-center gap-2 py-16 text-sm text-slate-400" aria-live="polite">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading…
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> {t("common.loading")}
         </p>
       ) : null}
 
@@ -684,12 +690,12 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
       {overview && tab === "album" ? <AlbumPanel overview={overview} /> : null}
 
       {overview && tab === "history" ? (
-        <section className="space-y-3" aria-label="Generation history">
+        <section className="space-y-3" aria-label={t("studio.history.label")}>
           {history === null ? (
-            <p className="py-10 text-center text-sm text-slate-400">Loading history…</p>
+            <p className="py-10 text-center text-sm text-slate-400">{t("studio.history.loading")}</p>
           ) : history.length === 0 ? (
             <p className="rounded-2xl bg-slate-900/70 px-4 py-10 text-center text-sm text-slate-400">
-              Nothing generated yet. Songs you make appear here with the settings that made them.
+              {t("studio.history.empty")}
             </p>
           ) : (
             history.map((record) => (
@@ -698,27 +704,27 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                   <div className="min-w-0">
                     <h3 className="display-font truncate text-base font-semibold text-slate-100">{record.title}</h3>
                     <p className="text-xs text-slate-400">
-                      {new Date(record.created_at).toLocaleString()} · {record.asset_ids.length} version
-                      {record.asset_ids.length === 1 ? "" : "s"} · {formatSeconds(record.seconds_taken)}
+                      {new Date(record.created_at).toLocaleString()} · {tp("studio.result.versions", record.asset_ids.length)} ·{" "}
+                      {formatSeconds(record.seconds_taken)}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button type="button" className={quietButton} onClick={() => reuse(record)}>
-                      Use these settings
+                      {t("studio.history.useSettings")}
                     </button>
                     <Link href={`/editor?project=${record.project_id}`} className={quietButton}>
-                      Open project
+                      {t("studio.history.openProject")}
                     </Link>
                     <button
                       type="button"
-                      aria-label={`Remove ${record.title} from history`}
-                      title="Remove from history (the audio stays in its project)"
+                      aria-label={t("studio.history.removeLabel", { title: record.title })}
+                      title={t("studio.history.removeTitle")}
                       className={cn(quietButton, "w-10 px-0")}
                       onClick={() =>
                         generationApi
                           .deleteHistory(record.id)
                           .then(() => setHistory((list) => (list ?? []).filter((r) => r.id !== record.id)))
-                          .catch((err: unknown) => setError(message(err, "The entry could not be removed.")))
+                          .catch((err: unknown) => setError(message(err, t("studio.errors.removeEntry"))))
                       }
                     >
                       <Trash2 className="h-4 w-4" aria-hidden />
@@ -742,7 +748,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                     preload="none"
                     src={editorApi.assetAudioUrl(record.project_id, assetId)}
                     className="mt-2 h-10 w-full"
-                    aria-label={`Play ${record.title}`}
+                    aria-label={t("studio.result.play", { name: record.title })}
                   />
                 ))}
               </article>
@@ -756,11 +762,10 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
           {needsInstall ? (
             <section className="glass rounded-2xl border border-amber-300/40 p-5">
               <h2 className="display-font flex items-center gap-2 text-base font-semibold text-slate-100">
-                <Cpu className="h-5 w-5 text-amber-300" aria-hidden /> One step before your first song
+                <Cpu className="h-5 w-5 text-amber-300" aria-hidden /> {t("studio.install.heading")}
               </h2>
               <p className="mt-1 text-sm text-slate-300">
-                The local music engine is not installed yet. Installing downloads about {overview.setup.download_gb ?? 5.3} GB
-                and takes a few minutes. After that, songs are made on this computer, offline.
+                {t("studio.install.body", { gb: overview.setup.download_gb ?? 5.3 })}
               </p>
               {overview.setup.running ? (
                 <div className="mt-3" aria-live="polite">
@@ -773,7 +778,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                     aria-valuemin={0}
                     aria-valuemax={100}
                     aria-valuenow={Math.round(overview.setup.percent)}
-                    aria-label="Install progress"
+                    aria-label={t("studio.install.progress")}
                   >
                     <div
                       className="h-full rounded-full bg-cyan-400 transition-[width] duration-700"
@@ -795,11 +800,11 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                       void generationApi
                         .startSetup(false)
                         .then(refresh)
-                        .catch((err: unknown) => setError(message(err, "The install could not be started.")))
+                        .catch((err: unknown) => setError(message(err, t("studio.errors.installStart"))))
                     }
                   >
                     <Download className="h-4 w-4" aria-hidden />
-                    {overview.setup.error ? "Try the install again" : "Install local engine"}
+                    {overview.setup.error ? t("studio.install.retry") : t("studio.install.install")}
                   </button>
                 </>
               )}
@@ -808,7 +813,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
 
           {usable.length > 1 ? (
             <label className="flex flex-wrap items-center gap-3 text-sm text-slate-300">
-              <span className="font-semibold">Generator</span>
+              <span className="font-semibold">{t("studio.generator.label")}</span>
               <select
                 value={provider?.id ?? ""}
                 disabled={busy}
@@ -818,7 +823,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                 {usable.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
-                    {p.status.ready ? "" : " — not ready"}
+                    {p.status.ready ? "" : t("studio.generator.notReady")}
                   </option>
                 ))}
               </select>
@@ -844,9 +849,9 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
           ) : null}
 
           {provider && hasLyricsField && !usesSource ? (
-            <section className="glass rounded-2xl border border-white/10 p-4" aria-label="Start from an idea">
+            <section className="glass rounded-2xl border border-white/10 p-4" aria-label={t("studio.idea.heading")}>
               <h2 className="display-font flex items-center gap-2 text-sm font-semibold text-slate-200">
-                <Wand2 className="h-4 w-4 text-cyan-300" aria-hidden /> Start from an idea
+                <Wand2 className="h-4 w-4 text-cyan-300" aria-hidden /> {t("studio.idea.heading")}
               </h2>
               <textarea
                 rows={3}
@@ -854,8 +859,8 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                 maxLength={1000}
                 disabled={busy || writing}
                 onChange={(event) => setIdea(event.target.value)}
-                aria-label="Describe the song you want"
-                placeholder="A late-night drive along the coast after a breakup, hopeful by the end. Dreamy synth-pop, female voice."
+                aria-label={t("studio.idea.describe")}
+                placeholder={t("studio.idea.placeholder")}
                 className={cn(inputClass, "mt-2 py-2 leading-relaxed")}
               />
               <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -866,10 +871,10 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                   onClick={() => void write("brief")}
                 >
                   {writing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Wand2 className="h-4 w-4" aria-hidden />}
-                  {writing ? "Writing… (about 30 s)" : "Write style and lyrics"}
+                  {writing ? t("studio.idea.writing") : t("studio.idea.write")}
                 </button>
                 <p className="text-xs text-slate-400" aria-live="polite">
-                  {writerNote ?? "Optional. Fills the form below; you can also type everything yourself."}
+                  {writerNote ?? t("studio.idea.hint")}
                 </p>
               </div>
             </section>
@@ -878,14 +883,14 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
           {provider ? (
             <>
               <label className="block space-y-1.5">
-                <span className="text-xs font-semibold text-slate-300">Song title</span>
+                <span className="text-xs font-semibold text-slate-300">{t("studio.form.title")}</span>
                 <input
                   type="text"
                   value={title}
                   maxLength={80}
                   disabled={busy}
                   onChange={(event) => setTitle(event.target.value)}
-                  placeholder="Untitled song"
+                  placeholder={t("studio.form.titlePlaceholder")}
                   className={cn(inputClass, "h-10")}
                 />
               </label>
@@ -896,7 +901,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                 <button type="button" className={quietButton}
                   disabled={busy || writing || !provider.status.ready}
                   onClick={() => void startTask("plan")}>
-                  Draft editable ABC score
+                  {t("studio.form.abc")}
                 </button>
               ) : null}
 
@@ -921,8 +926,8 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                     maxLength={300}
                     disabled={busy || writing}
                     onChange={(event) => setRevise(event.target.value)}
-                    aria-label="How to change the lyrics"
-                    placeholder="Change the lyrics: e.g. “add a bridge”, “make the chorus simpler”, “translate to Spanish”"
+                    aria-label={t("studio.form.revise")}
+                    placeholder={t("studio.form.revisePlaceholder")}
                     className={cn(inputClass, "h-10 min-w-0 flex-1")}
                   />
                   <button
@@ -931,7 +936,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                     disabled={busy || writing || revise.trim().length < 3}
                     onClick={() => void write("lyrics")}
                   >
-                    Rewrite
+                    {t("studio.form.rewrite")}
                   </button>
                 </div>
               ) : null}
@@ -941,11 +946,11 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                   <div aria-live="polite">
                     <div className="flex items-center justify-between gap-3">
                       <p className="min-w-0 truncate text-sm text-slate-200">
-                        {job.job.detail || "Working…"}{" "}
+                        {job.job.detail || t("studio.bar.working")}{" "}
                         <span className="tabular-nums text-slate-400">· {formatSeconds(elapsed)}</span>
                       </p>
                       <button type="button" className={quietButton} onClick={cancel}>
-                        <Square className="h-3.5 w-3.5" aria-hidden /> Cancel
+                        <Square className="h-3.5 w-3.5" aria-hidden /> {t("common.cancel")}
                       </button>
                     </div>
                     <div
@@ -954,7 +959,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                       aria-valuemin={0}
                       aria-valuemax={100}
                       aria-valuenow={Math.round(job.job.progress)}
-                      aria-label="Generation progress"
+                      aria-label={t("studio.bar.progress")}
                     >
                       <div className="h-full rounded-full bg-cyan-400 transition-[width] duration-700" style={{ width: `${job.job.progress}%` }} />
                     </div>
@@ -964,18 +969,18 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                     <p className={cn("text-xs", provider.kind === "external" ? "text-amber-200" : "text-slate-400")}>
                       {provider.status.ready
                         ? provider.id === "acestep_local"
-                          ? `About ${formatSeconds(estimateSeconds(values))} on this computer. One song at a time.`
+                          ? t("studio.bar.estimate", { time: formatSeconds(estimateSeconds(values)) })
                           : online && estimate
                             ? estimate.summary
                             : online && estimateError
-                              ? `Not ready to send yet: ${estimateError}`
+                              ? t("studio.bar.notReady", { error: estimateError })
                               : provider.status.message
                         : provider.status.message}
                       {online && estimate ? (
                         <>
                           {" "}
                           <a href={estimate.url} target="_blank" rel="noreferrer noopener" className="underline">
-                            Prices as of {estimate.as_of}
+                            {t("studio.bar.prices", { date: estimate.as_of })}
                           </a>
                         </>
                       ) : null}
@@ -992,8 +997,15 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                     >
                       <Sparkles className="h-4 w-4" aria-hidden />
                       {usesSource
-                        ? `${sourceTasks.find((t) => t.id === task)?.label ?? "Make it"} from “${source?.name}”`
-                        : `Generate${source ? " in its style" : projectId ? " into this project" : ""}`}
+                        ? t("studio.bar.taskFrom", {
+                            task: sourceTasks.find((entry) => entry.id === task)?.label ?? t("studio.bar.makeIt"),
+                            name: source?.name ?? ""
+                          })
+                        : source
+                          ? t("studio.bar.generateInStyle")
+                          : projectId
+                            ? t("studio.bar.generateIntoProject")
+                            : t("studio.bar.generate")}
                     </button>
                   </div>
                 )}
@@ -1001,7 +1013,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
             </>
           ) : (
             <p className="rounded-2xl bg-slate-900/70 px-4 py-10 text-center text-sm text-slate-400">
-              Every generator is switched off. Turn one on in Settings.
+              {t("studio.allOff")}
             </p>
           )}
 

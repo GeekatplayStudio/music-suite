@@ -5,6 +5,7 @@ import { useRef } from "react";
 import { BarChart3, FileAudio, Loader2, Scissors, Upload, X } from "lucide-react";
 
 import { editorApi } from "@/lib/editor/api";
+import { useI18n } from "@/lib/i18n";
 import type { Inspiration, ProviderTask } from "@/lib/generation/api";
 import type { ClipRef } from "@/lib/handoff";
 import { cn } from "@/lib/utils";
@@ -17,14 +18,10 @@ export interface SourceSong extends ClipRef {
 /** What the creator does with the song: "text2music" makes a new one in its style. */
 export const NEW_IN_ITS_STYLE = "text2music";
 
-const TASK_HELP: Record<string, string> = {
-  [NEW_IN_ITS_STYLE]: "A brand-new song with the same tempo, key, length and feel. Describe the rest below.",
-  cover: "The same song in a new style: keep its structure, change the sound.",
-  extend: "Continue it: new music before the start or after the end.",
-  extract: "Pull one instrument out of it as its own track, for sampling or practice.",
-  add_layer: "Write a new part (drums, bass, guitar…) that fits over it.",
-  complete: "Build a full arrangement around it, for example around a vocal or a riff."
-};
+/** Tasks with a hint in the dictionary (source.panel.help.*). */
+const TASK_HELP = ["text2music", "cover", "extend", "extract", "add_layer", "complete"] as const;
+type HelpTask = (typeof TASK_HELP)[number];
+const hasHelp = (id: string): id is HelpTask => (TASK_HELP as readonly string[]).includes(id);
 
 const smallButton =
   "inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-800 px-3 text-xs font-semibold text-slate-100 hover:bg-slate-700 " +
@@ -51,8 +48,9 @@ interface SourceSongPanelProps {
 
 /** "Start from a song": upload or bring in a song, read it, and choose what to make from it. */
 export function SourceSongPanel({ source, working, disabled, tasks, taskId, onTask, onUpload, onAnalyse, onClear }: SourceSongPanelProps) {
+  const { t } = useI18n();
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const choices: ProviderTask[] = [{ id: NEW_IN_ITS_STYLE, label: "New song in its style" }, ...tasks];
+  const choices: ProviderTask[] = [{ id: NEW_IN_ITS_STYLE, label: t("source.panel.newInStyle") }, ...tasks];
 
   const picker = (
     <input
@@ -70,22 +68,21 @@ export function SourceSongPanel({ source, working, disabled, tasks, taskId, onTa
 
   if (!source) {
     return (
-      <section className="glass rounded-2xl border border-white/10 p-4" aria-label="Start from a song">
+      <section className="glass rounded-2xl border border-white/10 p-4" aria-label={t("source.panel.title")}>
         {picker}
         <h2 className="display-font flex items-center gap-2 text-sm font-semibold text-slate-200">
-          <FileAudio className="h-4 w-4 text-cyan-300" aria-hidden /> Start from a song
+          <FileAudio className="h-4 w-4 text-cyan-300" aria-hidden /> {t("source.panel.title")}
         </h2>
         <p className="mt-1 text-xs text-slate-400">
-          Optional. Bring in a song to match its tempo, key and feel, restyle it, extend it, add a part to it, pull out an
-          instrument, or split it into stems in the editor.
+          {t("source.panel.intro")}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button type="button" className={smallButton} disabled={disabled || working !== null} onClick={() => fileRef.current?.click()}>
             {working ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Upload className="h-4 w-4" aria-hidden />}
-            {working ?? "Choose a song file"}
+            {working ?? t("source.panel.chooseFile")}
           </button>
           <Link href="/" className="text-xs font-semibold text-cyan-300 underline-offset-2 hover:underline">
-            or pick one you analysed
+            {t("source.panel.pickAnalysed")}
           </Link>
         </div>
       </section>
@@ -95,28 +92,28 @@ export function SourceSongPanel({ source, working, disabled, tasks, taskId, onTa
   const measured = source.measured;
   const facts = measured
     ? [
-        measured.bpm ? `${Math.round(measured.bpm)} BPM` : "no steady tempo",
-        measured.key ?? "no clear key",
+        measured.bpm ? `${Math.round(measured.bpm)} BPM` : t("source.panel.noTempo"),
+        measured.key ?? t("source.panel.noKey"),
         measured.beats_per_bar ? `${measured.beats_per_bar}/4` : null,
         formatLength(measured.duration_seconds)
       ].filter(Boolean)
     : [];
 
   return (
-    <section className="glass space-y-3 rounded-2xl border border-cyan-300/30 p-4" aria-label={`Starting from ${source.name}`}>
+    <section className="glass space-y-3 rounded-2xl border border-cyan-300/30 p-4" aria-label={t("source.panel.startingFromLabel", { name: source.name })}>
       {picker}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-300">Starting from</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-300">{t("source.panel.startingFrom")}</p>
           <h2 className="display-font truncate text-base font-semibold text-slate-100">{source.name}</h2>
           <p className="text-xs tabular-nums text-slate-400" aria-live="polite">
-            {working ?? (facts.length ? `${facts.join(" · ")} · filled into the form below` : "")}
+            {working ?? (facts.length ? t("source.panel.filledIn", { facts: facts.join(" · ") }) : "")}
           </p>
         </div>
         <button
           type="button"
-          aria-label="Stop starting from this song"
-          title="Stop starting from this song (it stays in its session)"
+          aria-label={t("source.panel.stop")}
+          title={t("source.panel.stopTitle")}
           className={cn(smallButton, "w-9 justify-center px-0")}
           disabled={disabled}
           onClick={onClear}
@@ -129,11 +126,11 @@ export function SourceSongPanel({ source, working, disabled, tasks, taskId, onTa
         preload="none"
         src={editorApi.assetAudioUrl(source.projectId, source.assetId)}
         className="h-10 w-full"
-        aria-label={`Play ${source.name}`}
+        aria-label={t("source.panel.play", { name: source.name })}
       />
 
       <fieldset className="space-y-2" disabled={disabled}>
-        <legend className="text-xs font-semibold text-slate-300">What to make from it</legend>
+        <legend className="text-xs font-semibold text-slate-300">{t("source.panel.whatToMake")}</legend>
         <div className="grid gap-2 sm:grid-cols-2">
           {choices.map((task) => {
             const unavailable = task.available === false;
@@ -157,7 +154,7 @@ export function SourceSongPanel({ source, working, disabled, tasks, taskId, onTa
                 <span>
                   <span className="font-semibold text-slate-100">{task.label}</span>
                   <span className="mt-0.5 block text-xs text-slate-400">
-                    {unavailable ? task.reason : (TASK_HELP[task.id] ?? "")}
+                    {unavailable ? task.reason : hasHelp(task.id) ? t(`source.panel.help.${task.id}`) : ""}
                   </span>
                 </span>
               </label>
@@ -170,15 +167,15 @@ export function SourceSongPanel({ source, working, disabled, tasks, taskId, onTa
         <Link
           href={`/editor?project=${source.projectId}&split=${source.assetId}`}
           className={smallButton}
-          title="Open its session and split it into vocals, drums, bass and the rest, each on its own track"
+          title={t("source.panel.splitTitle")}
         >
-          <Scissors className="h-4 w-4" aria-hidden /> Split into stems in the editor
+          <Scissors className="h-4 w-4" aria-hidden /> {t("source.panel.split")}
         </Link>
         <button type="button" className={smallButton} disabled={disabled} onClick={onAnalyse}>
-          <BarChart3 className="h-4 w-4" aria-hidden /> Analyse it
+          <BarChart3 className="h-4 w-4" aria-hidden /> {t("source.panel.analyse")}
         </button>
         <button type="button" className={smallButton} disabled={disabled || working !== null} onClick={() => fileRef.current?.click()}>
-          <Upload className="h-4 w-4" aria-hidden /> Use another song
+          <Upload className="h-4 w-4" aria-hidden /> {t("source.panel.another")}
         </button>
       </div>
     </section>

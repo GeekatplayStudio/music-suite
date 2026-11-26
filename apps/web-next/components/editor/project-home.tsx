@@ -5,10 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { AppPrefs } from "@/components/app-prefs";
 import { ActionButton, fieldClass } from "@/components/editor/controls";
 import { editorApi } from "@/lib/editor/api";
 import { type Capabilities, type ProjectSummary } from "@/lib/editor/types";
 import { type Incoming, type SplitDepth, placeIncoming } from "@/lib/handoff";
+import { useI18n } from "@/lib/i18n";
 
 interface ProjectHomeProps {
   /** A song sent here from the analyser or another session; the page asks where it goes. */
@@ -20,6 +22,7 @@ interface ProjectHomeProps {
 
 export function ProjectHome({ incoming, split: splitInitially, depth: depthInitially }: ProjectHomeProps) {
   const router = useRouter();
+  const { t, tp, locale } = useI18n();
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -39,20 +42,22 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
     editorApi
       .listProjects()
       .then((list) => !cancelled && setProjects(list))
-      .catch((err: unknown) => !cancelled && setError(err instanceof Error ? err.message : "Could not load projects."));
+      .catch((err: unknown) => !cancelled && setError(err instanceof Error ? err.message : t("sessions.errors.load")));
     return () => {
       cancelled = true;
     };
+    // Loaded once; the fallback message is in the language at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const create = async () => {
     setBusy(true);
     setError(null);
     try {
-      const project = await editorApi.createProject(name.trim() || "Untitled session");
+      const project = await editorApi.createProject(name.trim() || t("sessions.untitled"));
       router.push(`/editor?project=${project.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The project could not be created.");
+      setError(err instanceof Error ? err.message : t("sessions.errors.create"));
       setBusy(false);
     }
   };
@@ -65,7 +70,7 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
       const project = await editorApi.openProjectFile(file);
       router.push(`/editor?project=${project.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The project file could not be opened.");
+      setError(err instanceof Error ? err.message : t("sessions.errors.open"));
       setBusy(false);
     }
   };
@@ -79,7 +84,7 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
       const { projectId, asset } = await placeIncoming(targetId, incoming);
       router.push(`/editor?project=${projectId}${split ? `&split=${asset.id}&stems=${depth}` : ""}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The song could not be added to the session.");
+      setError(err instanceof Error ? err.message : t("sessions.errors.place"));
       setPlacing(null);
     }
   };
@@ -89,12 +94,12 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
       await editorApi.deleteProject(id);
       setProjects((list) => (list ?? []).filter((p) => p.id !== id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The project could not be deleted.");
+      setError(err instanceof Error ? err.message : t("sessions.errors.delete"));
     }
     setConfirmId(null);
   };
 
-  const songName = incoming?.name || "this song";
+  const songName = incoming?.name || t("sessions.place.thisSong");
   const home = incoming && incoming.kind === "clip" ? incoming.projectId : null;
 
   return (
@@ -102,39 +107,40 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
       <header className="flex items-center justify-between gap-4">
         <div>
           <p className="display-font text-2xl font-semibold text-slate-100">
-            Music Suite <span className="text-cyan-300">/ Studio Editor</span>
+            {t("common.appName")} <span className="text-cyan-300">/ {t("sessions.title")}</span>
           </p>
           <p className="mt-1 text-sm text-slate-400">
-            Multitrack editing, stem separation, repair and AI matching. Everything stays on this machine.
+            {t("sessions.tagline")}
           </p>
         </div>
         <Link
           href="/generate"
           className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-cyan-200 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
         >
-          AI Song Studio
+          {t("common.workspaces.studio")}
         </Link>
         <Link
           href="/synth"
           className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
         >
-          Synth Studio
+          {t("common.workspaces.synth")}
         </Link>
         <Link
           href="/models"
           className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
         >
-          Models &amp; engines
+          {t("common.workspaces.models")}
         </Link>
         <a href="/help#studio-editor" target="_blank" rel="noreferrer" className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300">
-          Help
+          {t("common.workspaces.help")}
         </a>
         <Link
           href="/"
           className="shrink-0 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
         >
-          Back to Music Suite
+          {t("common.back")}
         </Link>
+        <AppPrefs />
       </header>
 
       {error ? (
@@ -144,11 +150,11 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
       ) : null}
 
       {incoming ? (
-        <section className="glass space-y-4 rounded-2xl border border-cyan-300/30 p-4" aria-label="Where should the song go">
+        <section className="glass space-y-4 rounded-2xl border border-cyan-300/30 p-4" aria-label={t("sessions.place.region")}>
           <div>
-            <h2 className="display-font text-lg font-semibold text-slate-100">Where should “{songName}” go?</h2>
+            <h2 className="display-font text-lg font-semibold text-slate-100">{t("sessions.place.heading", { name: songName })}</h2>
             <p className="mt-1 text-sm text-slate-400">
-              It is added on a new track. Nothing already in a session is replaced.
+              {t("sessions.place.added")}
             </p>
           </div>
           <label className="flex items-start gap-3 rounded-xl bg-slate-900/70 p-3 text-sm text-slate-200">
@@ -161,37 +167,36 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
             />
             <span>
               <span className="flex items-center gap-1.5 font-semibold">
-                <Scissors className="h-4 w-4 text-cyan-300" aria-hidden /> Split it into stems when it opens
+                <Scissors className="h-4 w-4 text-cyan-300" aria-hidden /> {t("sessions.place.split")}
               </span>
               <span className="mt-0.5 block text-xs text-slate-400">
-                Vocals, drums, bass and the rest, each on its own track, ready to sample, turn into MIDI or rebuild with AI.
-                The original stays, muted, above them.
+                {t("sessions.place.splitHint")}
               </span>
             </span>
           </label>
           {split ? (
             <label className="flex flex-wrap items-center gap-2 px-3 text-sm text-slate-300">
-              <span className="font-semibold">How far</span>
+              <span className="font-semibold">{t("sessions.place.howFar")}</span>
               <select
                 className={`${fieldClass} h-9 w-auto min-w-72 text-sm`}
                 value={depth}
                 disabled={placing !== null}
                 onChange={(event) => setDepth(event.target.value as SplitDepth)}
-                aria-label="How many stems"
+                aria-label={t("sessions.place.howMany")}
               >
-                <option value="auto">As many as this computer can ({Math.max(...(capabilities?.separation.stem_options ?? [4]))} stems)</option>
-                <option value="2">2 stems: vocals and instrumental</option>
-                <option value="4">4 stems: vocals, drums, bass, other</option>
+                <option value="auto">{tp("sessions.place.auto", Math.max(...(capabilities?.separation.stem_options ?? [4])))}</option>
+                <option value="2">{t("sessions.place.two")}</option>
+                <option value="4">{t("sessions.place.four")}</option>
                 {capabilities?.separation.stem_options.includes(6) ? (
-                  <option value="6">6 stems: adds guitar and piano</option>
+                  <option value="6">{t("sessions.place.six")}</option>
                 ) : null}
                 {capabilities?.separation.detail ? (
-                  <option value="full">Everything: 12 stems with drum kit pieces and lead/backing vocals</option>
+                  <option value="full">{t("sessions.place.full")}</option>
                 ) : null}
               </select>
               {capabilities && !capabilities.separation.detail ? (
                 <a href="/models" className="text-xs font-semibold text-cyan-300 underline-offset-2 hover:underline">
-                  More stems with AI stem separation
+                  {t("sessions.place.moreStems")}
                 </a>
               ) : null}
             </label>
@@ -203,14 +208,14 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
             onClick={() => void place(null)}
           >
             {placing === "new" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            New session “{songName}”
+            {t("sessions.place.newSession", { name: songName })}
           </ActionButton>
           <div>
             <h3 className="display-font text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Or add it to a session
+              {t("sessions.place.orAdd")}
             </h3>
             {projects === null && !error ? (
-              <p className="mt-2 text-sm text-slate-400">Loading…</p>
+              <p className="mt-2 text-sm text-slate-400">{t("common.loading")}</p>
             ) : projects && projects.length ? (
               <ul className="mt-2 space-y-2">
                 {projects.map((project) => (
@@ -218,17 +223,17 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
                     <AudioWaveform className="ml-1 h-5 w-5 shrink-0 text-cyan-300" aria-hidden />
                     <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-100">{project.name}</span>
                     <span className="hidden shrink-0 text-xs text-slate-400 sm:inline">
-                      {new Date(project.updated_at).toLocaleString()}
+                      {new Date(project.updated_at).toLocaleString(locale)}
                     </span>
                     <ActionButton disabled={placing !== null} onClick={() => void place(project.id)}>
                       {placing === project.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                      {project.id === home ? "Open (it is here)" : "Add here"}
+                      {project.id === home ? t("sessions.place.openHere") : t("sessions.place.addHere")}
                     </ActionButton>
                   </li>
                 ))}
               </ul>
             ) : projects ? (
-              <p className="mt-2 text-sm text-slate-400">No other sessions yet.</p>
+              <p className="mt-2 text-sm text-slate-400">{t("sessions.place.noOthers")}</p>
             ) : null}
           </div>
         </section>
@@ -243,19 +248,19 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
           >
             <input
               className={`${fieldClass} h-11 flex-1 text-sm`}
-              placeholder="New session name"
-              aria-label="New session name"
+              placeholder={t("sessions.newName")}
+              aria-label={t("sessions.newName")}
               value={name}
               maxLength={120}
               onChange={(event) => setName(event.target.value)}
             />
             <ActionButton type="submit" variant="primary" className="h-11 px-5 text-sm" disabled={busy}>
-              <Plus className="h-4 w-4" /> New session
+              <Plus className="h-4 w-4" /> {t("sessions.newSession")}
             </ActionButton>
             <label
               className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-slate-800 px-5 text-sm font-semibold text-slate-100 hover:bg-slate-700 ${busy ? "pointer-events-none opacity-50" : ""}`}
             >
-              <FolderOpen className="h-4 w-4" /> Open a project file…
+              <FolderOpen className="h-4 w-4" /> {t("sessions.openFile")}
               <input
                 type="file"
                 accept=".zip,application/zip"
@@ -269,10 +274,10 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
             </label>
           </form>
 
-          <section aria-label="Sessions">
-            <h2 className="display-font text-xs font-semibold uppercase tracking-wider text-slate-400">Sessions</h2>
+          <section aria-label={t("sessions.list")}>
+            <h2 className="display-font text-xs font-semibold uppercase tracking-wider text-slate-400">{t("sessions.list")}</h2>
             {projects === null && !error ? (
-              <p className="mt-3 text-sm text-slate-400">Loading…</p>
+              <p className="mt-3 text-sm text-slate-400">{t("common.loading")}</p>
             ) : projects && projects.length ? (
               <ul className="mt-3 space-y-2">
                 {projects.map((project) => (
@@ -284,21 +289,21 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
                       <AudioWaveform className="h-5 w-5 shrink-0 text-cyan-300" />
                       <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-100">{project.name}</span>
                       <span className="shrink-0 text-xs text-slate-400">
-                        {new Date(project.updated_at).toLocaleString()}
+                        {new Date(project.updated_at).toLocaleString(locale)}
                       </span>
                     </Link>
                     {confirmId === project.id ? (
                       <>
                         <ActionButton variant="danger" onClick={() => void remove(project.id)}>
-                          Delete
+                          {t("common.delete")}
                         </ActionButton>
-                        <ActionButton onClick={() => setConfirmId(null)}>Keep</ActionButton>
+                        <ActionButton onClick={() => setConfirmId(null)}>{t("common.keep")}</ActionButton>
                       </>
                     ) : (
                       <button
                         type="button"
-                        aria-label={`Delete ${project.name}`}
-                        title="Delete session"
+                        aria-label={t("sessions.deleteNamed", { name: project.name })}
+                        title={t("sessions.deleteSession")}
                         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-rose-300 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
                         onClick={() => setConfirmId(project.id)}
                       >
@@ -310,7 +315,7 @@ export function ProjectHome({ incoming, split: splitInitially, depth: depthIniti
               </ul>
             ) : projects ? (
               <p className="mt-3 rounded-xl border border-dashed border-white/15 px-4 py-8 text-center text-sm text-slate-400">
-                No sessions yet. Create one above, or open a song from the Music Suite workspace.
+                {t("sessions.empty")}
               </p>
             ) : null}
           </section>

@@ -1,5 +1,6 @@
 "use client";
 
+import { AppPrefs } from "@/components/app-prefs";
 import { Lightbulb, Search, X } from "lucide-react";
 import Link from "next/link";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
@@ -186,6 +187,7 @@ export function HelpView({ doc }: { doc: HelpDocument }) {
           <Link href="/models" className={quiet}>
             Models &amp; engines
           </Link>
+          <AppPrefs />
         </nav>
       </header>
 
