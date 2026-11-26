@@ -218,6 +218,11 @@ def test_settings_round_trip_and_reject_bad_values(client: TestClient) -> None:
         "arranger": True,
         "acestep_server": False,
         "yue2": False,
+        "stable_audio3": False,
+        "heartmula": False,
+        "diffrhythm": False,
+        "minimax3": False,
+        "magenta_rt2": False,
         "elevenlabs": False,
         "fal": False,
         "lyria": False,
@@ -246,6 +251,7 @@ def test_overview_reports_missing_engine_without_starting_anything(client: TestC
     local = next(p for p in body["providers"] if p["id"] == "acestep_local")
     assert local["status"]["ready"] is False
     assert body["engine"] == {
+        "backend": "unknown",
         "built": False,
         "models": {"lm": [], "embedding": [], "dit": [], "vae": []},
         "missing_models": ["lm", "embedding", "dit", "vae"],
@@ -1116,7 +1122,7 @@ def test_yue2_needs_switching_on_setup_and_the_licence(client: TestClient, monke
     client.post("/generation/settings", json={"providers": {"yue2": True}})
     _, refused = _start(client, {"caption": "emo rock"}, provider="yue2")
     assert refused.status_code == 422 and "Please confirm" in refused.json()["detail"]
-    assert "commercially" in refused.json()["detail"]
+    assert "model terms and creator permissions" in refused.json()["detail"]
     _, unticked = _start(
         client, {"caption": "emo rock", "accept_noncommercial": False}, provider="yue2"
     )

@@ -4,10 +4,15 @@ import { useEffect, useState } from "react";
 
 import { ActionButton, PanelSection, Slider, fieldClass } from "@/components/editor/controls";
 import type { Clip } from "@/lib/editor/types";
-import { generationApi, optionLabel, optionValue, type CostEstimate, type ProviderInfo } from "@/lib/generation/api";
+import { generationApi, optionLabel, optionValue, type CostEstimate, type ProviderInfo, type FieldValues } from "@/lib/generation/api";
+import { SchemaForm } from "@/components/generation/schema-form";
 
 /** What each edit does, in the words shown to the user. */
 const TASK_HINTS: Record<string, string> = {
+  restyle: "Recreate this recording with the described sound.",
+  inpaint: "Regenerate the highlighted region using the description.",
+  continue: "Generate additional music after the source recording.",
+  reference: "Use this recording's sound to steer a new Magenta performance.",
   repaint: "Regenerates the highlighted part of this clip and keeps everything around it exactly as it is.",
   extend: "Adds new music before or after this clip that continues it.",
   cover: "Plays the same song in a new style.",
@@ -24,10 +29,12 @@ const TASK_TITLES: Record<string, string> = {
   add_layer: "new part",
   complete: "full song",
 };
-const NEEDS_STYLE = new Set(["repaint", "extend", "cover", "add_layer", "complete"]);
+const NEEDS_STYLE = new Set(["restyle", "inpaint", "continue", "reference", "repaint", "extend", "cover", "add_layer", "complete"]);
 const EXTEND_CHOICES = [10, 20, 30, 60];
 
 interface AiEditSectionProps {
+  stemLabel?: string;
+  sourceSeconds: number;
   projectId: string;
   clip: Clip;
   /** The highlighted range inside this clip's audio, in seconds of the audio file. */
@@ -39,7 +46,7 @@ interface AiEditSectionProps {
   onOpenSongStudio: () => void;
 }
 
-export function AiEditSection({ projectId, clip, selection, providers, busy, onRun, onOpenSongStudio }: AiEditSectionProps) {
+export function AiEditSection({ sourceSeconds, stemLabel, projectId, clip, selection, providers, busy, onRun, onOpenSongStudio }: AiEditSectionProps) {
   const usable = providers.filter((p) => p.status.ready && p.schema.tasks.some((t) => t.source));
   const [providerId, setProviderId] = useState<string | null>(null);
   const provider = usable.find((p) => p.id === providerId) ?? usable[0] ?? providers[0] ?? null;
@@ -50,6 +57,9 @@ export function AiEditSection({ projectId, clip, selection, providers, busy, onR
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
   const [style, setStyle] = useState("");
   const [lyrics, setLyrics] = useState("");
+  const [abc, setAbc] = useState("");
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [advancedValues, setAdvancedValues] = useState<FieldValues>({});
   const [extendSeconds, setExtendSeconds] = useState(20);
   const [extendAt, setExtendAt] = useState<"end" | "start">("end");
   const [strength, setStrength] = useState(0.5);
@@ -102,10 +112,21 @@ export function AiEditSection({ projectId, clip, selection, providers, busy, onR
   const trackField = provider.schema.fields.find((f) => f.key === "track");
   const unavailable = task.available === false;
   const reversed = Boolean(clip.reversed);
-  const needsSelection = task.id === "repaint";
+  const needsSelection = task.id === "repaint" || task.id === "inpaint";
+  const stableEdit = provider.id === "stable_audio3" && ["restyle", "continue", "inpaint"].includes(task.id);
+  const diffEdit = provider.id === "diffrhythm" && task.id === "inpaint";
+  const renderSeconds = Math.ceil(sourceSeconds + (task.id === "continue" ? extendSeconds : 0));
   const selectionOk = Boolean(selection && selection.end - selection.start >= 1);
   const styleOk = !NEEDS_STYLE.has(task.id) || style.trim().length >= 3;
-  const ready = !busy && !unavailable && !reversed && styleOk && (!needsSelection || selectionOk);
+  const yueCover = provider.id === "yue2" && task.id === "cover";
+  const handled = new Set(["caption", "lyrics", "variations", "allow_upload", "follow_original", "extend_seconds", "extend_at", "strength", "faithful", "track", "region_start", "region_end"]);
+  if (stableEdit) ["duration", "start", "end"].forEach(key => handled.add(key));
+  if (diffEdit) ["duration", "edit_segments"].forEach(key => handled.add(key));
+  if (yueCover) ["abc", "cot", "accept_noncommercial"].forEach(key => handled.add(key));
+  const extraFields = provider.schema.fields.filter(f => !handled.has(f.key) && !f.editor && f.type !== "plan" && (!f.tasks || f.tasks.includes(task.id)));
+  const extraValues: FieldValues = Object.fromEntries(extraFields.map(f => [f.key, advancedValues[`${provider.id}:${task.id}:${f.key}`] ?? f.default ?? null]));
+  const stableLimit = String(extraValues.model ?? "medium").startsWith("small") ? 120 : 380;
+  const ready = (!yueCover || (abc.trim().length > 0 && acceptTerms)) && (!stableEdit || renderSeconds <= stableLimit) && (!diffEdit || sourceSeconds <= 285) && !busy && !unavailable && !reversed && styleOk && (!needsSelection || selectionOk);
 
   const run = () => {
     onRun({ provider: provider.id, task: task.id, title: editTitle().slice(0, 80), fields: editFields() }, `${task.label}: ${clip.name}`);
@@ -120,10 +141,16 @@ export function AiEditSection({ projectId, clip, selection, providers, busy, onR
   }
 
   function editFields(): Record<string, string | number | boolean> {
-    const fields: Record<string, string | number | boolean> = {};
+    const fields: Record<string, string | number | boolean> = Object.fromEntries(Object.entries(extraValues)
+      .filter(([,value]) => value !== null && value !== "" && !Array.isArray(value))) as Record<string, string | number | boolean>;
     if (has("variations")) fields.variations = versions;
     if (has("allow_upload")) fields.allow_upload = allowUpload;
     if (has("follow_original")) fields.follow_original = faithful;
+    if (stableEdit) fields.duration = renderSeconds;
+    if (task.id === "inpaint" && selection) {
+      if (diffEdit) { fields.edit_segments = JSON.stringify([[selection.start, selection.end]]); fields.duration = sourceSeconds <= 95 ? "95" : "285"; }
+      else { fields.start = selection.start; fields.end = selection.end; }
+    }
     if (style.trim()) fields.caption = style.trim();
     if (task.id === "repaint" && selection) {
       fields.region_start = Number(selection.start.toFixed(3));
@@ -137,8 +164,9 @@ export function AiEditSection({ projectId, clip, selection, providers, busy, onR
       fields.extend_at = extendAt;
     }
     if (task.id === "cover") {
-      fields.strength = strength;
-      fields.faithful = faithful;
+      if (has("strength")) fields.strength = strength;
+      if (has("faithful")) fields.faithful = faithful;
+      if (yueCover) { fields.abc = abc; fields.cot = "melody"; fields.accept_noncommercial = acceptTerms; }
     }
     if (task.id === "extract" || task.id === "add_layer" || task.id === "complete") fields.track = track;
     return fields;
@@ -146,6 +174,15 @@ export function AiEditSection({ projectId, clip, selection, providers, busy, onR
 
   return (
     <PanelSection title="AI edit" hint={hint}>
+      {stemLabel && tasks.some((t) => ["cover", "restyle"].includes(t.id) && t.available !== false) && (
+        <ActionButton className="w-full" disabled={busy} onClick={() => {
+          setTaskId(tasks.find((t) => ["cover", "restyle"].includes(t.id) && t.available !== false)!.id);
+          setStyle(`Solo ${stemLabel}, clean isolated performance, preserve the reference phrasing and tempo`);
+          setFaithful(true);
+        }}>
+          AI reconstruct this stem
+        </ActionButton>
+      )}
       {usable.length > 1 ? (
         <label className="block space-y-1 text-[11px] text-slate-400">
           <span>Generator</span>
@@ -182,7 +219,7 @@ export function AiEditSection({ projectId, clip, selection, providers, busy, onR
           ))}
         </select>
       </label>
-      <p className="text-[11px] leading-snug text-slate-400">{TASK_HINTS[task.id]}</p>
+      <p className="text-[11px] leading-snug text-slate-400">{stemLabel && ["cover", "restyle"].includes(task.id) ? "Generate a replacement performance from this stem. Notes and timing may change." : TASK_HINTS[task.id]}</p>
 
       {unavailable ? (
         <>
@@ -192,6 +229,14 @@ export function AiEditSection({ projectId, clip, selection, providers, busy, onR
           </ActionButton>
         </>
       ) : null}
+      {yueCover && <div className="space-y-2 text-xs text-slate-300">
+        <label className="block">Reviewed source melody (ABC score)
+          <textarea aria-label="Cover melody ABC score" value={abc} onChange={event => setAbc(event.target.value)}
+            rows={6} maxLength={20000} className={`${fieldClass} h-auto font-mono`} />
+        </label>
+        <p>YuE2 follows this score. Review the source melody, chords and lyric phrasing before rendering.</p>
+        <label className="flex gap-2"><input type="checkbox" checked={acceptTerms} onChange={event => setAcceptTerms(event.target.checked)} />My use complies with the YuE2 model terms and creator permissions</label>
+      </div>}
       {reversed ? <p className="text-[11px] text-amber-200">Un-reverse the clip first.</p> : null}
       {needsSelection && !selectionOk ? (
         <p className="text-[11px] text-amber-200">
@@ -249,7 +294,14 @@ export function AiEditSection({ projectId, clip, selection, providers, busy, onR
         </label>
       ) : null}
 
-      {task.id === "extend" ? (
+      {stableEdit && renderSeconds > stableLimit && <p role="alert">This checkpoint supports at most {stableLimit} seconds.</p>}
+      {diffEdit && sourceSeconds > 285 && <p role="alert">DiffRhythm supports at most 285 seconds.</p>}
+      {extraFields.length > 0 && <details className="rounded-lg border border-white/10 p-2">
+        <summary className="cursor-pointer text-xs text-slate-300">Model controls</summary>
+        <SchemaForm schema={{ ...provider.schema, fields: extraFields }} values={extraValues} disabled={busy}
+          onChange={(key, value) => setAdvancedValues(previous => ({ ...previous, [`${provider.id}:${task.id}:${key}`]: value }))} />
+      </details>}
+      {task.id === "extend" || task.id === "continue" ? (
         <div className="grid grid-cols-2 gap-2">
           <label className="space-y-1 text-[11px] text-slate-400">
             <span>Add</span>
@@ -261,7 +313,7 @@ export function AiEditSection({ projectId, clip, selection, providers, busy, onR
               ))}
             </select>
           </label>
-          <label className="space-y-1 text-[11px] text-slate-400">
+          {task.id === "extend" && <label className="space-y-1 text-[11px] text-slate-400">
             <span>Where</span>
             <select
               className={fieldClass}
@@ -271,11 +323,11 @@ export function AiEditSection({ projectId, clip, selection, providers, busy, onR
               <option value="end">After the end</option>
               <option value="start">Before the start</option>
             </select>
-          </label>
+          </label>}
         </div>
       ) : null}
 
-      {task.id === "cover" ? (
+      {task.id === "cover" && !yueCover ? (
         <>
           <Slider
             label="Keep"

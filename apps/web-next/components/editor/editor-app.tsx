@@ -257,7 +257,7 @@ function applySongEdit(state: ProjectState, job: Job, source: Clip): ProjectStat
   let clips = state.clips.slice();
 
   const geometry = (clip: Clip, asset: Asset): Clip => {
-    if (task !== "extend") return { ...clip, assetId: asset.id };
+    if (task !== "extend" && task !== "continue") return { ...clip, assetId: asset.id };
     const added = typeof meta.extended_seconds === "number" ? meta.extended_seconds : 0;
     if (meta.extend_at === "start") {
       // The new audio sits before the old: shift the clip left as far as the timeline allows.
@@ -275,7 +275,7 @@ function applySongEdit(state: ProjectState, job: Job, source: Clip): ProjectStat
     clips.push({ ...clip, id: newId(), trackId: track.id });
   };
 
-  const inPlace = task === "repaint" || task === "cover" || task === "extend";
+  const inPlace = ["repaint", "cover", "extend", "inpaint", "restyle", "continue"].includes(task);
   job.result_assets.forEach((asset, index) => {
     const name = stripExtension(asset.name);
     if (inPlace && index === 0) {

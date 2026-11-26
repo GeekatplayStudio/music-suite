@@ -90,6 +90,28 @@ PACKS: dict[str, Pack] = {
         torch=True,
         download_note="About 3 GB with NVIDIA GPU support, about 1 GB without, plus the models.",
     ),
+    "mega53": Pack(
+        id="mega53",
+        label="MVSep Mega 53",
+        summary="Extract 53 instrument categories.",
+        unlocks=("Detailed multitrack extraction in the editor",),
+        packages=("bs-roformer-infer @ git+https://github.com/openmirlab/bs-roformer-infer.git",),
+        modules=("bs_roformer",),
+        torch=True,
+        downloads_models=False,
+        download_note="Weights download on first extraction. A GPU with 16 GB VRAM is recommended.",
+    ),
+    "sam-audio": Pack(
+        id="sam-audio",
+        label="Meta SAM Audio",
+        summary="Isolate a sound by describing it.",
+        unlocks=("Prompted instrument extraction in the editor",),
+        packages=("sam-audio @ git+https://github.com/facebookresearch/sam-audio.git",),
+        modules=("sam_audio",),
+        torch=True,
+        downloads_models=False,
+        download_note="Request access to facebook/sam-audio-small and sign in with hf auth login.",
+    ),
     "notes": Pack(
         id="notes",
         label="AI note transcription",
@@ -275,6 +297,9 @@ def folder_size(path: Path) -> int:
 
 
 def pack_installed(pack: Pack) -> bool:
+    if pack.id in ("mega53", "sam-audio"):
+        from audioqi.generation import local_runtimes
+        return local_runtimes.active(pack.id) is not None or all(has_module(name) for name in pack.modules)
     return all(has_module(name) for name in pack.modules)
 
 
@@ -485,6 +510,16 @@ def install(pack_id: str, models: list[str] | None, report: Report) -> None:
     pack = PACKS.get(pack_id)
     if pack is None:
         raise EditorError("Unknown pack.", 404)
+    if pack_id in ("mega53", "sam-audio"):
+        from audioqi.generation import local_runtimes
+        # Compatibility entry point: code only. The model manager reviews weights.
+        report("packages", 5, f"Installing {pack.label} in its own environment.")
+        local_runtimes._install(pack_id, None)
+        message = local_runtimes._jobs.get(pack_id, "Setup failed.")
+        if message != "Installed.":
+            raise EditorError(message)
+        report("done", 100, f"{pack.label} runtime ready. Review its checkpoints in Local model downloads.")
+        return
     if not pack.downloads_models:
         wanted = []
     else:

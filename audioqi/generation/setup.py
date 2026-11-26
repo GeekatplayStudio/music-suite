@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -155,9 +156,7 @@ def _ensure_tools(report: Report) -> None:
                 ],
                 None,
             )
-            cmake_bin = (
-                Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "CMake" / "bin"
-            )
+            cmake_bin = Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "CMake" / "bin"
             if cmake_bin.is_dir():
                 os.environ["PATH"] = f"{cmake_bin}{os.pathsep}{os.environ.get('PATH', '')}"
         if shutil.which("cmake") is None:
@@ -264,13 +263,49 @@ def _fetch_source(target: Path, report: Report) -> bool:
     return True
 
 
+def backend_options() -> tuple[str, list[str]]:
+    """Select an available accelerator toolchain rather than silently building CPU-only."""
+    from audioqi import addons
+
+    requested = os.getenv("MUSIC_SUITE_ACESTEP_BACKEND", "auto").lower()
+    if requested not in ("auto", "cpu", "cuda", "vulkan", "metal"):
+        raise SetupError("Choose auto, cpu, cuda, vulkan or metal for MUSIC_SUITE_ACESTEP_BACKEND.")
+    if requested == "cpu":
+        return "cpu", ["-DGGML_CUDA=OFF", "-DGGML_VULKAN=OFF"]
+    if sys.platform == "darwin":
+        return "metal", ["-DGGML_BLAS=ON", "-DGGML_METAL=ON"]
+    nvcc = shutil.which("nvcc")
+    if nvcc and (sys.platform != "win32" or shutil.which("cl")) and requested in ("auto", "cuda"):
+        return "cuda", ["-DGGML_CUDA=ON", "-DGGML_VULKAN=OFF", "-DCMAKE_CUDA_ARCHITECTURES=native"]
+    candidates = [Path(os.environ["VULKAN_SDK"])] if os.getenv("VULKAN_SDK") else []
+    if sys.platform == "win32":
+        candidates.extend(sorted(Path("C:/VulkanSDK").glob("*"), reverse=True))
+    sdk = next((p for p in candidates if (p / "Bin/glslc.exe").is_file()), None)
+    glslc = str(sdk / "Bin/glslc.exe") if sdk else shutil.which("glslc")
+    if requested in ("auto", "vulkan") and glslc:
+        flags = ["-DGGML_CUDA=OFF", "-DGGML_VULKAN=ON", f"-DVulkan_GLSLC_EXECUTABLE={glslc}"]
+        if sdk:
+            flags += [
+                f"-DCMAKE_PREFIX_PATH={sdk.as_posix()}",
+                f"-DVulkan_INCLUDE_DIR={(sdk / 'Include').as_posix()}",
+                f"-DVulkan_LIBRARY={(Path(os.getenv('WINDIR', 'C:/Windows')) / 'System32/vulkan-1.dll').as_posix()}",
+            ]
+        return "vulkan", flags
+    if requested != "auto" or addons.gpu():
+        raise SetupError(
+            "GPU build tools are missing. Install the Vulkan SDK, or CUDA plus its C++ compiler. "
+            "To choose CPU explicitly, set MUSIC_SUITE_ACESTEP_BACKEND=cpu."
+        )
+    return "cpu", ["-DGGML_CUDA=OFF", "-DGGML_VULKAN=OFF"]
+
+
 def _build(target: Path, report: Report, *, force: bool) -> None:
     if engine.binary_path(target) is not None and not force:
         return
     report("build", 10, "Building the engine (a few minutes).")
-    configure = ["cmake", "-S", ".", "-B", "build", "-DCMAKE_BUILD_TYPE=Release"]
-    if sys.platform == "darwin":
-        configure.append("-DGGML_BLAS=ON")  # Metal and Accelerate are picked up automatically.
+    backend, flags = backend_options()
+    report("build", 10, f"Building the engine with {backend.upper()} acceleration.")
+    configure = ["cmake", "-S", ".", "-B", "build", "-DCMAKE_BUILD_TYPE=Release", *flags]
     if sys.platform == "win32":
         # MinGW only: target Windows 10 (its default hides CreateFile2, used by cpp-httplib)
         # and link the runtime statically so the engine starts without MinGW on PATH.
@@ -290,6 +325,9 @@ def _build(target: Path, report: Report, *, force: bool) -> None:
     )
     if engine.binary_path(target) is None:
         raise SetupError("The build finished but the engine program was not produced.")
+    (target / "music-suite-backend.json").write_text(
+        json.dumps({"backend": backend}), encoding="utf-8"
+    )
 
 
 def _sha256(path: Path) -> str:
@@ -309,7 +347,7 @@ def _download_models(
     models = MODELS if models is None else models
     total = sum(size for size, _ in models.values())
     low, high = span
-    folder = target / "models"
+    folder = settings.models_dir() if target == settings.engine_dir() else target / "models"
     folder.mkdir(parents=True, exist_ok=True)
     pending = {
         name: spec
@@ -379,7 +417,7 @@ def pull_writer_model(report: Report) -> bool:
 
 
 def _present(models: dict[str, tuple[int, str]]) -> bool:
-    folder = settings.engine_dir() / "models"
+    folder = settings.models_dir()
     return all(
         (folder / name).is_file() and (folder / name).stat().st_size == size
         for name, (size, _) in models.items()

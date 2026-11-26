@@ -22,8 +22,10 @@ import {
 } from "lucide-react";
 
 import { AlbumPanel } from "@/components/generation/album-panel";
+import { LivePanel } from "@/components/generation/live-panel";
 import { PlanEditor } from "@/components/generation/plan-editor";
 import { SchemaForm } from "@/components/generation/schema-form";
+import { LocalDownloads } from "./local-downloads";
 import { SettingsPanel } from "@/components/generation/settings-panel";
 import { NEW_IN_ITS_STYLE, SourceSongPanel, type SourceSong } from "@/components/generation/source-song";
 import { editorApi } from "@/lib/editor/api";
@@ -46,7 +48,7 @@ import {
 import { analyseClip, type ClipRef, type Incoming, placeIncoming, placeInEditorUrl } from "@/lib/handoff";
 import { cn } from "@/lib/utils";
 
-type Tab = "create" | "album" | "history" | "settings";
+type Tab = "create" | "live" | "album" | "history" | "settings";
 
 interface Result {
   projectId: string;
@@ -415,7 +417,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
     }
   };
 
-  const generate = async () => {
+  const startTask = async (requestedTask: string) => {
     if (!provider) return;
     setError(null);
     const songTitle = title.trim() || "Generated song";
@@ -424,20 +426,21 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
       const target = source?.projectId ?? projectId ?? (await editorApi.createProject(songTitle)).id;
       const started = await generationApi.startSong(
         target,
-        { provider: provider.id, task, title: songTitle, fields: submitValues(provider.schema, values, task) },
-        usesSource && source ? source.assetId : null
+        { provider: provider.id, task: requestedTask, title: songTitle, fields: submitValues(provider.schema, values, requestedTask) },
+        provider.schema.tasks.find(entry => entry.id === requestedTask)?.source && source ? source.assetId : null
       );
       setNow(Date.now());
       setJob({
         projectId: target,
         job: started,
         startedAt: Date.now(),
-        muteAssetId: source && MUTES_ORIGINAL.has(task) ? source.assetId : null
+        muteAssetId: source && MUTES_ORIGINAL.has(requestedTask) ? source.assetId : null
       });
     } catch (err) {
       setError(message(err, "Generation could not be started."));
     }
   };
+  const generate = () => startTask(task);
 
   // Follow the running job.
   const jobId = job?.job.id;
@@ -456,6 +459,12 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
             stopped = true;
             clearInterval(timer);
             const result = latest.result as { title?: string; outputs?: Record<string, unknown>[]; seconds_taken?: number };
+            const score = result.outputs?.[0]?.abc;
+            if (result.outputs?.[0]?.task === "plan" && typeof score === "string") {
+              setValuesByProvider(all => ({ ...all, yue2: { ...(all.yue2 ?? {}), abc: score } }));
+              setWriterNote("The composition plan is ready. Review and edit the ABC score, then generate the song.");
+              setJob(null); setHistory(null); return;
+            }
             try {
               await placeInProject(jobProject, latest.result_assets, result.outputs?.[0] ?? {}, jobMutes);
             } catch {
@@ -592,6 +601,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
 
   const tabs: { id: Tab; label: string; icon: typeof Sparkles }[] = [
     { id: "create", label: "Create", icon: Sparkles },
+    { id: "live", label: "Live", icon: AudioWaveform },
     { id: "album", label: "Album", icon: Disc3 },
     { id: "history", label: "History", icon: History },
     { id: "settings", label: "Settings", icon: Settings2 }
@@ -625,6 +635,13 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
           </Link>
         </div>
       </header>
+      <LocalDownloads settings={tab === 'settings'} onChanged={refresh} />
+      {tab === "live" && <LivePanel projectId={source?.projectId ?? projectId} assetId={source?.assetId}
+        onSaved={async (target, asset) => {
+          await placeInProject(target, [asset], {});
+          setResults(previous => [{ projectId: target, title: "Magenta live take", assets: [asset], outputs: [], secondsTaken: 0 }, ...previous]);
+          setTab("create");
+        }} />}
 
       <div role="tablist" aria-label="AI Song Studio sections" className="flex gap-1 rounded-2xl bg-slate-900/80 p-1">
         {tabs.map(({ id, label, icon: Icon }) => (
@@ -874,6 +891,14 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
               </label>
 
               <SchemaForm schema={provider.schema} values={values} disabled={busy || writing} onChange={setValue} hidden={hidden} />
+
+              {provider.id === "yue2" ? (
+                <button type="button" className={quietButton}
+                  disabled={busy || writing || !provider.status.ready}
+                  onClick={() => void startTask("plan")}>
+                  Draft editable ABC score
+                </button>
+              ) : null}
 
               {planField ? (
                 <PlanEditor

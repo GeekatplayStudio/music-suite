@@ -25,6 +25,26 @@ OLLAMA = "http://127.0.0.1:11434"
 GENERATION_LOCK = threading.Lock()
 
 
+@contextlib.contextmanager
+def inference_session(report=None, cancelled=None):
+    """Share one accelerator between separation, local generators and live sessions."""
+    while not GENERATION_LOCK.acquire(timeout=0.5):
+        if cancelled and cancelled():
+            raise EditorError("Processing was cancelled.", 409)
+        if report:
+            report("Waiting for the accelerator to be free.")
+    try:
+        from audioqi.generation.engine import SUPERVISOR
+
+        SUPERVISOR.stop()
+        ensure_memory(report, cancelled=cancelled)
+        if cancelled and cancelled():
+            raise EditorError("Processing was cancelled.", 409)
+        yield
+    finally:
+        GENERATION_LOCK.release()
+
+
 def free_memory_percent() -> float | None:
     """System-wide free memory as a percentage, or None when it cannot be read."""
     try:

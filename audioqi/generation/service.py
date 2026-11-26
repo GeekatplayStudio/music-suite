@@ -22,6 +22,7 @@ from audioqi.generation.providers.arranger import ArrangerProvider
 from audioqi.generation.providers.base import Output, Provider, RunContext
 from audioqi.generation.providers.cloud import ElevenLabsProvider, FalProvider
 from audioqi.generation.providers.comfyui import ComfyUiProvider
+from audioqi.generation.providers.local_music import NAMES, LocalMusicProvider
 from audioqi.generation.providers.lyria import LyriaProvider
 from audioqi.generation.providers.yue2_engine import YuE2Provider
 
@@ -31,6 +32,7 @@ PROVIDERS: dict[str, Provider] = {
         AceStepProvider(),
         AceStepServerProvider(),
         YuE2Provider(),
+        *(LocalMusicProvider(key) for key in NAMES),
         ComfyUiProvider(),
         ArrangerProvider(),
         ElevenLabsProvider(),
@@ -60,6 +62,11 @@ def cancel(job_id: str) -> None:
 def _is_cancelled(job_id: str) -> bool:
     with _CANCEL_LOCK:
         return job_id in _CANCELLED
+
+
+def forget_cancelled(job_id: str) -> None:
+    with _CANCEL_LOCK:
+        _CANCELLED.discard(job_id)
 
 
 def provider(provider_id: Any) -> Provider:
@@ -101,11 +108,14 @@ def validate_request(params: dict[str, Any]) -> dict[str, Any]:
     if entry.get("available") is False:
         raise EditorError(str(entry.get("reason") or "That task is not available yet."), 409)
     title = projects.clean_name(params.get("title") or "Generated song", limit=80)
+    cleaned_fields = schema.validate(described["fields"], task, params.get("fields") or {})
+    if hasattr(chosen, "validate_params"):
+        chosen.validate_params(task, cleaned_fields)
     return {
         "provider": chosen.id,
         "task": task,
         "title": title,
-        "fields": schema.validate(described["fields"], task, params.get("fields") or {}),
+        "fields": cleaned_fields,
         "source": bool(entry.get("source")),
     }
 
@@ -161,6 +171,10 @@ def run(
     try:
         # A provider that loads no model has nothing to make room for.
         if chosen.kind == "local" and getattr(chosen, "needs_memory", True):
+            if chosen.id != "acestep_local":
+                from audioqi.generation.engine import SUPERVISOR
+
+                SUPERVISOR.stop()
             progress(5, "Checking memory.")
             resources.ensure_memory(lambda detail: progress(6, detail), cancelled=cancelled)
         progress(10, "Starting the generator.")

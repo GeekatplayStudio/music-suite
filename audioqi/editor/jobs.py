@@ -94,6 +94,19 @@ def _boolean(params: dict[str, Any], key: str, default: bool) -> bool:
 
 
 def _v_separate(params: dict[str, Any]) -> dict[str, Any]:
+    if "model" in params:
+        _reject_unknown(params, {"model", "prompt"})
+        model = params["model"]
+        if model not in ("mega53", "sam-audio"):
+            raise ParamError("Unknown extraction model.")
+        prompt = params.get("prompt", "")
+        if not isinstance(prompt, str) or len(prompt) > 160:
+            raise ParamError("Use a sound description of up to 160 characters.")
+        if model == "sam-audio" and not prompt.strip():
+            raise ParamError("Describe the instrument or sound to extract.")
+        if model == "mega53" and prompt:
+            raise ParamError("Text prompts require SAM Audio.")
+        return {"model": model, "prompt": prompt.strip()}
     _reject_unknown(params, {"stems", "drum_kit", "lead_backing", "part"})
     stems = params.get("stems", 4)
     if isinstance(stems, bool) or stems not in (2, 4, 6):
@@ -596,33 +609,58 @@ _Outcome = tuple[list[dict[str, Any]], dict[str, Any]]
 
 
 def _op_separate(ctx: _Context) -> _Outcome:
+    from audioqi.generation import resources
+
+    with resources.inference_session(
+        lambda message: ctx.progress("waiting", 5, message),
+        lambda: song_service._is_cancelled(ctx.record["id"]),
+    ):
+        return _separate_job(ctx)
+
+
+def _separate_job(ctx: _Context) -> _Outcome:
     audio, sr = ctx.load()
     params = ctx.params
-    count, part = params["stems"], params["part"]
-    planned = engines.separation_engines()[0]
-    if part == "drums":
-        what = "Splitting the drums into kit pieces."
-    elif part == "vocals":
-        what = "Splitting lead and backing vocals."
+    if "model" in params:
+        report = ctx.span("process", 10, 85, f"Extracting with {params['model']}.")
+        report(0.0)
+        stems, engine = separation.extract(
+            audio,
+            sr,
+            params["model"],
+            params["prompt"],
+            report,
+            cancelled=lambda: song_service._is_cancelled(ctx.record["id"]),
+        )
     else:
-        extra = [
-            label
-            for flag, label in (("drum_kit", "drum kit"), ("lead_backing", "lead/backing vocals"))
-            if params[flag]
-        ]
-        added = " + " + " + ".join(extra) if extra else ""
-        what = f"Separating {count} stems{added} with {planned}."
-    report = ctx.span("process", 10, 85, what)
-    report(0.0)
-    stems, engine = separation.separate(
-        audio,
-        sr,
-        count,
-        report,
-        drum_kit_pass=params["drum_kit"],
-        lead_backing_pass=params["lead_backing"],
-        part=part,
-    )
+        count, part = params["stems"], params["part"]
+        planned = engines.separation_engines()[0]
+        if part == "drums":
+            what = "Splitting the drums into kit pieces."
+        elif part == "vocals":
+            what = "Splitting lead and backing vocals."
+        else:
+            extra = [
+                label
+                for flag, label in (
+                    ("drum_kit", "drum kit"),
+                    ("lead_backing", "lead/backing vocals"),
+                )
+                if params[flag]
+            ]
+            added = " + " + " + ".join(extra) if extra else ""
+            what = f"Separating {count} stems{added} with {planned}."
+        report = ctx.span("process", 10, 85, what)
+        report(0.0)
+        stems, engine = separation.separate(
+            audio,
+            sr,
+            count,
+            report,
+            drum_kit_pass=params["drum_kit"],
+            lead_backing_pass=params["lead_backing"],
+            part=part,
+        )
     ctx.progress("write", 88, "Writing stems.")
     created = [ctx.save(stem, sr, name, source="stem", label=name) for name, stem in stems.items()]
     return created, {"engine": engine}
@@ -1036,12 +1074,17 @@ def run_job(project_id: str, job_id: str) -> None:
     except Exception as exc:
         logger.exception("Editor job %s (%s) failed", job_id, op)
         _fail(project_id, record, f"The {op} job failed unexpectedly ({type(exc).__name__}).")
+    finally:
+        song_service.forget_cancelled(job_id)
 
 
 def cancel_job(project_id: str, job_id: str) -> dict[str, Any]:
-    """Ask a running generation to stop. Other job types cannot be cancelled."""
+    """Ask a generation or isolated stem extraction to stop."""
     record = _load(project_id, job_id)
-    if record.get("op") == "generate_song" and record.get("status") in ("queued", "running"):
+    if record.get("op") in ("generate_song", "separate") and record.get("status") in (
+        "queued",
+        "running",
+    ):
         song_service.cancel(job_id)
     return _public(record)
 

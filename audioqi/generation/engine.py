@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import json
 import os
 import socket
 import subprocess
@@ -57,7 +58,7 @@ def classify_model(filename: str) -> str:
 def list_models(engine_dir: Path | None = None) -> dict[str, list[str]]:
     """GGUF files in the engine's models folder, grouped the way the engine groups them."""
     found: dict[str, list[str]] = {kind: [] for kind in REQUIRED_MODEL_KINDS}
-    models = (engine_dir or settings.engine_dir()) / "models"
+    models = engine_dir / "models" if engine_dir else settings.models_dir()
     if models.is_dir():
         for path in sorted(models.glob("*.gguf")):
             if path.is_file():
@@ -78,14 +79,25 @@ def list_adapters(engine_dir: Path | None = None) -> list[str]:
 
 def install_status() -> dict[str, Any]:
     base = settings.engine_dir()
-    models = list_models(base)
+    models = list_models()
     missing = [kind for kind in REQUIRED_MODEL_KINDS if not models[kind]]
     built = binary_path(base) is not None
+    from audioqi.generation import local_runtimes
+
+    updated = (
+        local_runtimes.active("acestep_local") if base == settings.default_engine_dir() else None
+    )
+    metadata = (updated / "source" if updated else base) / "music-suite-backend.json"
+    try:
+        backend = json.loads(metadata.read_text(encoding="utf-8")).get("backend", "unknown")
+    except (OSError, ValueError):
+        backend = "unknown"
     return {
         "built": built,
         "models": models,
         "missing_models": missing,
         "installed": built and not missing,
+        "backend": backend,
     }
 
 
@@ -122,6 +134,8 @@ class EngineSupervisor:
         self._active = 0
         self._last_used = 0.0
         self._watcher: threading.Thread | None = None
+        self._binary: Path | None = None
+        self._models: Path | None = None
 
     # -- state
 
@@ -137,9 +151,17 @@ class EngineSupervisor:
     def _start(self) -> None:
         base = settings.engine_dir()
         binary = binary_path(base)
+        if base == settings.default_engine_dir():
+            from audioqi.generation import local_runtimes
+
+            updated = local_runtimes.active("acestep_local")
+            if updated:
+                binary = binary_path(updated / "source") or binary
         if binary is None or install_status()["missing_models"]:
             raise EditorError(NOT_INSTALLED, 503)
         _safe_binary(binary)
+        self._binary = binary
+        self._models = settings.models_dir()
         self._port = _free_port()
         command = [
             str(binary),
@@ -148,7 +170,7 @@ class EngineSupervisor:
             "--port",
             str(self._port),
             "--models",
-            str(base / "models"),
+            str(self._models),
         ]
         if (base / "adapters").is_dir():
             command += ["--adapters", str(base / "adapters")]
@@ -196,6 +218,13 @@ class EngineSupervisor:
     def session(self) -> Iterator[str]:
         """Use the engine; it is started if needed and kept alive while in use."""
         with self._lock:
+            if self.running() and self._binary is not None and self._active == 0:
+                from audioqi.generation import local_runtimes
+
+                updated = local_runtimes.active("acestep_local")
+                candidate = binary_path(updated / "source") if updated else binary_path()
+                if candidate and (candidate != self._binary or settings.models_dir() != self._models):
+                    self.stop()
             if not self.running():
                 self._start()
             self._active += 1

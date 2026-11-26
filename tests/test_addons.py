@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -80,7 +82,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
 def test_overview_lists_packs_models_and_gpu(client: TestClient) -> None:
     body = client.get("/addons").json()
     assert body["gpu"]["name"] == "Test GPU"
-    assert [pack["id"] for pack in body["packs"]] == ["stems", "notes"]
+    assert [pack["id"] for pack in body["packs"]] == ["stems", "mega53", "sam-audio", "notes"]
     assert {model["file"] for model in body["models"]} == addons.MODEL_FILES
     assert body["install"]["running"] is False
 
@@ -219,3 +221,40 @@ def test_separate_job_parameters() -> None:
     for bad in ({"part": "guitar"}, {"stems": 2, "drum_kit": True}, {"stems": 5}, {"unknown": 1}):
         with pytest.raises(ParamError):
             jobs._v_separate(bad)
+
+
+def test_prompted_extraction_job_parameters() -> None:
+    assert jobs._v_separate({"model": "sam-audio", "prompt": "  piano "}) == {
+        "model": "sam-audio",
+        "prompt": "piano",
+    }
+    with pytest.raises(jobs.ParamError):
+        jobs._v_separate({"model": "sam-audio", "prompt": " "})
+    with pytest.raises(jobs.ParamError):
+        jobs._v_separate({"model": "mega53", "drum_kit": True})
+
+
+def test_mega53_imports_named_outputs(monkeypatch, tmp_path: Path) -> None:
+    from audioqi.generation import local_runtimes
+
+    mix = _tone()
+    monkeypatch.setattr(projects, "scratch_dir", lambda: tmp_path)
+    # A Mega 53 runtime installed on this computer would be used instead of the stand-in below.
+    monkeypatch.setattr(local_runtimes, "active", lambda _key: None)
+    monkeypatch.setitem(
+        sys.modules,
+        "bs_roformer",
+        SimpleNamespace(ensure_model_assets=lambda name: ("mega.ckpt", "mega.yaml")),
+    )
+
+    def infer(args, check):
+        assert check and "mega.ckpt" in args
+        folder = Path(args[args.index("--store_dir") + 1])
+        for index in range(53):
+            separation.sf.write(folder / f"mix_part_{index}.wav", mix, SR)
+
+    monkeypatch.setattr(separation.subprocess, "run", infer)
+    stems, engine = separation.extract(mix, SR, "mega53", "", lambda _: None)
+    assert engine == "MVSep Mega 53"
+    assert len(stems) == 53
+    assert stems["part_52"].shape == mix.shape

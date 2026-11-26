@@ -151,11 +151,12 @@ MASTERING_STAGE_DETAILS: dict[str, str] = {
 async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     ensure_data_dirs(SETTINGS)
     init_db()
-    from audioqi.generation import albums
+    from audioqi.generation import albums, live
 
     albums.resume_on_startup()  # Albums cut off by a shutdown carry on.
     yield
     albums.stop()
+    live.shutdown()
     from audioqi.generation.engine import SUPERVISOR
 
     SUPERVISOR.stop()  # Never leave the AI engine running after the API has gone.

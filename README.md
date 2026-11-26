@@ -64,6 +64,8 @@ This is the practical “what can I do with it?” list. **✅ Verified** means 
 - ✅ **Generate an album of up to 20 songs.** The queue writes missing song details, waits for memory, continues after a failed track, supports cancel/resume, and places completed songs into one editor session without duplicates.
 - ✅ **Editable song plans.** Build section-by-section plans for providers that support them, including style, duration and lyrics per section, with live cost estimates.
 - ◇ **Fully local generation.** ACE-Step 1.5 and the Ollama lyrics writer run on this computer after the models are installed; the XL model is available as a higher-quality option.
+- ✅ **On your graphics card.** The local ACE-Step engine is built for the GPU when the tools are there: Vulkan or CUDA on Windows and Linux, Metal on Apple Silicon. Measured on an RTX 3090 (Vulkan): a 30-second song in 7.8 s, against 49 s on the processor build. **Models & engines** says what the engine runs on and how to rebuild it for the card. A graphics card is not required; everything also runs on the processor, more slowly.
+- ◇ ◻️ **More local generators.** Besides ACE-Step: HeartMuLa, Stable Audio 3, MiniMax Music 3, DiffRhythm, YuE2 and Magenta RealTime 2 (with a live mode), installed from *AI Song Studio ▸ Settings ▸ Local model downloads*. Each download is reviewed first (size, licence, revision) and installed into its own isolated environment; engines with no native Windows GPU path can run in an existing WSL2 distribution. Most need an NVIDIA GPU; on a Mac, Magenta RealTime 2 and the small Stable Audio model run. These paths are covered by automated tests; not every model has been run end to end.
 - △ **Optional online generators.** ElevenLabs Music, fal.ai models and Google Lyria use the user’s own key, remain off by default, show an estimate first, and upload source audio only after explicit consent. These provider paths are contract-tested; see the limitations below for live-request coverage.
 
 ### Split, transcribe and understand a song
@@ -72,6 +74,7 @@ This is the practical “what can I do with it?” list. **✅ Verified** means 
 - ✅ **Separate 6 musical stems:** vocals, drums, bass, guitar, piano and other.
 - ✅ **Reach up to 12 named stems:** lead vocal, backing vocals, kick, snare, toms, hi-hat, ride, crash, bass, guitar, piano and other. A real 45-second Windows/NVIDIA split completed in about 20 seconds in the recorded verification pass.
 - ✅ **Split only the part you need.** Run drum-kit separation on a drum stem or lead/backing separation on a vocal stem.
+- ◇ ◻️ **53 instrument tracks, or one named sound.** MVSep Mega 53 splits a song into up to 53 named instrument tracks; Meta SAM Audio pulls out one sound you describe in words (it needs Hugging Face access to its checkpoint). Both install from Models & engines and run in isolated environments. **AI reconstruct this stem** (AI edit) regenerates an extracted stem as a new performance.
 - ✅ **Convert audio melody to MIDI notes.** The fallback transcriber is verified on monophonic melodies, including pitch and onset accuracy and clean failure on silence.
 - ✅ **Detect song structure.** Find section boundaries and label repeated sections alike, then repeat or remove a section as a block.
 - ✅ **Detect and match tempo and key.** Analysis is half/double-time aware, chooses the smallest useful pitch interval, and can match one clip to project settings or another clip.
@@ -158,9 +161,11 @@ This is the practical “what can I do with it?” list. **✅ Verified** means 
 - ⚠️ **Notation is intentionally focused.** It is one voice per staff and supports the documented triplets/metres; advanced tuplets, engraving-level manual layout and selectable vector notes in exported PDFs are not implemented.
 - ⚠️ **Platform coverage differs.** Windows 11 and current macOS have the strongest recorded checks. Linux and some older GPU/driver combinations remain less tested.
 
-Detailed evidence and the hand-test log live in [Studio Editor roadmap](docs/EDITOR_ROADMAP.md), [AI generation roadmap](docs/GENERATION_ROADMAP.md), and [current functionality](docs/CURRENT_FUNCTIONALITY_AND_SAFE_UPGRADES.md).
+Detailed evidence and the hand-test log live in [Studio Editor roadmap](docs/EDITOR_ROADMAP.md), [AI generation roadmap](docs/GENERATION_ROADMAP.md), and [current functionality](docs/CURRENT_FUNCTIONALITY_AND_SAFE_UPGRADES.md). Planned interface work (languages, colour themes, several windows and monitors) is in the [interface roadmap](docs/INTERFACE_ROADMAP.md).
 
-**Current verification gate (2026-11-18):** 481 backend tests passed with 1 platform-dependent skip; all 20 Song Geometry Mapper tests passed; Ruff, TypeScript, ESLint and the production build passed; and the production dependency audit reported no known vulnerabilities.
+**Latest run (2026-11-26):** 402 backend tests passed across the generation, local-model, add-on, editor, instrument, installer and security suites (4 platform skips); TypeScript and ESLint passed; the GPU engine was measured on an RTX 3090. A full production build was not part of this run.
+
+**Verification gate (2026-11-18):** 481 backend tests passed with 1 platform-dependent skip; all 20 Song Geometry Mapper tests passed; Ruff, TypeScript, ESLint and the production build passed; and the production dependency audit reported no known vulnerabilities.
 
 ---
 
@@ -332,6 +337,10 @@ Every engine control is available under *Advanced* (planner sampling, diffusion 
 
 **More engines (optional, off by default):** ACE-Step's own Python server (for NVIDIA machines that already run it) and YuE2 (NVIDIA, 24 GB, non-commercial licence). Switch them on under *Settings ▸ Generators*.
 
+**Local model downloads:** *Settings ▸ Local model downloads* installs further local generators: HeartMuLa, Stable Audio 3, MiniMax Music 3, DiffRhythm and Magenta RealTime 2 (live generation), plus updates for ACE-Step and YuE2. Nothing downloads until you review the plan (checkpoint size, licence and revision) and confirm it. Each runtime gets its own environment, so it cannot disturb Music Suite's. **Rebuild runtime** rebuilds an installed engine, for example to move ACE-Step from the processor to the graphics card. Most of these models need an NVIDIA GPU; the listing says what each needs.
+
+**GPU:** the ACE-Step engine is built for the graphics card when the tools are present (Vulkan SDK, or CUDA with Visual Studio's C++ compiler, on Windows; Metal on Apple Silicon). On an RTX 3090 a 30-second song took 7.8 s, against 49 s on the processor; the first song after starting takes longer while the models load onto the card. *Models & engines* shows which the installed engine uses.
+
 **Online services (optional):** add your own ElevenLabs Music, fal.ai (MiniMax Music, Lyria) or Google Gemini (Lyria 3.5) key under *Settings ▸ Online services* to use them as generators. Only the style text, lyrics and settings are sent; a clip's audio is uploaded only when you tick *Allow uploading* to edit it with ElevenLabs. A cost estimate is shown before every online request. ElevenLabs songs can be planned section by section (*Song plan*, drafted for free), and in the Studio Editor any clip can have a section regenerated or be extended with ElevenLabs. Keys stay in your computer's keychain.
 
 Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (about 8 GB); without Ollama the music engine's own planner writes a simpler draft. Measured on an Apple M5 with 24 GB: the engine peaks at 2.3 GB of memory, or 4.5 GB with its planner. On Windows the engine builds with MinGW (for example WinLibs from winget) or Visual Studio; with MinGW it targets Windows 10 and links its runtime in, so it starts without the compiler on `PATH` (built and started on Windows 11; song quality there not yet compared). Linux builds are untested. Plan and benchmarks: [docs/GENERATION_ROADMAP.md](docs/GENERATION_ROADMAP.md).
@@ -348,9 +357,12 @@ Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (ab
 - Git for in-app updates (the Windows installer can use a private, checksum-verified portable copy)
 - Optional: ComfyUI with a compatible Torch/CUDA environment (for music generation)
 - Optional: AI stem separation from *Models & engines* (about 3 GB with NVIDIA GPU support, plus 2.2 GB of models)
+- Optional: a graphics card. Not required: everything runs on the processor. An NVIDIA card (or Apple Silicon) makes AI generation and separation several times faster, and most of the extra local generators need NVIDIA
 - Optional, for AI Song Studio: about 6 GB of free disk, CMake and a C++ compiler (the installer adds CMake through Homebrew or winget), and Ollama for the best lyrics
 
 ---
+
+**New to Music Suite?** Follow [Your first song, step by step](docs/FIRST_PROJECT.md): from a melody on a keyboard to a finished song with your own lyrics.
 
 ## Quick start
 

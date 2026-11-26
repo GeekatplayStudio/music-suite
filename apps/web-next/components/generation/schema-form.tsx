@@ -11,6 +11,7 @@ import {
   type ProviderSchema
 } from "@/lib/generation/api";
 import { cn } from "@/lib/utils";
+import { timestampLyrics } from "@/lib/generation/timed-lyrics";
 
 const inputClass =
   "h-10 w-full rounded-lg border border-white/10 bg-slate-900 px-3 text-sm text-slate-100 placeholder:text-slate-500 " +
@@ -22,6 +23,7 @@ interface FieldProps {
   value: FieldValue;
   disabled: boolean;
   onChange: (value: FieldValue) => void;
+  songDuration?: number;
 }
 
 function NumberField({ field, value, disabled, onChange }: FieldProps) {
@@ -62,7 +64,7 @@ function NumberField({ field, value, disabled, onChange }: FieldProps) {
   );
 }
 
-function LyricsField({ field, value, disabled, onChange }: FieldProps) {
+function LyricsField({ field, value, disabled, onChange, songDuration }: FieldProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const text = typeof value === "string" ? value : "";
   const insert = (section: string) => {
@@ -80,6 +82,11 @@ function LyricsField({ field, value, disabled, onChange }: FieldProps) {
   };
   return (
     <div className="space-y-2">
+      {field.format === "lrc" && <div className="space-y-1 text-xs text-slate-400">
+        <button type="button" disabled={disabled || !text.trim()} className="rounded-lg bg-slate-800 px-3 py-2 text-cyan-200"
+          onClick={() => onChange(timestampLyrics(text, songDuration || 95))}>Timestamp lyrics</button>
+        <p>Draft timings use line length. Review the timestamps and phrasing before generating.</p>
+      </div>}
       {field.sections?.length ? (
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Insert a section tag">
           {field.sections.map((section) => (
@@ -218,6 +225,7 @@ export function SchemaForm({ schema, values, disabled, onChange, hidden }: Schem
                   value={values[field.key] ?? null}
                   disabled={disabled}
                   onChange={(value) => onChange(field.key, value)}
+                  songDuration={Number(values.duration) || undefined}
                 />
               </div>
             ))}

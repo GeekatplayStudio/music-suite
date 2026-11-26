@@ -9,6 +9,7 @@ import { editorApi } from "@/lib/editor/api";
 import type { InstrumentOffer } from "@/lib/editor/types";
 import { generationApi, type Overview } from "@/lib/generation/api";
 import { cn } from "@/lib/utils";
+import { LocalDownloads } from "@/components/generation/local-downloads";
 
 const primary =
   "inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-cyan-400 px-4 text-sm font-semibold text-slate-950 " +
@@ -52,6 +53,22 @@ function Status({ ok, children }: { ok: boolean; children: React.ReactNode }) {
       {ok ? <Check className="h-3 w-3" aria-hidden /> : null}
       {children}
     </span>
+  );
+}
+
+/**
+ * What the installed music engine runs on, for its row. A processor-only build on a computer
+ * with a graphics card is several times slower (measured: a 30 s song in 49 s on the processor,
+ * 7.8 s on an RTX 3090 with Vulkan), so it says how to rebuild it for the card.
+ */
+function engineHardware(engine: { installed: boolean; backend?: string }, hasGpu: boolean): string {
+  if (!engine.installed || !engine.backend) return "";
+  const gpu: Record<string, string> = { vulkan: "the graphics card (Vulkan)", cuda: "the graphics card (CUDA)", metal: "the Apple GPU (Metal)" };
+  if (gpu[engine.backend]) return ` Runs on ${gpu[engine.backend]}.`;
+  if (!hasGpu) return " Runs on the processor.";
+  return (
+    " Runs on the processor, although this computer has a graphics card: in AI Song Studio ▸ Settings ▸ Local model " +
+    "downloads, tick “Rebuild runtime” for ACE-Step to build it for the card (several times faster)."
   );
 }
 
@@ -125,7 +142,7 @@ export function ModelsPage() {
   };
   const plan = addons?.torch.plan;
   const install = addons?.install;
-  const stemsInstalling = Boolean(install?.running && install.pack !== null && install.pack !== "notes");
+  const stemsInstalling = Boolean(install?.running && install.pack !== null && !["notes", "mega53", "sam-audio"].includes(install.pack));
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-5 px-4 pb-16 pt-8">
@@ -201,6 +218,7 @@ export function ModelsPage() {
         </section>
       ) : null}
 
+      <LocalDownloads settings onChanged={async () => { await refresh(); }} only={["mega53", "sam-audio"]} />
       {notes ? (
         <section className="glass space-y-3 rounded-2xl border border-white/10 p-4" aria-label={notes.label}>
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -415,7 +433,7 @@ export function ModelsPage() {
           {[
             {
               label: "Music engine (ACE-Step 1.5)",
-              note: `Makes full songs with vocals, offline. About ${music.setup.download_gb ?? 5.3} GB; needs CMake and a C++ compiler.`,
+              note: `Makes full songs with vocals, offline. About ${music.setup.download_gb ?? 5.3} GB; needs CMake and a C++ compiler.${engineHardware(music.engine, Boolean(addons?.gpu))}`,
               ok: music.engine.installed,
               action: () => generationApi.startSetup(false)
             },

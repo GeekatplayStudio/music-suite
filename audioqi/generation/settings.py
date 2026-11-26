@@ -30,6 +30,11 @@ DEFAULTS: dict[str, Any] = {
         # Opt-in: these need software or hardware most machines do not have.
         "acestep_server": False,
         "yue2": False,
+        "stable_audio3": False,
+        "heartmula": False,
+        "diffrhythm": False,
+        "minimax3": False,
+        "magenta_rt2": False,
         "elevenlabs": False,
         "fal": False,
         "lyria": False,
@@ -107,6 +112,17 @@ def _clean(key: str, value: Any) -> Any:
             raise ParamError("Unknown provider.")
         return value
     raise ParamError("Unknown setting.")
+
+
+def models_dir() -> Path:
+    base = engine_dir()
+    if base == default_engine_dir():
+        from audioqi.generation import local_runtimes
+
+        managed = local_runtimes.manifest("acestep_local").get("checkpoint_root")
+        if managed and Path(managed).is_dir():
+            return Path(managed)
+    return base / "models"
 
 
 def update(patch: Any) -> dict[str, Any]:

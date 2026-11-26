@@ -11,9 +11,15 @@ its own): drums into kit pieces (MDX23C DrumSep) and vocals into lead and backin
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
+import shutil
+import subprocess
+import sysconfig
 import tempfile
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -344,3 +350,184 @@ def _separate_main(
                 raise
             logger.warning("Separation engine %s failed; trying the next one.", name, exc_info=True)
     raise EditorError("No separation engine is available.")
+
+
+def extract(
+    audio: np.ndarray,
+    sr: int,
+    model: str,
+    prompt: str,
+    report: Progress,
+    *,
+    cancelled: Callable[[], bool] | None = None,
+):
+    """Run the explicitly selected model and align its outputs to the editor clip."""
+    require_min_length(audio)
+    from audioqi.generation import local_runtimes
+
+    runtime = local_runtimes.active(model)
+    if runtime:
+        return _isolated_extract(audio, sr, model, prompt, report, runtime, cancelled)
+    with tempfile.TemporaryDirectory(dir=projects.scratch_dir()) as tmp:
+        source = Path(tmp) / "input"
+        source.mkdir()
+        mix = source / "mix.wav"
+        sf.write(mix, audio, sr, subtype="FLOAT")
+        if model == "mega53":
+            try:
+                from bs_roformer import ensure_model_assets
+            except ImportError as exc:
+                raise EditorError("Install MVSep Mega 53 from Models & engines.") from exc
+
+            checkpoint, config = ensure_model_assets(
+                "roformer-model-bs-roformer-mvsep-mega-53-stems"
+            )
+            output = Path(tmp) / "stems"
+            output.mkdir()
+            report(0.15)
+            script = Path(sysconfig.get_path("scripts")) / "bs-roformer-infer"
+            import os
+
+            if os.name == "nt":
+                script = script.with_suffix(".exe")
+            subprocess.run(
+                [
+                    str(script),
+                    "--input_folder",
+                    str(source),
+                    "--store_dir",
+                    str(output),
+                    "--config_path",
+                    str(config),
+                    "--model_path",
+                    str(checkpoint),
+                ],
+                check=True,
+            )
+            stems = {}
+            for file in sorted(output.rglob("*.wav")):
+                name = file.stem.removeprefix("mix_")
+                data, rate = sf.read(file, dtype="float32", always_2d=True)
+                stems[name] = _conform(data, rate, sr, audio)
+            if len(stems) < 53:
+                raise EditorError(f"Mega 53 produced only {len(stems)} stems.")
+            return stems, "MVSep Mega 53"
+        if model != "sam-audio" or not prompt.strip():
+            raise EditorError("SAM Audio needs a sound description.")
+        try:
+            import torch
+            from sam_audio import SAMAudio, SAMAudioProcessor
+        except ImportError as exc:
+            raise EditorError("Install Meta SAM Audio from Models & engines.") from exc
+
+        repo = "facebook/sam-audio-small"
+        device = engines.torch_device()
+        processor = SAMAudioProcessor.from_pretrained(repo)
+        network = SAMAudio.from_pretrained(repo).eval().to(device)
+        batch = processor(audios=[str(mix)], descriptions=[prompt.lower()]).to(device)
+        report(0.2)
+        with torch.inference_mode():
+            result = network.separate(batch, predict_spans=False, reranking_candidates=1)
+        stems = {}
+        for name, values in ((f"Isolated {prompt}", result.target), ("Remainder", result.residual)):
+            wave = values[0].detach().float().cpu().numpy()
+            wave = wave[:, None] if wave.ndim == 1 else wave.T
+            if wave.ndim != 2 or not wave.size:
+                raise EditorError("SAM Audio returned an invalid waveform.")
+            stems[name] = _conform(wave, processor.audio_sampling_rate, sr, audio)
+        return stems, "Meta SAM Audio"
+
+
+def _isolated_extract(audio, sr, model, prompt, report, runtime, cancelled):
+    from audioqi.generation import local_runtimes
+
+    scratch = projects.scratch_dir()
+    needed = audio.nbytes * (55 if model == "mega53" else 4)
+    if shutil.disk_usage(scratch).free < needed + 512 * 1024**2:
+        raise EditorError(
+            f"Extraction needs about {needed / 1024**3:.1f} GB of free temporary space.", 409
+        )
+    installed = local_runtimes.manifest(model)
+    with tempfile.TemporaryDirectory(dir=scratch) as tmp:
+        work = Path(tmp).resolve()
+        (work / "input").mkdir()
+        sf.write(work / "input/mix.wav", audio, sr, subtype="FLOAT")
+        checkpoints = installed.get("checkpoints", [])
+        request = {
+            "model": model,
+            "prompt": prompt,
+            "weights": installed.get("checkpoint_root", str(runtime / "checkpoints")),
+            "cache": str(local_runtimes.settings.root() / "checkpoints/hub"),
+        }
+        if model == "sam-audio" and checkpoints:
+            checkpoint = next(
+                (
+                    c
+                    for c in checkpoints
+                    if c["repo"] == f"facebook/sam-audio-{installed.get('variant') or 'small'}"
+                ),
+                checkpoints[0],
+            )
+            request.update(repo=checkpoint["repo"], revision=checkpoint["revision"])
+        (work / "request.json").write_text(json.dumps(request), encoding="utf-8")
+        log = work / "worker.log"
+        env = {
+            **os.environ,
+            "HF_HUB_CACHE": request["cache"],
+            "HF_HUB_OFFLINE": "1",
+            "PYTHONUTF8": "1",
+            "PYTHONIOENCODING": "utf-8",
+        }
+        with log.open("wb") as sink:
+            child = subprocess.Popen(
+                [
+                    str(local_runtimes.executable(runtime, "python")),
+                    "-I",
+                    "-X",
+                    "utf8",
+                    str(Path(__file__).with_name("stem_worker.py").resolve()),
+                    str(work),
+                ],
+                cwd=runtime / "source",
+                env=env,
+                stdout=sink,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=os.name != "nt",
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+            )
+            started = time.monotonic()
+            try:
+                while child.poll() is None:
+                    if cancelled and cancelled():
+                        raise EditorError("Stem extraction was cancelled.", 409)
+                    if time.monotonic() - started > 7200:
+                        raise EditorError("Stem extraction timed out.", 504)
+                    report(min(0.9, 0.1 + (time.monotonic() - started) / 3600))
+                    time.sleep(0.25)
+            finally:
+                if child.poll() is None:
+                    from audioqi.generation.worker_process import terminate
+                    terminate(child, runtime=runtime, work=work)
+        if child.returncode:
+            detail = log.read_text(encoding="utf-8", errors="replace").splitlines()[-1:]
+            raise EditorError(
+                f"Stem extraction failed: {detail[0][:500] if detail else 'worker failed'}", 502
+            )
+        stems = {}
+        for file in sorted((work / "stems").glob("*.wav")):
+            data, rate = sf.read(file, dtype="float32", always_2d=True)
+            if not data.size or not np.isfinite(data).all():
+                raise EditorError("The separator returned invalid audio.", 502)
+            name = file.stem.removeprefix("mix_")
+            name = (
+                f"Isolated {prompt}"
+                if name == "target"
+                else "Remainder"
+                if name == "remainder"
+                else name
+            )
+            stems[name] = _conform(data, rate, sr, audio)
+        if len(stems) < (53 if model == "mega53" else 2):
+            raise EditorError("The separator did not return all requested stems.", 502)
+        return stems, "MVSep Mega 53" if model == "mega53" else "Meta SAM Audio"

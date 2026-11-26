@@ -42,6 +42,7 @@ export interface FieldSpec {
   default?: FieldValue;
   options?: (FieldOption | string)[];
   sections?: string[];
+  format?: "lrc" | "plain";
   tasks?: string[];
   required_tasks?: string[];
   /** Filled in by the editor (for example, a highlighted range); never shown as a control. */
@@ -123,6 +124,8 @@ export interface Overview {
     missing_models: string[];
     editing_ready?: boolean;
     quality_ready?: boolean;
+    /** What the engine was built to run on: "vulkan", "cuda", "metal", "cpu", or "unknown" for older builds. */
+    backend?: string;
   };
   setup: SetupState;
   memory_free_percent: number | null;
@@ -221,7 +224,39 @@ function json(body: unknown): RequestInit {
   return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 
+export interface LocalRuntime {
+  id: string;
+  repo: string;
+  revision: string | null;
+  latest: string | null;
+  message: string;
+  variant: string;
+  variants: string[];
+  hardware: string;
+  supported: boolean;
+  reason: string;
+  kind: "generator" | "stem";
+  dependency_updates?: { name: string; version: string; latest_version: string }[];
+  checkpoint_updates?: CheckpointReview[];
+  check_error?: string;
+}
+
+export interface CheckpointReview {
+  repo: string; url: string; revision: string | null; bytes: number | null;
+  gated: boolean; license: string | null; error: string | null;
+}
+export interface RuntimeReview {
+  id: string; review_id: string; revision: string; variant: string; variants: string[];
+  hardware: string; supported: boolean; reason: string;
+  checkpoints: CheckpointReview[]; download_bytes: number | null; note: string;
+}
+
 export const generationApi = {
+  localRuntimes: (check = false) => request<LocalRuntime[]>(`/generation/local-runtimes?check=${check}`),
+  reviewRuntime: (key: string, variant: string, refreshRuntime = false) =>
+    request<RuntimeReview>(`/generation/local-runtimes/${key}/review?variant=${encodeURIComponent(variant)}&refresh_runtime=${refreshRuntime}`),
+  installRuntime: (key: string, revision: string | null, reviewId?: string) =>
+    request<{ started: boolean }>(`/generation/local-runtimes/${key}`, json({ confirmed: true, revision, ...(reviewId ? { review_id: reviewId } : {}) })),
   overview: () => request<Overview>("/generation/providers"),
   saveSettings: (patch: Partial<GenerationSettings>) =>
     request<GenerationSettings>("/generation/settings", json(patch)),

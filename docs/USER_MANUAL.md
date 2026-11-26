@@ -563,6 +563,12 @@ On a clip that is already a stem, two more buttons may appear: **Split this drum
 
 The engine used is shown at the top of the section. With the **AI stem separation** pack from [Models and engines](#models-and-engines) the app uses AI models (RoFormer, htdemucs and DrumSep); without it, a simple built-in splitter gives approximate 2 or 4 stems only.
 
+For a more detailed split, install **MVSep Mega 53** from **Models & engines**, select a clip, then choose **Extract original stems → MVSep Mega 53 → Extract instrument tracks**. The first run downloads the weights. The model estimates every category, so some tracks can contain silence or bleed. A long song can produce several gigabytes of audio.
+
+For one sound, install **Meta SAM Audio** and authenticate the Music Suite backend account with Hugging Face after receiving access to `facebook/sam-audio-small`. Choose **Meta SAM Audio**, enter a description such as `muted trumpet`, and select **Extract sound and remainder**.
+
+To generate a replacement performance, select an extracted stem and open **AI edit → AI reconstruct this stem** with a generator that supports restyling. Review the suggested description and generation settings, then run the edit. The extracted clip supplies the reference. Listen for changes in notes, phrasing and timing.
+
 > **Tip:** for turning a song into notes, 4 stems is better than 6. The six-stem split guesses which of guitar, piano and "other" each sound belongs to and changes its mind from moment to moment, which scatters one instrument across three tracks.
 
 ### Repair
@@ -979,6 +985,8 @@ Before each take the keyboard's level is set automatically (see [Your hardware k
 Each kept take is on its own track named after its part, and the notes tracks are muted. In *Add a voice* mode nothing else is changed; in *Re-voice* mode the replaced parts are muted if you ticked that option. **Play the result** plays the whole song from the start. Adjust the faders and export as usual (Export → Mixdown, or Song from chosen tracks).
 
 ## AI Song Studio
+
+Under **Settings → Local model downloads**, select a runtime, review its requirements and confirm the download. After installation, select the engine in the generation form. HeartMuLa and MiniMax Music 3 accept lyrics. DiffRhythm uses timestamped lyrics and offers 95- and 285-second renders. Magenta RealTime 2 renders instrumentals offline. Stable Audio 3 also works from an editor clip. Select the clip and open **AI edit** to restyle it, regenerate a highlighted region, or continue past the end of the source. Each runtime has its own dependencies. Some weights download on first generation.
 
 Generates songs with AI: on this computer with ACE-Step 1.5, or with an online service you switch on with your own key. Results open in the Studio Editor. The page has four tabs: **Create**, **Album**, **History** and **Settings**.
 

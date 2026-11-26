@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-from fastapi import APIRouter, Body, Header, HTTPException
+from fastapi import APIRouter, Body, Header, HTTPException, Response
 
 from audioqi.editor import projects
 from audioqi.editor.projects import EditorError
@@ -18,6 +18,8 @@ from audioqi.generation import (
     albums,
     engine,
     inspire,
+    live,
+    local_runtimes,
     records,
     resources,
     secrets,
@@ -65,6 +67,55 @@ def providers() -> dict[str, Any]:
         "memory_free_percent": resources.free_memory_percent(),
         "settings": _public_settings(),
     }
+
+
+@router.get("/local-runtimes")
+def list_local_runtimes(check: bool = False) -> list[dict]:
+    return local_runtimes.inventory(check)
+
+
+@router.get("/live")
+def live_status() -> dict:
+    return live.status()
+
+
+@router.post("/live")
+def start_live(payload: dict = Body(...)) -> dict:
+    return _guard(lambda: live.start(payload))
+
+
+@router.post("/live/{identifier}/chunk")
+def live_chunk(identifier: str, payload: dict = Body(...)) -> Response:
+    return Response(_guard(lambda: live.chunk(identifier, payload)), media_type="audio/wav")
+
+
+@router.post("/live/{identifier}/stop")
+def stop_live(identifier: str, payload: dict = Body(default={})) -> dict:
+    if set(payload) - {"save"} or not isinstance(payload.get("save", False), bool):
+        raise HTTPException(status_code=422, detail="Only the save flag may be supplied.")
+    return _guard(lambda: live.stop(identifier, save=payload.get("save", False)))
+
+
+@router.post("/local-runtimes/{key}")
+def install_local_runtime(key: str, payload: dict = Body(...)) -> dict:
+    revision = payload.get("revision")
+    if payload.get("confirmed") is not True or (
+        revision is not None and not isinstance(revision, str)
+    ):
+        raise HTTPException(status_code=422, detail="Confirm this model download first.")
+    if set(payload) - {"revision", "confirmed", "review_id"}:
+        raise HTTPException(status_code=422, detail="Unknown download option.")
+    review_id = payload.get("review_id")
+    if review_id is not None and not isinstance(review_id, str):
+        raise HTTPException(status_code=422, detail="Invalid model review.")
+    return _guard(lambda: local_runtimes.start(key, revision, review_id))
+
+
+@router.get("/local-runtimes/{key}/review")
+def review_local_runtime(
+    key: str, variant: str | None = None, refresh_runtime: bool = False
+) -> dict:
+    return _guard(lambda: local_runtimes.review(key, variant, refresh_runtime))
 
 
 @router.get("/settings")

@@ -10,7 +10,7 @@ import { type PluginSession, PluginInstrumentSection } from "@/components/editor
 import { SynthEditor } from "@/components/editor/synth-editor";
 import { AiEditSection } from "@/components/generation/ai-edit-section";
 import { FACTORY_PRESETS, loadUserPresets, normalizePatch, type Patch } from "@/lib/editor/synth";
-import type { ProviderInfo } from "@/lib/generation/api";
+import { generationApi, type ProviderInfo } from "@/lib/generation/api";
 import { editorApi } from "@/lib/editor/api";
 import type { Favourite, ProcessStep } from "@/lib/editor/favourites";
 import { type WamCatalogueEntry, isAllowedWamUrl, loadWamCatalogue, wamConsent } from "@/lib/editor/wam";
@@ -181,7 +181,7 @@ function NumberField({
   );
 }
 
-function JobList({ jobs, onDismiss }: { jobs: JobEntry[]; onDismiss: (id: string) => void }) {
+function JobList({ jobs, onDismiss, projectId }: { jobs: JobEntry[]; onDismiss: (id: string) => void; projectId: string }) {
   if (!jobs.length) return null;
   return (
     <section className="border-b border-white/10 px-4 py-3" aria-live="polite">
@@ -221,6 +221,11 @@ function JobList({ jobs, onDismiss }: { jobs: JobEntry[]; onDismiss: (id: string
                   <p className="mt-1 truncate text-slate-400">{done ? "Done" : job.detail || job.stage}</p>
                 </>
               )}
+              {!failed && !done && ["generate_song", "separate"].includes(job.op) && <button
+                className="mt-2 rounded bg-slate-800 px-2 py-1 text-cyan-200" type="button"
+                onClick={() => void generationApi.cancelJob(projectId, job.id).catch(() => undefined)}>
+                Stop processing
+              </button>}
             </li>
           );
         })}
@@ -231,6 +236,8 @@ function JobList({ jobs, onDismiss }: { jobs: JobEntry[]; onDismiss: (id: string
 
 export function Inspector(props: InspectorProps) {
   const { state, clip, track, capabilities } = props;
+  const [splitModel, setSplitModel] = useState("standard");
+  const [soundPrompt, setSoundPrompt] = useState("");
   const [stems, setStems] = useState(4);
   /** Song to MIDI engine: "auto" lets the backend choose the best one installed. */
   const [midiEngine, setMidiEngine] = useState<"auto" | "stems" | "muscriptor">("auto");
@@ -336,7 +343,7 @@ export function Inspector(props: InspectorProps) {
       className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-white/10 bg-slate-950/80"
       aria-label="Inspector"
     >
-      <JobList jobs={props.jobs} onDismiss={props.onDismissJob} />
+      <JobList jobs={props.jobs} onDismiss={props.onDismissJob} projectId={props.projectId} />
 
       {clip ? (
         <>
@@ -519,7 +526,7 @@ export function Inspector(props: InspectorProps) {
           ) : (
             <>
           <PanelSection
-            title="Separate stems"
+            title="Extract original stems"
             hint={
               capabilities
                 ? `Engine: ${capabilities.separation.engine}${
@@ -528,6 +535,25 @@ export function Inspector(props: InspectorProps) {
                 : undefined
             }
           >
+            <select className={fieldClass} aria-label="Extraction model" value={splitModel}
+              onChange={(event) => setSplitModel(event.target.value)}>
+              <option value="standard">Standard split (2, 4 or 6 stems)</option>
+              <option value="mega53">MVSep Mega 53 instrument tracks</option>
+              <option value="sam-audio">Meta SAM Audio prompted extraction</option>
+            </select>
+            {splitModel !== "standard" ? <>
+              {splitModel === "sam-audio" && <input className={fieldClass} aria-label="Sound description"
+                placeholder="e.g. electric guitar" maxLength={160} value={soundPrompt}
+                onChange={(event) => setSoundPrompt(event.target.value)} />}
+              <a href="/models" className="text-xs text-cyan-300">Install the selected model in Models &amp; engines</a>
+              <ActionButton variant="primary" className="w-full"
+                disabled={busy || (splitModel === "sam-audio" && !soundPrompt.trim())}
+                onClick={() => props.onRunJob("separate", splitModel === "mega53"
+                  ? { model: splitModel } : { model: splitModel, prompt: soundPrompt.trim() },
+                  `Extracting stems from ${clip.name}`)}>
+                {splitModel === "mega53" ? "Extract instrument tracks" : "Extract sound and remainder"}
+              </ActionButton>
+            </> : <>
             <div className="flex gap-2">
               <select
                 className={fieldClass}
@@ -585,6 +611,7 @@ export function Inspector(props: InspectorProps) {
             >
               Separate into {stemTotal} stems
             </ActionButton>
+            </>}
             {fineSplit && clipLabel === "drums" ? (
               <ActionButton
                 className="w-full"
@@ -1055,6 +1082,8 @@ export function Inspector(props: InspectorProps) {
           </PanelSection>
 
           <AiEditSection
+            sourceSeconds={props.assets.get(clip.assetId)?.duration_seconds ?? clip.offset + clip.duration}
+            stemLabel={props.assets.get(clip.assetId)?.source === "stem" ? clipLabel : undefined}
             key={clip.id}
             clip={clip}
             selection={noisePrint}
