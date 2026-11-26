@@ -1,5 +1,6 @@
 import { ReactNode, useMemo } from "react";
 
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export interface CellContext<TData, TValue = unknown> {
@@ -24,6 +25,7 @@ interface DataTableProps<TData> {
 }
 
 export function DataTable<TData>({ data, columns, onRowClick, rowClassName }: DataTableProps<TData>) {
+  const { t } = useI18n();
   const colCount = useMemo(() => columns.length, [columns.length]);
   const headers = useMemo(
     () =>
@@ -70,7 +72,7 @@ export function DataTable<TData>({ data, columns, onRowClick, rowClassName }: Da
             {data.length === 0 && (
               <tr>
                 <td className="px-3 py-4 text-muted-foreground" colSpan={colCount}>
-                  No rows.
+                  {t("charts.table.empty")}
                 </td>
               </tr>
             )}

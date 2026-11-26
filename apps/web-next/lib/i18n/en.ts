@@ -7,6 +7,13 @@
  */
 
 import { common } from "./en/common";
+import { analyser } from "./en/analyser";
+import { charts } from "./en/charts";
+import { editor } from "./en/editor";
+import { inspector } from "./en/inspector";
+import { editorTools } from "./en/editorTools";
+import { synth } from "./en/synth";
+import { studioTabs } from "./en/studioTabs";
 import { detach } from "./en/detach";
 import { models } from "./en/models";
 import { prefs } from "./en/prefs";
@@ -14,4 +21,4 @@ import { sessions } from "./en/sessions";
 import { source } from "./en/source";
 import { studio } from "./en/studio";
 
-export const en = { common, prefs, models, sessions, studio, source, detach };
+export const en = { common, prefs, models, sessions, studio, source, detach, analyser, charts, editor, inspector, editorTools, synth, studioTabs };

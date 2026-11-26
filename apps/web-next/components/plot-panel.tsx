@@ -2,9 +2,10 @@
 
 import dynamic from "next/dynamic";
 import { CircleHelp } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 // The factory entry binds react-plotly.js to the minified bundle; its default
@@ -108,7 +109,24 @@ function clampRangeToBounds(range: [number, number], bounds: [number, number]): 
 }
 
 function PlotPanelView({ title, figure, height = 520, className, helpText, xRange }: PlotPanelProps) {
+  const { t } = useI18n();
   const [plotError, setPlotError] = useState<string | null>(null);
+  // In a popped-out window the chart library cannot measure its box (it asks the main page's
+  // window), so the width is measured here and given to it.
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const hasPlot = Array.isArray(figure?.data) && figure.data.length > 0;
+  const [ownWidth, setOwnWidth] = useState<number | null>(null);
+  useEffect(() => {
+    const box = boxRef.current;
+    const view = box?.ownerDocument.defaultView as (Window & typeof globalThis) | null | undefined;
+    if (!box || !view || view === window) return;
+    const observer = new view.ResizeObserver(([entry]) => setOwnWidth(Math.max(200, Math.floor(entry.contentRect.width))));
+    observer.observe(box);
+    return () => {
+      observer.disconnect();
+      setOwnWidth(null);
+    };
+  }, [hasPlot]);
 
   const figureData = useMemo(
     () =>
@@ -195,7 +213,7 @@ function PlotPanelView({ title, figure, height = 520, className, helpText, xRang
 
   const downloadName = title
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/[^\p{L}\p{N}]+/gu, "_")
     .replace(/^_+|_+$/g, "") || "audioqi_chart";
 
   const layoutWithHeight = useMemo(
@@ -216,7 +234,8 @@ function PlotPanelView({ title, figure, height = 520, className, helpText, xRang
         plot_bgcolor: PLOT_SURFACE_BG,
         font: { color: PLOT_FONT_COLOR, ...(figureLayout.font as Record<string, unknown> | undefined) },
         margin: mergedMargin,
-        autosize: true,
+        autosize: ownWidth === null,
+        ...(ownWidth === null ? {} : { width: ownWidth }),
         height,
       };
       if (figureYaxis2 && typeof figureYaxis2 === "object") {
@@ -226,7 +245,7 @@ function PlotPanelView({ title, figure, height = 520, className, helpText, xRang
       }
       return layout;
     },
-    [figureLayout, scopedXaxis, figureYaxis, figureYaxis2, mergedMargin, height]
+    [figureLayout, scopedXaxis, figureYaxis, figureYaxis2, mergedMargin, height, ownWidth]
   );
 
   const plotConfig = useMemo(
@@ -264,7 +283,7 @@ function PlotPanelView({ title, figure, height = 520, className, helpText, xRang
       </CardHeader>
       <CardContent>
         {figure && highFidelityData.length > 0 ? (
-          <>
+          <div ref={boxRef}>
             <Plot
               data={highFidelityData as never[]}
               layout={layoutWithHeight as never}
@@ -277,13 +296,13 @@ function PlotPanelView({ title, figure, height = 520, className, helpText, xRang
             />
             {plotError ? (
               <p className="mt-1 rounded-lg border border-red-500/40 bg-red-500/10 px-2 py-1 text-xs text-red-200">
-                Plotly render error: {plotError}
+                {t("charts.plot.renderError", { message: plotError })}
               </p>
             ) : null}
-          </>
+          </div>
         ) : (
           <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-            Chart data unavailable for this run.
+            {t("charts.plot.noData")}
           </div>
         )}
       </CardContent>

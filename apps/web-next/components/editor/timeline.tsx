@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
+import { useI18n } from "@/lib/i18n";
+
 import type { Peaks } from "@/lib/editor/peaks";
 import { traceWaveform } from "@/lib/editor/peaks";
 import {
@@ -192,8 +194,12 @@ export function Timeline(props: TimelineProps) {
   const snapLineRef = useRef<number | null>(null);
   const autoLabelRef = useRef<{ x: number; y: number; text: string } | null>(null);
   const propsRef = useRef(props);
+  const { t } = useI18n();
+  // The canvases are drawn from callbacks that outlive renders; they read the language here.
+  const tRef = useRef(t);
   useLayoutEffect(() => {
     propsRef.current = props;
+    tRef.current = t;
   });
 
   const lanesHeight = Math.max(props.state.tracks.length * TRACK_HEIGHT + 96, props.minLanesHeight);
@@ -407,11 +413,11 @@ export function Timeline(props: TimelineProps) {
           }
         } else {
           ctx.fillStyle = hexToRgba(track.color, 0.6);
-          ctx.fillText("Empty MIDI clip — press P to add notes", Math.max(x0, 0) + 8, waveTop + waveH / 2);
+          ctx.fillText(tRef.current("editorTools.timeline.emptyMidi"), Math.max(x0, 0) + 8, waveTop + waveH / 2);
         }
       } else if (!peaks) {
         ctx.fillStyle = hexToRgba(track.color, 0.5);
-        ctx.fillText("Loading audio…", Math.max(x0, 0) + 8, waveTop + waveH / 2);
+        ctx.fillText(tRef.current("editorTools.timeline.loadingAudio"), Math.max(x0, 0) + 8, waveTop + waveH / 2);
       }
 
       // Fades are drawn as the attenuated corner so the shape reads as "less signal here".
@@ -439,7 +445,7 @@ export function Timeline(props: TimelineProps) {
         ctx.setLineDash([]);
       }
       ctx.fillStyle = silent ? "rgba(226, 232, 240, 0.6)" : "#f1f5f9";
-      const label = `${clip.reversed ? "◀ " : ""}${clip.name}${clip.muted ? " (muted)" : ""}`;
+      const label = `${clip.reversed ? "◀ " : ""}${clip.name}${clip.muted ? ` ${tRef.current("editorTools.timeline.muted")}` : ""}`;
       ctx.fillText(label, Math.max(x0, 0) + 8, y + LABEL_HEIGHT / 2 + 0.5);
       ctx.restore();
 
@@ -1154,7 +1160,7 @@ export function Timeline(props: TimelineProps) {
         onPointerMove={onRulerMove}
         onPointerUp={onRulerUp}
         onPointerCancel={onRulerUp}
-        aria-label="Time ruler. Click to move the playhead, shift-drag to set the loop, drag a marker to move it, alt-click a marker to delete it."
+        aria-label={t("editorTools.timeline.ruler")}
       />
       <div className="relative" style={{ height: lanesHeight }}>
         <canvas ref={contentRef} className="absolute inset-0 block" />
@@ -1168,7 +1174,7 @@ export function Timeline(props: TimelineProps) {
           onDoubleClick={onDoubleClick}
           onContextMenu={onContext}
           role="application"
-          aria-label="Multitrack timeline"
+          aria-label={t("editorTools.timeline.lanes")}
         />
       </div>
     </div>

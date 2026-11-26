@@ -10,6 +10,7 @@ import {
   type FieldValues,
   type ProviderSchema
 } from "@/lib/generation/api";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { timestampLyrics } from "@/lib/generation/timed-lyrics";
 
@@ -27,6 +28,7 @@ interface FieldProps {
 }
 
 function NumberField({ field, value, disabled, onChange }: FieldProps) {
+  const { t } = useI18n();
   const isAuto = field.auto && (value === null || value === undefined);
   const shown = typeof value === "number" ? value : "";
   return (
@@ -39,7 +41,7 @@ function NumberField({ field, value, disabled, onChange }: FieldProps) {
         step={field.type === "seed" ? 1 : (field.step ?? 1)}
         value={shown}
         disabled={disabled}
-        placeholder={field.auto ? "Auto" : undefined}
+        placeholder={field.auto ? t("studioTabs.form.auto") : undefined}
         aria-label={field.label}
         onChange={(event) => {
           const raw = event.target.value;
@@ -57,7 +59,7 @@ function NumberField({ field, value, disabled, onChange }: FieldProps) {
           onClick={() => onChange(null)}
           className="h-10 shrink-0 rounded-lg bg-slate-800 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:opacity-40"
         >
-          Auto
+          {t("studioTabs.form.auto")}
         </button>
       ) : null}
     </div>
@@ -65,6 +67,7 @@ function NumberField({ field, value, disabled, onChange }: FieldProps) {
 }
 
 function LyricsField({ field, value, disabled, onChange, songDuration }: FieldProps) {
+  const { t } = useI18n();
   const ref = useRef<HTMLTextAreaElement>(null);
   const text = typeof value === "string" ? value : "";
   const insert = (section: string) => {
@@ -84,11 +87,11 @@ function LyricsField({ field, value, disabled, onChange, songDuration }: FieldPr
     <div className="space-y-2">
       {field.format === "lrc" && <div className="space-y-1 text-xs text-slate-400">
         <button type="button" disabled={disabled || !text.trim()} className="rounded-lg bg-slate-800 px-3 py-2 text-cyan-200"
-          onClick={() => onChange(timestampLyrics(text, songDuration || 95))}>Timestamp lyrics</button>
-        <p>Draft timings use line length. Review the timestamps and phrasing before generating.</p>
+          onClick={() => onChange(timestampLyrics(text, songDuration || 95))}>{t("studioTabs.form.timestamp")}</button>
+        <p>{t("studioTabs.form.timestampHelp")}</p>
       </div>}
       {field.sections?.length ? (
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Insert a section tag">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("studioTabs.form.insertSection")}>
           {field.sections.map((section) => (
             <button
               key={section}
@@ -109,7 +112,7 @@ function LyricsField({ field, value, disabled, onChange, songDuration }: FieldPr
         disabled={disabled}
         maxLength={field.max}
         aria-label={field.label}
-        placeholder={"[Verse]\nYour words here…\n\n[Chorus]\n…"}
+        placeholder={t("studioTabs.form.lyricsPlaceholder")}
         onChange={(event) => onChange(event.target.value)}
         className={cn(areaClass, "font-mono text-[13px]")}
       />
@@ -122,6 +125,7 @@ function LyricsField({ field, value, disabled, onChange, songDuration }: FieldPr
 
 function Field(props: FieldProps) {
   const { field, value, disabled, onChange } = props;
+  const { t } = useI18n();
   const id = useId();
   if (field.type === "bool") {
     return (
@@ -175,7 +179,7 @@ function Field(props: FieldProps) {
         onChange={(event) => onChange(event.target.value || null)}
         className={inputClass}
       >
-        {field.auto ? <option value="">Auto</option> : null}
+        {field.auto ? <option value="">{t("studioTabs.form.auto")}</option> : null}
         {(field.options ?? []).map((option) => (
           <option key={optionValue(option)} value={optionValue(option)}>
             {optionLabel(option)}
@@ -208,6 +212,7 @@ interface SchemaFormProps {
 
 /** Builds a form from a provider's own description of its controls. */
 export function SchemaForm({ schema, values, disabled, onChange, hidden }: SchemaFormProps) {
+  const { tp } = useI18n();
   const visible = schema.fields.filter((field) => !hidden?.(field));
   return (
     <div className="space-y-4">
@@ -235,7 +240,7 @@ export function SchemaForm({ schema, values, disabled, onChange, hidden }: Schem
           return (
             <details key={group} className="glass rounded-2xl border border-white/10">
               <summary className="display-font cursor-pointer rounded-2xl px-4 py-3 text-sm font-semibold text-slate-200 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300">
-                {group} <span className="font-normal text-slate-400">· {fields.length} settings</span>
+                {group} <span className="font-normal text-slate-400">· {tp("studioTabs.form.settingsCount", fields.length)}</span>
               </summary>
               <div className="border-t border-white/10 p-4">{body}</div>
             </details>

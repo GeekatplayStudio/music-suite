@@ -10,6 +10,10 @@
  * undo, the editor's shortcuts) are passed on to the main page.
  *
  * Each extra window is another browser page to draw, so the first pop-out explains the cost.
+ *
+ * Where each panel's window was and how big it was is kept per browser, so it opens there next
+ * time. With more than one monitor, the browser is asked once for window placement (Chrome and
+ * Edge), which lets a window open on, or come back to, a screen other than the main page's.
  */
 
 import { ExternalLink, PanelTopClose } from "lucide-react";
@@ -19,11 +23,99 @@ import { createPortal } from "react-dom";
 import { useI18n } from "@/lib/i18n";
 
 const WARNED_KEY = "music-suite:popout-warned";
+const geometryKey = (id: string) => `music-suite:popout-geometry:${id}`;
 const open = new Map<string, Window>();
 
+/** A window's place on the desktop: screen coordinates and inner size. */
+interface Geometry {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+function savedGeometry(id: string): Geometry | null {
+  try {
+    const value = JSON.parse(localStorage.getItem(geometryKey(id)) ?? "null") as Geometry | null;
+    if (value && [value.left, value.top, value.width, value.height].every(Number.isFinite) && value.width >= 200 && value.height >= 120) {
+      return value;
+    }
+  } catch {
+    /* nothing saved, or storage unavailable */
+  }
+  return null;
+}
+
+/** Remember where the window is now; returns what was saved so callers can skip repeats. */
+function saveGeometry(id: string, win: Window, last: string): string {
+  try {
+    if (win.closed || win.innerWidth < 200 || win.innerHeight < 120) return last;
+    const value = JSON.stringify({ left: win.screenX, top: win.screenY, width: win.innerWidth, height: win.innerHeight });
+    if (value !== last) localStorage.setItem(geometryKey(id), value);
+    return value;
+  } catch {
+    return last;
+  }
+}
+
+interface ScreenArea {
+  availLeft: number;
+  availTop: number;
+  availWidth: number;
+  availHeight: number;
+}
+
+/**
+ * With several monitors, ask for window placement (once; the browser remembers the answer) and
+ * then put the window back where it was, or on a screen other than the main page's the first
+ * time. Without the permission, browsers keep pop-ups on the opener's screen.
+ */
+async function placeWindow(win: Window, saved: Geometry | null, size: { width: number; height: number }): Promise<void> {
+  const host = window as Window & { getScreenDetails?: () => Promise<{ screens: ScreenArea[]; currentScreen: ScreenArea }> };
+  const extended = (window.screen as Screen & { isExtended?: boolean }).isExtended;
+  if (!host.getScreenDetails || !extended) return;
+  try {
+    const details = await host.getScreenDetails();
+    if (win.closed) return;
+    if (saved) {
+      win.moveTo(saved.left, saved.top);
+      return;
+    }
+    const other = details.screens.find((entry) => entry !== details.currentScreen);
+    if (!other) return;
+    const width = Math.min(size.width, other.availWidth - 80);
+    const height = Math.min(size.height, other.availHeight - 80);
+    win.moveTo(other.availLeft + Math.round((other.availWidth - width) / 2), other.availTop + Math.round((other.availHeight - height) / 2));
+    win.resizeTo(width, height);
+  } catch {
+    /* permission refused or not available: the window stays where the browser put it */
+  }
+}
+
+/**
+ * Copy the page's styles into the window. Some libraries (charts) add their rules straight
+ * into a stylesheet rather than as text, so a <style> is copied from its live rules, not its
+ * text. Called again whenever the page's styles change.
+ */
 function copyStyles(from: Document, to: Document): void {
+  for (const old of Array.from(to.head.querySelectorAll("[data-copied-style]"))) old.remove();
   for (const node of Array.from(from.querySelectorAll('link[rel="stylesheet"], style'))) {
-    to.head.appendChild(node.cloneNode(true));
+    let copy: Element;
+    if (node instanceof HTMLStyleElement) {
+      copy = to.createElement("style");
+      let rules = node.textContent ?? "";
+      try {
+        const live = node.sheet ? Array.from(node.sheet.cssRules, (rule) => rule.cssText).join(" ") : "";
+        if (live.length > rules.length) rules = live;
+      } catch {
+        /* rules not readable: keep the text */
+      }
+      copy.textContent = rules;
+    } else {
+      copy = node.cloneNode(true) as Element;
+    }
+    copy.setAttribute("data-copied-style", "");
+    to.head.appendChild(copy);
   }
 }
 
@@ -66,6 +158,7 @@ export function useDetachable(id: string, title: string, size = { width: 900, he
   const attach = useCallback(() => {
     const win = open.get(id);
     open.delete(id);
+    if (win) saveGeometry(id, win, "");
     win?.close();
     setTarget(null);
   }, [id]);
@@ -80,9 +173,12 @@ export function useDetachable(id: string, title: string, size = { width: 900, he
     } catch {
       /* storage unavailable: no warning memory, carry on */
     }
-    const features = `popup,width=${size.width},height=${size.height}`;
+    const saved = savedGeometry(id);
+    const place = saved ? `,left=${saved.left},top=${saved.top}` : "";
+    const features = `popup,width=${saved?.width ?? size.width},height=${saved?.height ?? size.height}${place}`;
     const win = window.open("", `music-suite-${id}`, features);
     if (!win) return false;
+    void placeWindow(win, saved, { width: size.width, height: size.height });
     const doc = win.document;
     doc.head.replaceChildren();
     doc.body.replaceChildren();
@@ -110,6 +206,23 @@ export function useDetachable(id: string, title: string, size = { width: 900, he
     const { win } = target;
     const observer = new MutationObserver(() => mirrorRoot(document, win.document));
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "lang", "data-theme"] });
+    // Styles added to the page later (charts, a new screen's CSS) are copied over too, and the
+    // panel is told to measure itself again once they have loaded.
+    let styleTimer = 0;
+    const resync = () => {
+      window.clearTimeout(styleTimer);
+      styleTimer = window.setTimeout(() => {
+        if (win.closed) return;
+        copyStyles(document, win.document);
+        window.dispatchEvent(new Event("resize"));
+      }, 250);
+    };
+    const styles = new MutationObserver(resync);
+    styles.observe(document.head, { childList: true, subtree: true, characterData: true });
+    const settle = [600, 2000, 5000].map((delay) => window.setTimeout(resync, delay));
+    // Charts and canvases listen for resizing on the main page: pass the window's on.
+    const resized = () => window.dispatchEvent(new Event("resize"));
+    win.addEventListener("resize", resized);
     const forward = (event: KeyboardEvent) => {
       // Elements in the other window are not instances of this window's HTMLElement.
       const element = event.target as Element | null;
@@ -136,10 +249,19 @@ export function useDetachable(id: string, title: string, size = { width: 900, he
       setTarget(null);
     };
     win.addEventListener("pagehide", gone);
-    // pagehide is not always delivered for windows closed by the user: check as well.
-    const timer = window.setInterval(() => win.closed && gone(), 500);
+    // pagehide is not always delivered for windows closed by the user: check as well, and keep
+    // note of where the window is for next time.
+    let last = "";
+    const timer = window.setInterval(() => {
+      if (win.closed) gone();
+      else last = saveGeometry(id, win, last);
+    }, 500);
     return () => {
       observer.disconnect();
+      styles.disconnect();
+      window.clearTimeout(styleTimer);
+      settle.forEach((timer) => window.clearTimeout(timer));
+      win.removeEventListener("resize", resized);
       win.removeEventListener("keydown", forward);
       win.removeEventListener("keyup", forward);
       win.removeEventListener("pagehide", gone);

@@ -8,7 +8,8 @@ import type { EditorEngine } from "@/lib/editor/engine";
 import { VoicePicker } from "@/components/editor/voice-picker";
 import { HelpLink } from "@/components/help-link";
 import { type Tone, midiOutHub } from "@/lib/editor/midi-out";
-import { type AudioInputInfo, guessInstrumentInput, listAudioInputs, measureRoundTrip, peakOf } from "@/lib/editor/reamp";
+import { type AudioInputInfo, ReampError, guessInstrumentInput, listAudioInputs, measureRoundTrip, peakOf } from "@/lib/editor/reamp";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const INPUT_KEY = "music-suite:reamp-input";
@@ -73,6 +74,7 @@ export function ReampPanel({
   keysVoices,
   onKeysVoices
 }: ReampPanelProps) {
+  const { t, tp } = useI18n();
   // Read on first use; the picker only renders once the panel is opened, after hydration.
   const [tone, setTone] = useState<Tone | null>(() => (typeof window === "undefined" ? null : storedTone()));
   const chooseTone = (next: Tone | null) => {
@@ -121,7 +123,7 @@ export function ReampPanel({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       for (const track of stream.getTracks()) track.stop();
     } catch {
-      setNote({ tone: "warn", text: "Audio input was refused. Allow it for this page, then press Find inputs again." });
+      setNote({ tone: "warn", text: t("editorTools.reamp.inputRefused") });
       return;
     }
     const found = await listAudioInputs();
@@ -129,7 +131,7 @@ export function ReampPanel({
     const remembered = storedInput();
     const pick = found.some((input) => input.deviceId === remembered) ? remembered : guessInstrumentInput(found);
     setInputId(pick);
-    setNote(found.length ? null : { tone: "warn", text: "No audio inputs were found." });
+    setNote(found.length ? null : { tone: "warn", text: t("editorTools.reamp.noInputs") });
   };
 
   const chooseInput = (id: string) => {
@@ -148,42 +150,42 @@ export function ReampPanel({
     try {
       await job();
     } catch (err) {
-      setNote({ tone: "warn", text: err instanceof Error ? err.message : "That did not work." });
+      setNote({ tone: "warn", text: err instanceof ReampError ? t(`editorTools.reampErrors.${err.code}`) : err instanceof Error ? err.message : t("editorTools.reamp.failed") });
     }
     setBusy(null);
   };
 
   const testOut = () =>
-    run("Playing a note…", async () => {
-      if (!midiOutHub.ready()) throw new Error("Choose the keyboard's MIDI output first.");
+    run(t("editorTools.reamp.playing"), async () => {
+      if (!midiOutHub.ready()) throw new ReampError("noMidiOut", "Choose the keyboard's MIDI output first.");
       // A short rising figure is unmistakable even on a sustained voice.
       for (const [index, pitch] of [60, 64, 67].entries()) {
         window.setTimeout(() => midiOutHub.noteOn(pitch, 0.8), index * 220);
         window.setTimeout(() => midiOutHub.noteOff(pitch), index * 220 + 400);
       }
       await new Promise((resolve) => setTimeout(resolve, 900));
-      setNote({ tone: "ok", text: "Three notes were sent. If you heard nothing, check the channel and the keyboard's volume." });
+      setNote({ tone: "ok", text: t("editorTools.reamp.sent") });
     });
 
   const testIn = () =>
-    run("Listening…", async () => {
+    run(t("editorTools.reamp.listening"), async () => {
       const take = await engine.captureProbe(1.5, { deviceId: inputId || undefined });
       const peak = peakOf(take.channels);
       const db = peak > 0 ? 20 * Math.log10(peak) : -120;
       setNote(
         peak > 0.004
-          ? { tone: "ok", text: `Heard the input at ${db.toFixed(1)} dBFS peak. Play the keyboard while testing to see it rise.` }
-          : { tone: "warn", text: "That input is silent. Check it is the keyboard's own output and that its volume is up." }
+          ? { tone: "ok", text: t("editorTools.reamp.heard", { db: db.toFixed(1) }) }
+          : { tone: "warn", text: t("editorTools.reamp.silent") }
       );
     });
 
   const calibrate = () =>
-    run("Measuring the round trip…", async () => {
+    run(t("editorTools.reamp.measuring"), async () => {
       const measured = await measureRoundTrip(engine, { deviceId: inputId || undefined });
       setLatency(measured.seconds);
       setNote({
         tone: "ok",
-        text: `Round trip is ${(measured.seconds * 1000).toFixed(1)} ms. Recordings are shifted back by this so they land in time.`
+        text: t("editorTools.reamp.measured", { ms: (measured.seconds * 1000).toFixed(1) })
       });
     });
 
@@ -195,12 +197,12 @@ export function ReampPanel({
     <div ref={rootRef} className="relative">
       <ActionButton
         className="relative h-9"
-        title="Keyboard: play your music on it, choose its voice, record a part through it"
+        title={t("editorTools.reamp.buttonTitle")}
         onClick={() => setOpen((value) => !value)}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
-        <Cable className="h-4 w-4" /> Keyboard
+        <Cable className="h-4 w-4" /> {t("editorTools.reamp.button")}
         <span
           aria-hidden="true"
           className={cn(
@@ -213,37 +215,37 @@ export function ReampPanel({
       {open ? (
         <div
           role="dialog"
-          aria-label="Play out to a hardware keyboard"
+          aria-label={t("editorTools.reamp.dialog")}
           className="absolute left-0 top-11 z-50 w-96 space-y-3 rounded-xl border border-white/10 bg-slate-900 p-3 text-[11px] text-slate-300 shadow-2xl"
         >
           <div>
             <h3 className="display-font flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-slate-200">
-              Your keyboard
-              <HelpLink section="your-hardware-keyboard" label="using your hardware keyboard" />
+              {t("editorTools.reamp.heading")}
+              <HelpLink section="your-hardware-keyboard" label={t("editorTools.reamp.helpLabel")} />
             </h3>
             <p className="mt-1 leading-snug text-slate-400">
-              Play your music on the keyboard, choose its voice, and record any part through it back onto the timeline.
+              {t("editorTools.reamp.intro")}
             </p>
           </div>
 
           {/* ---- MIDI out ---- */}
           <div className="space-y-2 rounded-lg bg-black/30 p-2">
-            <p className="font-semibold text-slate-200">1. MIDI out</p>
+            <p className="font-semibold text-slate-200">{t("editorTools.reamp.step1")}</p>
             {!ready ? (
               <ActionButton variant="primary" className="w-full" disabled={out.state === "connecting"} onClick={() => void midiOutHub.connect()}>
-                {out.state === "connecting" ? "Waiting for permission…" : "Connect"}
+                {out.state === "connecting" ? t("editorTools.reamp.waitingPermission") : t("editorTools.reamp.connect")}
               </ActionButton>
             ) : (
               <>
                 <label className="block text-slate-400">
-                  Keyboard
+                  {t("editorTools.reamp.keyboard")}
                   <select
                     className={`${fieldClass} mt-1`}
                     value={out.selected}
                     onChange={(event) => midiOutHub.select(event.target.value)}
-                    aria-label="MIDI output"
+                    aria-label={t("editorTools.reamp.midiOutput")}
                   >
-                    {out.outputs.length ? null : <option value="">No MIDI outputs found</option>}
+                    {out.outputs.length ? null : <option value="">{t("editorTools.reamp.noOutputs")}</option>}
                     {out.outputs.map((output) => (
                       <option key={output.id} value={output.id}>
                         {output.name}
@@ -252,12 +254,12 @@ export function ReampPanel({
                   </select>
                 </label>
                 <label className="block text-slate-400">
-                  Channel
+                  {t("editorTools.reamp.channel")}
                   <select
                     className={`${fieldClass} mt-1`}
                     value={out.channel}
                     onChange={(event) => midiOutHub.setChannel(Number(event.target.value))}
-                    aria-label="MIDI channel"
+                    aria-label={t("editorTools.reamp.midiChannel")}
                   >
                     {Array.from({ length: 16 }, (_value, index) => index + 1).map((channel) => (
                       <option key={channel} value={channel}>
@@ -268,7 +270,7 @@ export function ReampPanel({
                   </select>
                 </label>
                 <ActionButton className="w-full" disabled={busy !== null || !connected} onClick={() => void testOut()}>
-                  Test out: play three notes
+                  {t("editorTools.reamp.testOut")}
                 </ActionButton>
               </>
             )}
@@ -276,18 +278,18 @@ export function ReampPanel({
 
           {/* ---- Voice and playback ---- */}
           <div className="space-y-2 rounded-lg border border-cyan-400/30 bg-black/30 p-2">
-            <p className="font-semibold text-slate-200">Play my music on the keyboard</p>
+            <p className="font-semibold text-slate-200">{t("editorTools.reamp.playHeading")}</p>
             <label className="block text-slate-400">
-              What the keyboard plays when the song plays
+              {t("editorTools.reamp.whatPlays")}
               <select
                 className={`${fieldClass} mt-1`}
-                aria-label="What the keyboard plays"
+                aria-label={t("editorTools.reamp.whatPlaysLabel")}
                 disabled={!connected}
                 value={keysTrackId ?? ""}
                 onChange={(event) => onKeysTrack(event.target.value || null)}
               >
-                <option value="">Nothing: notes play on the computer</option>
-                {tracks.length > 1 ? <option value="all">All parts together</option> : null}
+                <option value="">{t("editorTools.reamp.nothing")}</option>
+                {tracks.length > 1 ? <option value="all">{t("editorTools.reamp.allParts")}</option> : null}
                 {tracks.map((track) => (
                   <option key={track.id} value={track.id}>
                     {track.name}
@@ -296,16 +298,16 @@ export function ReampPanel({
               </select>
             </label>
             <p className="leading-snug text-slate-400">
-              Those notes go to the keyboard instead of the computer&apos;s own sound. Press play as usual.
-              {tracks.length ? "" : " No track has notes yet: split a song and write its notes first, or use the Wizard."}
+              {t("editorTools.reamp.instead")}
+              {tracks.length ? "" : ` ${t("editorTools.reamp.noNotesWizard")}`}
             </p>
-            <p className="pt-1 font-semibold text-slate-200">Keyboard voice</p>
-            <VoicePicker tone={tone} onChange={chooseTone} label="the keyboard" />
+            <p className="pt-1 font-semibold text-slate-200">{t("editorTools.reamp.voice")}</p>
+            <VoicePicker tone={tone} onChange={chooseTone} label={t("editorTools.reamp.theKeyboard")} />
             <label className="flex items-center gap-2 text-slate-400">
-              Notes at once
-              <select className={`${fieldClass} w-28`} value={keysVoices} onChange={(event) => onKeysVoices(Number(event.target.value))} aria-label="Notes at once">
-                <option value={0}>All</option>
-                <option value={1}>1 (melody)</option>
+              {t("editorTools.reamp.notesAtOnce")}
+              <select className={`${fieldClass} w-28`} value={keysVoices} onChange={(event) => onKeysVoices(Number(event.target.value))} aria-label={t("editorTools.reamp.notesAtOnce")}>
+                <option value={0}>{t("editorTools.reamp.all")}</option>
+                <option value={1}>{t("editorTools.reamp.melody")}</option>
                 <option value={2}>2</option>
                 <option value={3}>3</option>
                 <option value={4}>4</option>
@@ -316,11 +318,11 @@ export function ReampPanel({
 
           {/* ---- Audio in ---- */}
           <div className="space-y-2 rounded-lg bg-black/30 p-2">
-            <p className="font-semibold text-slate-200">2. Audio in</p>
+            <p className="font-semibold text-slate-200">{t("editorTools.reamp.step2")}</p>
             {inputs.length ? (
               <label className="block text-slate-400">
-                The keyboard&apos;s sound comes in on
-                <select className={`${fieldClass} mt-1`} value={inputId} onChange={(event) => chooseInput(event.target.value)} aria-label="Audio input">
+                {t("editorTools.reamp.comesInOn")}
+                <select className={`${fieldClass} mt-1`} value={inputId} onChange={(event) => chooseInput(event.target.value)} aria-label={t("editorTools.reamp.audioInput")}>
                   {inputs.map((input) => (
                     <option key={input.deviceId} value={input.deviceId}>
                       {input.label}
@@ -329,27 +331,27 @@ export function ReampPanel({
                 </select>
               </label>
             ) : (
-              <p className="leading-snug text-slate-400">Connect the keyboard by USB, then find its audio input.</p>
+              <p className="leading-snug text-slate-400">{t("editorTools.reamp.connectUsb")}</p>
             )}
             <div className="flex gap-2">
               <ActionButton className="flex-1" disabled={busy !== null} onClick={() => void refreshInputs()}>
-                Find inputs
+                {t("editorTools.reamp.findInputs")}
               </ActionButton>
               <ActionButton className="flex-1" disabled={busy !== null || !inputs.length} onClick={() => void testIn()}>
-                Test in
+                {t("editorTools.reamp.testIn")}
               </ActionButton>
             </div>
           </div>
 
           {/* ---- Timing ---- */}
           <div className="space-y-2 rounded-lg bg-black/30 p-2">
-            <p className="font-semibold text-slate-200">3. Timing</p>
+            <p className="font-semibold text-slate-200">{t("editorTools.reamp.step3")}</p>
             <p className="leading-snug text-slate-400">
-              The keyboard answers a few tens of milliseconds late. Measuring that once lets every pass land in time.
+              {t("editorTools.reamp.timingHelp")}
             </p>
             <div className="flex items-center gap-2">
               <ActionButton className="flex-1" disabled={busy !== null || !connected || !inputs.length} onClick={() => void calibrate()}>
-                Measure the delay
+                {t("editorTools.reamp.measure")}
               </ActionButton>
               <span className="w-20 text-right font-mono tabular-nums text-slate-200">
                 {latency === null ? "—" : `${(latency * 1000).toFixed(1)} ms`}
@@ -359,34 +361,34 @@ export function ReampPanel({
 
           {/* ---- The pass ---- */}
           <div className="space-y-2 rounded-lg bg-black/30 p-2">
-            <p className="font-semibold text-slate-200">4. Record a pass</p>
+            <p className="font-semibold text-slate-200">{t("editorTools.reamp.step4")}</p>
             <p className="leading-snug text-slate-400">
-Records the part in the voice chosen above, or the keyboard&apos;s current one when none is chosen. One part per pass. The Wizard button does every part in turn and switches voices for you.
+              {t("editorTools.reamp.passHelp")}
             </p>
             {tracks.length ? (
               <label className="block text-slate-400">
-                Part to play out
+                {t("editorTools.reamp.partToPlay")}
                 <select
                   className={`${fieldClass} mt-1`}
                   value={chosenTrack?.id ?? ""}
                   onChange={(event) => {
                     setTrackId(event.target.value);
                   }}
-                  aria-label="Track to play out"
+                  aria-label={t("editorTools.reamp.partToPlay")}
                 >
                   {tracks.map((track) => (
                     <option key={track.id} value={track.id}>
-                      {track.name} ({track.noteCount} notes)
+                      {t("editorTools.reamp.partOption", { name: track.name, notes: tp("editorTools.reamp.notes", track.noteCount) })}
                     </option>
                   ))}
                 </select>
               </label>
             ) : (
-              <p className="leading-snug text-slate-400">No track has notes yet. Split the song and turn a stem into MIDI first.</p>
+              <p className="leading-snug text-slate-400">{t("editorTools.reamp.noNotes")}</p>
             )}
             {passRunning ? (
               <ActionButton variant="danger" className="w-full" onClick={onStopPass}>
-                Stop the pass
+                {t("editorTools.reamp.stopPass")}
               </ActionButton>
             ) : (
               <ActionButton
@@ -401,20 +403,20 @@ Records the part in the voice chosen above, or the keyboard&apos;s current one w
                   onStartPass({ trackId: chosenTrack.id, deviceId: inputId, latency: latency ?? 0 });
                 }}
               >
-                Record {chosenTrack ? chosenTrack.name : "the part"} through the keyboard
+                {chosenTrack ? t("editorTools.reamp.recordPart", { name: chosenTrack.name }) : t("editorTools.reamp.recordThePart")}
               </ActionButton>
             )}
             {!canPass && !passRunning ? (
               <p className="leading-snug text-slate-500">
                 {!connected
-                  ? "Connect a MIDI output first."
+                  ? t("editorTools.reamp.needOutput")
                   : !inputs.length
-                    ? "Find the keyboard's audio input first."
+                    ? t("editorTools.reamp.needInput")
                     : latency === null
-                      ? "Measure the delay first."
+                      ? t("editorTools.reamp.needDelay")
                       : !chosenTrack
-                        ? "Pick a part with notes."
-                        : "Waiting for the editor."}
+                        ? t("editorTools.reamp.needPart")
+                        : t("editorTools.reamp.waitingEditor")}
               </p>
             ) : null}
           </div>
@@ -429,7 +431,7 @@ Records the part in the voice chosen above, or the keyboard&apos;s current one w
           {passRunning ? (
             <p className="flex items-center gap-1.5 text-rose-300">
               <CircleDot className="h-3.5 w-3.5 shrink-0 animate-pulse" />
-              Recording the keyboard. It stops on its own at the end of the part.
+              {t("editorTools.reamp.recording")}
             </p>
           ) : null}
         </div>

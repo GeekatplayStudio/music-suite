@@ -12,6 +12,7 @@ import type {
   ProjectState,
   ProjectSummary
 } from "@/lib/editor/types";
+import { localizeServerFields, localizeServerText } from "@/lib/i18n/server-messages";
 
 const BASE = "/suite-api/editor";
 
@@ -23,12 +24,14 @@ export interface Audition {
   state?: string;
 }
 
+const PROJECT_DATA = /^\/projects(\/[^/]+)?(\/state|\/rename)?$/;
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, { ...init, cache: "no-store" });
   } catch {
-    throw new Error("Could not reach the Music Suite API. Restart Music Suite with its start launcher.");
+    throw new Error(localizeServerText("Could not reach the Music Suite API. Restart Music Suite with its start launcher."));
   }
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
@@ -38,9 +41,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* non-JSON error body */
     }
-    throw new Error(message);
+    throw new Error(localizeServerText(message));
   }
-  return (await res.json()) as T;
+  const body = (await res.json()) as T;
+  // A project's own data (its state, clip and track names) goes back to the server as it came.
+  return PROJECT_DATA.test(path) ? body : localizeServerFields(body);
 }
 
 function json(body: unknown): RequestInit {
@@ -117,7 +122,7 @@ export const editorApi = {
     const res = await fetch(`${BASE}/export/${format}`, { method: "POST", body: form, cache: "no-store" });
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
-      throw new Error(typeof body?.detail === "string" ? body.detail : `Encoding failed (${res.status})`);
+      throw new Error(localizeServerText(typeof body?.detail === "string" ? body.detail : `Encoding failed (${res.status})`));
     }
     return res.blob();
   }

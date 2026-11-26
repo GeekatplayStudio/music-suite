@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ArrowDown, ArrowUp, Loader2, Plus, Trash2, Wand2 } from "lucide-react";
 
 import type { PlanSection } from "@/lib/generation/api";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const input =
@@ -79,6 +80,7 @@ interface PlanEditorProps {
 
 /** Edit a song as an ordered list of sections, each with its own lyrics, length and styles. */
 export function PlanEditor({ sections, disabled, drafting, maxSections, maxSeconds, defaultStyles, onChange, onDraft }: PlanEditorProps) {
+  const { t, tp } = useI18n();
   const list = sections ?? [];
   const total = list.reduce((sum, section) => sum + section.seconds, 0);
   const update = (index: number, patch: Partial<PlanSection>) =>
@@ -91,22 +93,20 @@ export function PlanEditor({ sections, disabled, drafting, maxSections, maxSecon
   };
 
   return (
-    <section className="glass space-y-3 rounded-2xl border border-white/10 p-4" aria-label="Song plan">
+    <section className="glass space-y-3 rounded-2xl border border-white/10 p-4" aria-label={t("studioTabs.plan.title")}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="display-font text-sm font-semibold text-slate-200">Song plan</h3>
-          <p className="text-xs text-slate-400">
-            Optional. Shape the song section by section. With a plan, the Length and Lyrics fields above are not used.
-          </p>
+          <h3 className="display-font text-sm font-semibold text-slate-200">{t("studioTabs.plan.title")}</h3>
+          <p className="text-xs text-slate-400">{t("studioTabs.plan.intro")}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className={small} disabled={disabled || drafting} onClick={onDraft}>
             {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Wand2 className="h-3.5 w-3.5" aria-hidden />}
-            {list.length ? "Draft again" : "Draft a plan (free)"}
+            {list.length ? t("studioTabs.plan.draftAgain") : t("studioTabs.plan.draft")}
           </button>
           {list.length ? (
             <button type="button" className={small} disabled={disabled} onClick={() => onChange(null)}>
-              Clear plan
+              {t("studioTabs.plan.clear")}
             </button>
           ) : null}
         </div>
@@ -119,7 +119,7 @@ export function PlanEditor({ sections, disabled, drafting, maxSections, maxSecon
               <div className="flex flex-wrap items-end gap-2">
                 <span className="w-6 pb-2 text-xs font-semibold tabular-nums text-slate-500">{index + 1}</span>
                 <label className="min-w-32 flex-1 space-y-1 text-xs text-slate-400">
-                  <span>Section</span>
+                  <span>{t("studioTabs.plan.section")}</span>
                   <input
                     className={cn(input, "h-9")}
                     value={section.name}
@@ -130,7 +130,7 @@ export function PlanEditor({ sections, disabled, drafting, maxSections, maxSecon
                   />
                 </label>
                 <label className="w-24 space-y-1 text-xs text-slate-400">
-                  <span>Seconds</span>
+                  <span>{t("studioTabs.plan.seconds")}</span>
                   <input
                     className={cn(input, "h-9 tabular-nums")}
                     type="number"
@@ -146,32 +146,32 @@ export function PlanEditor({ sections, disabled, drafting, maxSections, maxSecon
                   />
                 </label>
                 <label className="w-32 space-y-1 text-xs text-slate-400">
-                  <span>Follow neighbours</span>
+                  <span>{t("studioTabs.plan.follow")}</span>
                   <select
                     className={cn(input, "h-9")}
                     value={section.adherence}
                     disabled={disabled}
                     onChange={(event) => update(index, { adherence: event.target.value as PlanSection["adherence"] })}
                   >
-                    <option value="high">Closely</option>
-                    <option value="medium">Somewhat</option>
-                    <option value="low">Loosely</option>
+                    <option value="high">{t("studioTabs.plan.closely")}</option>
+                    <option value="medium">{t("studioTabs.plan.somewhat")}</option>
+                    <option value="low">{t("studioTabs.plan.loosely")}</option>
                   </select>
                 </label>
                 <div className="flex gap-1 pb-0.5">
-                  <button type="button" className={cn(small, "w-9 px-0")} aria-label={`Move section ${index + 1} up`} disabled={disabled || index === 0} onClick={() => move(index, -1)}>
+                  <button type="button" className={cn(small, "w-9 px-0")} aria-label={t("studioTabs.plan.moveUp", { n: index + 1 })} disabled={disabled || index === 0} onClick={() => move(index, -1)}>
                     <ArrowUp className="h-3.5 w-3.5" aria-hidden />
                   </button>
-                  <button type="button" className={cn(small, "w-9 px-0")} aria-label={`Move section ${index + 1} down`} disabled={disabled || index === list.length - 1} onClick={() => move(index, 1)}>
+                  <button type="button" className={cn(small, "w-9 px-0")} aria-label={t("studioTabs.plan.moveDown", { n: index + 1 })} disabled={disabled || index === list.length - 1} onClick={() => move(index, 1)}>
                     <ArrowDown className="h-3.5 w-3.5" aria-hidden />
                   </button>
-                  <button type="button" className={cn(small, "w-9 px-0")} aria-label={`Remove section ${index + 1}`} disabled={disabled} onClick={() => onChange(list.length > 1 ? list.filter((_, i) => i !== index) : null)}>
+                  <button type="button" className={cn(small, "w-9 px-0")} aria-label={t("studioTabs.plan.remove", { n: index + 1 })} disabled={disabled} onClick={() => onChange(list.length > 1 ? list.filter((_, i) => i !== index) : null)}>
                     <Trash2 className="h-3.5 w-3.5" aria-hidden />
                   </button>
                 </div>
               </div>
               <label className="block space-y-1 text-xs text-slate-400">
-                <span>Lyrics (one line per sung line; leave empty for instrumental)</span>
+                <span>{t("studioTabs.plan.lyrics")}</span>
                 <textarea
                   className={cn(input, "py-2 font-mono text-[13px] leading-relaxed")}
                   rows={Math.min(8, Math.max(2, section.lyrics.split("\n").length))}
@@ -182,20 +182,20 @@ export function PlanEditor({ sections, disabled, drafting, maxSections, maxSecon
               </label>
               <div className="grid gap-2 sm:grid-cols-2">
                 <label className="space-y-1 text-xs text-slate-400">
-                  <span>Styles{index === 0 ? " (sets the genre — use several)" : ""}</span>
+                  <span>{index === 0 ? t("studioTabs.plan.stylesFirst") : t("studioTabs.plan.styles")}</span>
                   <StyleInput
                     value={section.styles}
                     disabled={disabled}
-                    placeholder="e.g. dream pop, airy female vocal, analog synths"
+                    placeholder={t("studioTabs.plan.stylesPlaceholder")}
                     onCommit={(styles) => update(index, { styles })}
                   />
                 </label>
                 <label className="space-y-1 text-xs text-slate-400">
-                  <span>Avoid</span>
+                  <span>{t("studioTabs.plan.avoid")}</span>
                   <StyleInput
                     value={section.avoid}
                     disabled={disabled}
-                    placeholder="e.g. distorted guitars"
+                    placeholder={t("studioTabs.plan.avoidPlaceholder")}
                     onCommit={(avoid) => update(index, { avoid })}
                   />
                 </label>
@@ -217,12 +217,14 @@ export function PlanEditor({ sections, disabled, drafting, maxSections, maxSecon
           disabled={disabled || list.length >= maxSections}
           onClick={() => onChange([...list, newSection(list.length, list.length ? [] : splitStyles(defaultStyles))])}
         >
-          <Plus className="h-3.5 w-3.5" aria-hidden /> Add a section
+          <Plus className="h-3.5 w-3.5" aria-hidden /> {t("studioTabs.plan.add")}
         </button>
         {list.length ? (
           <p className={cn("text-xs tabular-nums", total > maxSeconds ? "text-rose-300" : "text-slate-400")}>
-            {list.length} section{list.length === 1 ? "" : "s"} · {Math.floor(total / 60)}:{String(Math.round(total % 60)).padStart(2, "0")} of up to{" "}
-            {maxSeconds / 60} min
+            {tp("studioTabs.plan.total", list.length, {
+              length: `${Math.floor(total / 60)}:${String(Math.round(total % 60)).padStart(2, "0")}`,
+              max: maxSeconds / 60
+            })}
           </p>
         ) : null}
       </div>

@@ -18,7 +18,8 @@ export const THEMES = [
   { id: "amber", swatch: "#fbbf24" },
   { id: "violet", swatch: "#a78bfa" },
   { id: "forest", swatch: "#34d399" },
-  { id: "magenta", swatch: "#e879f9" }
+  { id: "magenta", swatch: "#e879f9" },
+  { id: "light", swatch: "#f1f5f9" }
 ] as const;
 export type ThemeId = (typeof THEMES)[number]["id"];
 export const DEFAULT_THEME: ThemeId = "midnight";

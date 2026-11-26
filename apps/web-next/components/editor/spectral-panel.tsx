@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { ActionButton } from "@/components/editor/controls";
+import { useI18n } from "@/lib/i18n";
 import { type Spectrogram, computeSpectrogram, fractionToHz, hzToFraction } from "@/lib/editor/spectrogram";
 import type { Clip } from "@/lib/editor/types";
 
@@ -35,6 +36,7 @@ function formatHz(hz: number): string {
 }
 
 export function SpectralPanel({ clip, buffer, getPosition, busy, onRepair, onClose, headerExtra }: SpectralPanelProps) {
+  const { t } = useI18n();
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [width, setWidth] = useState(600);
@@ -140,30 +142,30 @@ export function SpectralPanel({ clip, buffer, getPosition, busy, onRepair, onClo
         mode,
         amount_db: amount
       },
-      mode === "heal" ? `Healing a selection in ${usable.name}` : `Attenuating a selection in ${usable.name}`
+      t(mode === "heal" ? "editorTools.spectral.healing" : "editorTools.spectral.attenuating", { name: usable.name })
     );
     setSelection(null);
   };
 
   let message: string | null = null;
-  if (!clip) message = "Select a clip to see its frequency content over time.";
-  else if (clip.reversed) message = "The spectral view is not available for reversed clips.";
-  else if (!buffer) message = "Loading audio…";
+  if (!clip) message = t("editorTools.spectral.noClip");
+  else if (clip.reversed) message = t("editorTools.spectral.reversed");
+  else if (!buffer) message = t("editorTools.spectral.loading");
 
   return (
-    <section className="shrink-0 border-t border-white/10 bg-slate-950" aria-label="Spectral view">
+    <section className="shrink-0 border-t border-white/10 bg-slate-950" aria-label={t("editorTools.spectral.title")}>
       <div className="flex h-9 items-center gap-2 px-3 text-[11px] text-slate-300">
-        <h3 className="display-font shrink-0 whitespace-nowrap font-semibold uppercase tracking-wider text-slate-300">Spectral view</h3>
+        <h3 className="display-font shrink-0 whitespace-nowrap font-semibold uppercase tracking-wider text-slate-300">{t("editorTools.spectral.title")}</h3>
         <span className="min-w-0 flex-1 truncate text-slate-400">
           {box
             ? `${box.t0.toFixed(2)}–${box.t1.toFixed(2)} s · ${formatHz(box.f0)}–${formatHz(box.f1)}`
             : usable
-              ? `${usable.name} — drag a box around a sound to reduce or remove it.`
+              ? t("editorTools.spectral.hint", { name: usable.name })
               : ""}
         </span>
         <select
           className="h-8 w-24 shrink-0 rounded-lg border border-white/10 bg-slate-900 px-2 text-xs text-slate-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
-          aria-label="Attenuation amount"
+          aria-label={t("editorTools.spectral.amount")}
           value={amount}
           onChange={(event) => setAmount(Number(event.target.value))}
         >
@@ -173,16 +175,16 @@ export function SpectralPanel({ clip, buffer, getPosition, busy, onRepair, onClo
             </option>
           ))}
         </select>
-        <ActionButton disabled={!box || busy} onClick={() => repair("attenuate")} title="Turn the selected frequencies down by the chosen amount">
-          Attenuate
+        <ActionButton disabled={!box || busy} onClick={() => repair("attenuate")} title={t("editorTools.spectral.attenuateTitle")}>
+          {t("editorTools.spectral.attenuate")}
         </ActionButton>
-        <ActionButton variant="primary" disabled={!box || busy} onClick={() => repair("heal")} title="Replace the selection with a blend of the sound just before and after it">
-          Heal
+        <ActionButton variant="primary" disabled={!box || busy} onClick={() => repair("heal")} title={t("editorTools.spectral.healTitle")}>
+          {t("editorTools.spectral.heal")}
         </ActionButton>
         {headerExtra}
         <button
           type="button"
-          aria-label="Close spectral view"
+          aria-label={t("editorTools.spectral.close")}
           className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
           onClick={onClose}
         >
@@ -195,7 +197,7 @@ export function SpectralPanel({ clip, buffer, getPosition, busy, onRepair, onClo
           className="block touch-none"
           style={{ width: width + AXIS, height: HEIGHT, cursor: usable ? "crosshair" : "default" }}
           role="img"
-          aria-label="Spectrogram of the selected clip. Drag to select a time and frequency range."
+          aria-label={t("editorTools.spectral.canvas")}
           onPointerDown={(event) => {
             if (!usable || event.button !== 0) return;
             event.currentTarget.setPointerCapture(event.pointerId);

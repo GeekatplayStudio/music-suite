@@ -8,8 +8,19 @@ import { gmFamilies, gmPatch, gmProgramName } from "@/lib/editor/gm";
 import { currentSoundFont, watchSoundFont } from "@/lib/editor/soundfont";
 import { forgetSoundFont, installSoundFont } from "@/lib/editor/soundfont-store";
 import type { Synth } from "@/lib/editor/types";
+import { type I18n, type MessageKey, useI18n } from "@/lib/i18n";
 
 const FAMILIES = gmFamilies();
+
+/** A General MIDI name in the interface language, by its number, falling back to English. */
+function gmText(t: I18n["t"], key: string, english: string): string {
+  const found = t(`inspector.gm.${key}` as MessageKey);
+  return found === `inspector.gm.${key}` ? english : found;
+}
+
+function programName(t: I18n["t"], program: number): string {
+  return gmText(t, `programs.p${program}`, gmProgramName(program));
+}
 
 function serverSnapshot(): null {
   return null;
@@ -30,6 +41,7 @@ export function useSoundFont() {
  * that gives those programs their real recorded sound.
  */
 export function GmInstrumentSection({ synth, onSet }: { synth: Synth; onSet: (synth: Synth) => void }) {
+  const { t, tp } = useI18n();
   const font = useSoundFont();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
@@ -43,7 +55,7 @@ export function GmInstrumentSection({ synth, onSet }: { synth: Synth; onSet: (sy
     try {
       await installSoundFont(file);
     } catch (err) {
-      setFailure(err instanceof Error ? err.message : "This SoundFont could not be read.");
+      setFailure(err instanceof Error ? err.message : t("inspector.gm.readFailed"));
     }
     setBusy(false);
   };
@@ -67,23 +79,23 @@ export function GmInstrumentSection({ synth, onSet }: { synth: Synth; onSet: (sy
             checked={synth.program !== undefined}
             onChange={(event) => onSet(event.target.checked ? { ...synth, program: 0 } : withoutProgram(synth))}
           />
-          <span>Play the General MIDI kit from the SoundFont instead of the built-in kit</span>
+          <span>{t("inspector.gm.drumsKit")}</span>
         </label>
       ) : (
         <label className="flex items-center gap-2 text-[11px] text-slate-400">
-          <span className="w-16 shrink-0">Sound of</span>
+          <span className="w-16 shrink-0">{t("inspector.gm.soundOf")}</span>
           <select
             className={fieldClass}
             value={synth.program === undefined ? "" : String(synth.program)}
-            aria-label="General MIDI instrument"
+            aria-label={t("inspector.gm.label")}
             onChange={(event) => pick(event.target.value)}
           >
-            <option value="">This track&apos;s own synth sound</option>
-            {FAMILIES.map((family) => (
-              <optgroup key={family.family} label={family.family}>
+            <option value="">{t("inspector.gm.own")}</option>
+            {FAMILIES.map((family, index) => (
+              <optgroup key={family.family} label={gmText(t, `families.f${index}`, family.family)}>
                 {family.programs.map((program) => (
                   <option key={program.program} value={String(program.program)}>
-                    {program.name}
+                    {gmText(t, `programs.p${program.program}`, program.name)}
                   </option>
                 ))}
               </optgroup>
@@ -95,42 +107,43 @@ export function GmInstrumentSection({ synth, onSet }: { synth: Synth; onSet: (sy
         <p className="text-[11px] leading-snug text-slate-400">
           {font ? (
             <>
-              Played by <span className="text-slate-200">{font.name}</span>
-              {drums ? "" : `, as ${gmProgramName(synth.program)}`}. This is the instrument written to MIDI files.
+              {t("inspector.gm.playedBy")}
+              <span className="text-slate-200">{font.name}</span>
+              {drums ? "" : t("inspector.gm.asProgram", { name: programName(t, synth.program) })}
+              {t("inspector.gm.writtenToMidi")}
             </>
           ) : (
             <>
-              No SoundFont is loaded, so the built-in synthesizer plays its nearest sound. The instrument is still
-              written to MIDI files.
+              {t("inspector.gm.noFont")}
             </>
           )}
         </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
-        <ActionButton disabled={busy} onClick={() => fileRef.current?.click()} title="Choose a SoundFont (.sf2) on this computer">
+        <ActionButton disabled={busy} onClick={() => fileRef.current?.click()} title={t("inspector.gm.chooseTitle")}>
           {font ? <Music4 className="h-3.5 w-3.5" aria-hidden /> : <Upload className="h-3.5 w-3.5" aria-hidden />}
-          {busy ? "Reading…" : font ? "Change SoundFont" : "Load a SoundFont (.sf2)"}
+          {busy ? t("inspector.gm.reading") : font ? t("inspector.gm.change") : t("inspector.gm.load")}
         </ActionButton>
         {font ? (
           <ActionButton
             variant="danger"
             disabled={busy}
             onClick={() => void forgetSoundFont()}
-            title="Stop using this SoundFont and forget it"
+            title={t("inspector.gm.removeTitle")}
           >
-            <Trash2 className="h-3.5 w-3.5" aria-hidden /> Remove
+            <Trash2 className="h-3.5 w-3.5" aria-hidden /> {t("inspector.gm.remove")}
           </ActionButton>
         ) : null}
       </div>
       {font ? (
         <p className="text-[11px] text-slate-500">
-          {font.programCount} instrument{font.programCount === 1 ? "" : "s"}
-          {font.drums.length ? " and a drum kit" : ""}, kept in this browser only.
+          {tp("inspector.gm.count", font.programCount)}
+          {font.drums.length ? t("inspector.gm.andKit") : ""}
+          {t("inspector.gm.kept")}
         </p>
       ) : (
         <p className="text-[11px] text-slate-500">
-          A SoundFont holds the recorded sound of real instruments. The file stays in this browser and is never
-          uploaded.
+          {t("inspector.gm.about")}
         </p>
       )}
       <input
@@ -138,7 +151,7 @@ export function GmInstrumentSection({ synth, onSet }: { synth: Synth; onSet: (sy
         type="file"
         accept=".sf2"
         className="hidden"
-        aria-label="SoundFont file to load"
+        aria-label={t("inspector.gm.fileLabel")}
         onChange={(event) => {
           void load(event.target.files?.[0]);
           event.target.value = "";

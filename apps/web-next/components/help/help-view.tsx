@@ -6,6 +6,7 @@ import Link from "next/link";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import type { Block, HelpDocument, Inline } from "@/lib/help/markdown";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const quiet =
@@ -16,7 +17,7 @@ const quiet =
 function target(href: string): { href: string; external: boolean } {
   if (href.startsWith("#") || href.startsWith("/")) return { href, external: false };
   // Links between the manual's own files on GitHub become sections of this page.
-  const local = /USER_MANUAL\.md(#.*)?$/.exec(href);
+  const local = /USER_MANUAL(?:\.ru)?\.md(#.*)?$/.exec(href);
   if (local) return { href: local[1] ?? "#", external: false };
   return { href, external: /^https?:/.test(href) };
 }
@@ -144,6 +145,7 @@ function BlockView({ block }: { block: Block }): ReactNode {
 
 /** The user manual: a contents list, a search box, and every section. */
 export function HelpView({ doc }: { doc: HelpDocument }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const words = useMemo(
     () =>
@@ -167,25 +169,25 @@ export function HelpView({ doc }: { doc: HelpDocument }) {
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="display-font text-xl font-semibold text-slate-100 sm:text-2xl">
-            Music Suite <span className="text-cyan-300">/ Help</span>
+            {t("common.appName")} <span className="text-cyan-300">/ {t("common.workspaces.help")}</span>
           </p>
-          <p className="mt-1 max-w-3xl text-sm text-slate-400">{doc.title}: how every part of the app works and what each setting does.</p>
+          <p className="mt-1 max-w-3xl text-sm text-slate-400">{t("charts.help.subtitle", { title: doc.title })}</p>
         </div>
-        <nav className="flex flex-wrap gap-2" aria-label="Music Suite">
+        <nav className="flex flex-wrap gap-2" aria-label={t("common.appName")}>
           <Link href="/" className={quiet}>
-            Analyser &amp; mastering
+            {t("charts.help.analyser")}
           </Link>
           <Link href="/editor" className={quiet}>
-            Studio Editor
+            {t("common.workspaces.editor")}
           </Link>
           <Link href="/generate" className={quiet}>
-            AI Song Studio
+            {t("common.workspaces.studio")}
           </Link>
           <Link href="/synth" className={quiet}>
-            Synth Studio
+            {t("common.workspaces.synth")}
           </Link>
           <Link href="/models" className={quiet}>
-            Models &amp; engines
+            {t("common.workspaces.models")}
           </Link>
           <AppPrefs />
         </nav>
@@ -199,17 +201,17 @@ export function HelpView({ doc }: { doc: HelpDocument }) {
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search the manual"
-              aria-label="Search the manual"
+              placeholder={t("charts.help.search")}
+              aria-label={t("charts.help.search")}
               className="h-10 w-full rounded-lg border border-white/10 bg-slate-900 pl-9 pr-9 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-400 focus:outline-hidden"
             />
             {query ? (
-              <button type="button" aria-label="Clear the search" className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-100" onClick={() => setQuery("")}>
+              <button type="button" aria-label={t("charts.help.clear")} className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-100" onClick={() => setQuery("")}>
                 <X className="h-4 w-4" />
               </button>
             ) : null}
           </label>
-          <nav aria-label="Contents" className="mt-3 space-y-0.5 text-[13px]">
+          <nav aria-label={t("charts.help.contents")} className="mt-3 space-y-0.5 text-[13px]">
             {shown.map((section) => (
               <div key={section.id}>
                 <a href={`#${section.id}`} className="block rounded px-2 py-1 font-semibold text-slate-200 hover:bg-slate-800 hover:text-cyan-300">
@@ -226,7 +228,7 @@ export function HelpView({ doc }: { doc: HelpDocument }) {
                 )}
               </div>
             ))}
-            {!shown.length ? <p className="px-2 py-1 text-slate-500">Nothing in the manual matches that.</p> : null}
+            {!shown.length ? <p className="px-2 py-1 text-slate-500">{t("charts.help.noMatch")}</p> : null}
           </nav>
         </aside>
 

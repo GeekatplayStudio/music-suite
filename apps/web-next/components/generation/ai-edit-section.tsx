@@ -6,29 +6,14 @@ import { ActionButton, PanelSection, Slider, fieldClass } from "@/components/edi
 import type { Clip } from "@/lib/editor/types";
 import { generationApi, optionLabel, optionValue, type CostEstimate, type ProviderInfo, type FieldValues } from "@/lib/generation/api";
 import { SchemaForm } from "@/components/generation/schema-form";
+import { useI18n } from "@/lib/i18n";
 
-/** What each edit does, in the words shown to the user. */
-const TASK_HINTS: Record<string, string> = {
-  restyle: "Recreate this recording with the described sound.",
-  inpaint: "Regenerate the highlighted region using the description.",
-  continue: "Generate additional music after the source recording.",
-  reference: "Use this recording's sound to steer a new Magenta performance.",
-  repaint: "Regenerates the highlighted part of this clip and keeps everything around it exactly as it is.",
-  extend: "Adds new music before or after this clip that continues it.",
-  cover: "Plays the same song in a new style.",
-  extract: "Recreates one instrument from this clip on its own track. For exact stems, use Separate instead.",
-  add_layer: "Writes a new instrument part that fits this clip, on its own track.",
-  complete:
-    "Builds a full arrangement around this part, for example a band around a vocal. Works best on a single part, such as a stem from Separate.",
-};
-const TASK_TITLES: Record<string, string> = {
-  repaint: "regenerated",
-  extend: "extended",
-  cover: "restyled",
-  extract: "extracted",
-  add_layer: "new part",
-  complete: "full song",
-};
+/** Edits with a hint in the dictionary (studioTabs.aiEdit.hints.*). */
+const TASK_HINTS = ["restyle", "inpaint", "continue", "reference", "repaint", "extend", "cover", "extract", "add_layer", "complete"] as const;
+const hasHint = (id: string): id is (typeof TASK_HINTS)[number] => (TASK_HINTS as readonly string[]).includes(id);
+/** Edits whose new clip gets a word added to its name (studioTabs.aiEdit.titles.*). */
+const TASK_TITLES = ["repaint", "extend", "cover", "extract", "add_layer", "complete"] as const;
+const hasTitle = (id: string): id is (typeof TASK_TITLES)[number] => (TASK_TITLES as readonly string[]).includes(id);
 const NEEDS_STYLE = new Set(["restyle", "inpaint", "continue", "reference", "repaint", "extend", "cover", "add_layer", "complete"]);
 const EXTEND_CHOICES = [10, 20, 30, 60];
 
@@ -47,6 +32,7 @@ interface AiEditSectionProps {
 }
 
 export function AiEditSection({ sourceSeconds, stemLabel, projectId, clip, selection, providers, busy, onRun, onOpenSongStudio }: AiEditSectionProps) {
+  const { t: tr, locale } = useI18n();
   const usable = providers.filter((p) => p.status.ready && p.schema.tasks.some((t) => t.source));
   const [providerId, setProviderId] = useState<string | null>(null);
   const provider = usable.find((p) => p.id === providerId) ?? usable[0] ?? providers[0] ?? null;
@@ -90,16 +76,15 @@ export function AiEditSection({ sourceSeconds, stemLabel, projectId, clip, selec
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [estimateKey]);
 
-  const hint =
-    "Change this clip with AI, on this computer or with an online service you have set up. Every change can be undone.";
+  const hint = tr("studioTabs.aiEdit.hint");
   if (!provider || !provider.status.ready) {
     return (
-      <PanelSection title="AI edit" hint={hint}>
+      <PanelSection title={tr("studioTabs.aiEdit.title")} hint={hint}>
         <p className="text-[11px] text-slate-400">
-          {provider ? provider.status.message : "The local AI engine is not available."} Install it from AI Song Studio.
+          {provider ? provider.status.message : tr("studioTabs.aiEdit.noEngine")} {tr("studioTabs.aiEdit.installFromStudio")}
         </p>
         <ActionButton className="w-full" onClick={onOpenSongStudio}>
-          Open AI Song Studio
+          {tr("studioTabs.aiEdit.openStudio")}
         </ActionButton>
       </PanelSection>
     );
@@ -133,10 +118,10 @@ export function AiEditSection({ sourceSeconds, stemLabel, projectId, clip, selec
   };
 
   function editTitle(): string {
-    const label = TASK_TITLES[task.id] ?? task.id;
+    const label = hasTitle(task.id) ? tr(`studioTabs.aiEdit.titles.${task.id}`) : task.id;
     const instrument = optionLabel(trackField?.options?.find((o) => optionValue(o) === track) ?? track);
-    if (task.id === "extract") return `${instrument} (from ${clip.name})`;
-    if (task.id === "add_layer") return `New ${instrument.toLowerCase()} part`;
+    if (task.id === "extract") return tr("studioTabs.aiEdit.extractedTitle", { instrument, clip: clip.name });
+    if (task.id === "add_layer") return tr("studioTabs.aiEdit.newPartTitle", { instrument: instrument.toLocaleLowerCase(locale) });
     return `${clip.name} (${label})`;
   }
 
@@ -173,23 +158,23 @@ export function AiEditSection({ sourceSeconds, stemLabel, projectId, clip, selec
   }
 
   return (
-    <PanelSection title="AI edit" hint={hint}>
+    <PanelSection title={tr("studioTabs.aiEdit.title")} hint={hint}>
       {stemLabel && tasks.some((t) => ["cover", "restyle"].includes(t.id) && t.available !== false) && (
         <ActionButton className="w-full" disabled={busy} onClick={() => {
           setTaskId(tasks.find((t) => ["cover", "restyle"].includes(t.id) && t.available !== false)!.id);
           setStyle(`Solo ${stemLabel}, clean isolated performance, preserve the reference phrasing and tempo`);
           setFaithful(true);
         }}>
-          AI reconstruct this stem
+          {tr("studioTabs.aiEdit.reconstruct")}
         </ActionButton>
       )}
       {usable.length > 1 ? (
         <label className="block space-y-1 text-[11px] text-slate-400">
-          <span>Generator</span>
+          <span>{tr("studioTabs.aiEdit.generator")}</span>
           <select
             className={fieldClass}
             value={provider.id}
-            aria-label="Generator for the AI edit"
+            aria-label={tr("studioTabs.aiEdit.generatorLabel")}
             onChange={(event) => {
               setProviderId(event.target.value);
               setTaskId("repaint");
@@ -204,55 +189,56 @@ export function AiEditSection({ sourceSeconds, stemLabel, projectId, clip, selec
         </label>
       ) : null}
       <label className="block space-y-1 text-[11px] text-slate-400">
-        <span>What to do</span>
+        <span>{tr("studioTabs.aiEdit.whatToDo")}</span>
         <select
           className={fieldClass}
           value={task.id}
-          aria-label="AI edit"
+          aria-label={tr("studioTabs.aiEdit.title")}
           onChange={(event) => setTaskId(event.target.value)}
         >
           {tasks.map((t) => (
             <option key={t.id} value={t.id}>
               {t.label}
-              {t.available === false ? " (needs the editing model)" : ""}
+              {t.available === false ? tr("studioTabs.aiEdit.needsEditing") : ""}
             </option>
           ))}
         </select>
       </label>
-      <p className="text-[11px] leading-snug text-slate-400">{stemLabel && ["cover", "restyle"].includes(task.id) ? "Generate a replacement performance from this stem. Notes and timing may change." : TASK_HINTS[task.id]}</p>
+      <p className="text-[11px] leading-snug text-slate-400">{stemLabel && ["cover", "restyle"].includes(task.id) ? tr("studioTabs.aiEdit.hints.stem") : hasHint(task.id) ? tr(`studioTabs.aiEdit.hints.${task.id}`) : ""}</p>
 
       {unavailable ? (
         <>
           <p className="text-[11px] text-amber-200">{task.reason}</p>
           <ActionButton className="w-full" onClick={onOpenSongStudio}>
-            Open AI Song Studio Settings
+            {tr("studioTabs.aiEdit.openSettings")}
           </ActionButton>
         </>
       ) : null}
       {yueCover && <div className="space-y-2 text-xs text-slate-300">
-        <label className="block">Reviewed source melody (ABC score)
-          <textarea aria-label="Cover melody ABC score" value={abc} onChange={event => setAbc(event.target.value)}
+        <label className="block">{tr("studioTabs.aiEdit.abc")}
+          <textarea aria-label={tr("studioTabs.aiEdit.abcLabel")} value={abc} onChange={event => setAbc(event.target.value)}
             rows={6} maxLength={20000} className={`${fieldClass} h-auto font-mono`} />
         </label>
-        <p>YuE2 follows this score. Review the source melody, chords and lyric phrasing before rendering.</p>
-        <label className="flex gap-2"><input type="checkbox" checked={acceptTerms} onChange={event => setAcceptTerms(event.target.checked)} />My use complies with the YuE2 model terms and creator permissions</label>
+        <p>{tr("studioTabs.aiEdit.abcHelp")}</p>
+        <label className="flex gap-2"><input type="checkbox" checked={acceptTerms} onChange={event => setAcceptTerms(event.target.checked)} />{tr("studioTabs.aiEdit.abcTerms")}</label>
       </div>}
-      {reversed ? <p className="text-[11px] text-amber-200">Un-reverse the clip first.</p> : null}
+      {reversed ? <p className="text-[11px] text-amber-200">{tr("studioTabs.aiEdit.unreverse")}</p> : null}
       {needsSelection && !selectionOk ? (
-        <p className="text-[11px] text-amber-200">
-          Highlight at least one second of this clip with the Range tool (R), then come back here.
-        </p>
+        <p className="text-[11px] text-amber-200">{tr("studioTabs.aiEdit.needSelection")}</p>
       ) : null}
       {needsSelection && selection && selectionOk ? (
         <p className="text-[11px] tabular-nums text-slate-300">
-          Section: {selection.start.toFixed(1)} s to {selection.end.toFixed(1)} s of the clip&apos;s audio
+          {tr("studioTabs.aiEdit.section", {
+            start: selection.start.toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+            end: selection.end.toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+          })}
         </p>
       ) : null}
 
       {task.id === "extract" || task.id === "add_layer" || task.id === "complete" ? (
         <label className="block space-y-1 text-[11px] text-slate-400">
-          <span>{task.id === "extract" ? "Instrument to pull out" : task.id === "add_layer" ? "Part to add" : "This clip is"}</span>
-          <select className={fieldClass} value={track} aria-label="Instrument" onChange={(event) => setTrack(event.target.value)}>
+          <span>{task.id === "extract" ? tr("studioTabs.aiEdit.instrumentOut") : task.id === "add_layer" ? tr("studioTabs.aiEdit.partToAdd") : tr("studioTabs.aiEdit.clipIs")}</span>
+          <select className={fieldClass} value={track} aria-label={tr("studioTabs.aiEdit.instrument")} onChange={(event) => setTrack(event.target.value)}>
             {(trackField?.options ?? []).map((option) => (
               <option key={optionValue(option)} value={optionValue(option)}>
                 {optionLabel(option)}
@@ -264,15 +250,13 @@ export function AiEditSection({ sourceSeconds, stemLabel, projectId, clip, selec
 
       {NEEDS_STYLE.has(task.id) || task.id === "extract" ? (
         <label className="block space-y-1 text-[11px] text-slate-400">
-          <span>{task.id === "cover" ? "New style" : task.id === "extract" ? "Describe it (optional)" : "Style"}</span>
+          <span>{task.id === "cover" ? tr("studioTabs.aiEdit.newStyle") : task.id === "extract" ? tr("studioTabs.aiEdit.describeOptional") : tr("studioTabs.aiEdit.style")}</span>
           <textarea
             rows={2}
             value={style}
             maxLength={1500}
-            aria-label="Style for the AI edit"
-            placeholder={
-              task.id === "cover" ? "e.g. lo-fi hip hop, dusty drums, mellow piano" : "e.g. warm acoustic folk, male vocal"
-            }
+            aria-label={tr("studioTabs.aiEdit.styleLabel")}
+            placeholder={task.id === "cover" ? tr("studioTabs.aiEdit.coverPlaceholder") : tr("studioTabs.aiEdit.stylePlaceholder")}
             onChange={(event) => setStyle(event.target.value)}
             className={`${fieldClass} h-auto py-1.5 leading-snug`}
           />
@@ -281,30 +265,30 @@ export function AiEditSection({ sourceSeconds, stemLabel, projectId, clip, selec
 
       {task.id === "repaint" || task.id === "extend" || task.id === "cover" ? (
         <label className="block space-y-1 text-[11px] text-slate-400">
-          <span>Lyrics (optional)</span>
+          <span>{tr("studioTabs.aiEdit.lyrics")}</span>
           <textarea
             rows={2}
             value={lyrics}
             maxLength={6000}
-            aria-label="Lyrics for the AI edit"
-            placeholder="Leave empty for an instrumental part"
+            aria-label={tr("studioTabs.aiEdit.lyricsLabel")}
+            placeholder={tr("studioTabs.aiEdit.lyricsPlaceholder")}
             onChange={(event) => setLyrics(event.target.value)}
             className={`${fieldClass} h-auto py-1.5 font-mono leading-snug`}
           />
         </label>
       ) : null}
 
-      {stableEdit && renderSeconds > stableLimit && <p role="alert">This checkpoint supports at most {stableLimit} seconds.</p>}
-      {diffEdit && sourceSeconds > 285 && <p role="alert">DiffRhythm supports at most 285 seconds.</p>}
+      {stableEdit && renderSeconds > stableLimit && <p role="alert">{tr("studioTabs.aiEdit.checkpointLimit", { seconds: stableLimit })}</p>}
+      {diffEdit && sourceSeconds > 285 && <p role="alert">{tr("studioTabs.aiEdit.diffLimit")}</p>}
       {extraFields.length > 0 && <details className="rounded-lg border border-white/10 p-2">
-        <summary className="cursor-pointer text-xs text-slate-300">Model controls</summary>
+        <summary className="cursor-pointer text-xs text-slate-300">{tr("studioTabs.aiEdit.modelControls")}</summary>
         <SchemaForm schema={{ ...provider.schema, fields: extraFields }} values={extraValues} disabled={busy}
           onChange={(key, value) => setAdvancedValues(previous => ({ ...previous, [`${provider.id}:${task.id}:${key}`]: value }))} />
       </details>}
       {task.id === "extend" || task.id === "continue" ? (
         <div className="grid grid-cols-2 gap-2">
           <label className="space-y-1 text-[11px] text-slate-400">
-            <span>Add</span>
+            <span>{tr("studioTabs.aiEdit.add")}</span>
             <select className={fieldClass} value={extendSeconds} onChange={(event) => setExtendSeconds(Number(event.target.value))}>
               {EXTEND_CHOICES.map((seconds) => (
                 <option key={seconds} value={seconds}>
@@ -314,14 +298,14 @@ export function AiEditSection({ sourceSeconds, stemLabel, projectId, clip, selec
             </select>
           </label>
           {task.id === "extend" && <label className="space-y-1 text-[11px] text-slate-400">
-            <span>Where</span>
+            <span>{tr("studioTabs.aiEdit.where")}</span>
             <select
               className={fieldClass}
               value={extendAt}
               onChange={(event) => setExtendAt(event.target.value === "start" ? "start" : "end")}
             >
-              <option value="end">After the end</option>
-              <option value="start">Before the start</option>
+              <option value="end">{tr("studioTabs.aiEdit.afterEnd")}</option>
+              <option value="start">{tr("studioTabs.aiEdit.beforeStart")}</option>
             </select>
           </label>}
         </div>
@@ -330,7 +314,7 @@ export function AiEditSection({ sourceSeconds, stemLabel, projectId, clip, selec
       {task.id === "cover" && !yueCover ? (
         <>
           <Slider
-            label="Keep"
+            label={tr("studioTabs.aiEdit.keep")}
             value={strength}
             min={0.05}
             max={1}
@@ -346,7 +330,7 @@ export function AiEditSection({ sourceSeconds, stemLabel, projectId, clip, selec
               onChange={(event) => setFaithful(event.target.checked)}
               className="mt-0.5 h-4 w-4 accent-cyan-400"
             />
-            <span>Stay close to the original (keeps melody and timing, changes the production)</span>
+            <span>{tr("studioTabs.aiEdit.faithful")}</span>
           </label>
         </>
       ) : null}
@@ -354,7 +338,7 @@ export function AiEditSection({ sourceSeconds, stemLabel, projectId, clip, selec
       {online && task.id === "repaint" ? (
         <label className="flex min-h-6 cursor-pointer items-start gap-2 text-[11px] text-slate-200">
           <input type="checkbox" checked={faithful} onChange={(event) => setFaithful(event.target.checked)} className="mt-0.5 h-4 w-4 accent-cyan-400" />
-          <span>Stay close to the original section</span>
+          <span>{tr("studioTabs.aiEdit.faithfulSection")}</span>
         </label>
       ) : null}
       {online ? (
@@ -366,16 +350,13 @@ export function AiEditSection({ sourceSeconds, stemLabel, projectId, clip, selec
               onChange={(event) => setAllowUpload(event.target.checked)}
               className="mt-0.5 h-4 w-4 accent-amber-300"
             />
-            <span>
-              Allow uploading this clip&apos;s audio to {provider.name.replace(/ \(.*\)$/, "")} if it was not made there. The upload is billed
-              like generating the same length.
-            </span>
+            <span>{tr("studioTabs.aiEdit.allowUpload", { service: provider.name.replace(/ \(.*\)$/, "") })}</span>
           </label>
           {estimate ? (
             <p className="text-[11px] text-amber-200">
               {estimate.summary}{" "}
               <a href={estimate.url} target="_blank" rel="noreferrer noopener" className="underline">
-                Prices as of {estimate.as_of}
+                {tr("studioTabs.aiEdit.prices", { date: estimate.as_of })}
               </a>
             </p>
           ) : null}
@@ -384,7 +365,7 @@ export function AiEditSection({ sourceSeconds, stemLabel, projectId, clip, selec
 
       {has("variations") ? (
       <label className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
-        <span>Versions</span>
+        <span>{tr("studioTabs.aiEdit.versions")}</span>
         <select className={`${fieldClass} w-20`} value={versions} onChange={(event) => setVersions(Number(event.target.value))}>
           {[1, 2, 3, 4].map((count) => (
             <option key={count} value={count}>
@@ -398,7 +379,7 @@ export function AiEditSection({ sourceSeconds, stemLabel, projectId, clip, selec
         {task.label}
       </ActionButton>
       {versions > 1 ? (
-        <p className="text-[11px] text-slate-400">The first version replaces or adds the clip; the others go on muted tracks to compare.</p>
+        <p className="text-[11px] text-slate-400">{tr("studioTabs.aiEdit.versionsHelp")}</p>
       ) : null}
     </PanelSection>
   );

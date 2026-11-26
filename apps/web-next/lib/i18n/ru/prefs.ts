@@ -9,7 +9,8 @@ export const prefs: Dictionary["prefs"] = {
     amber: "Янтарная студия",
     violet: "Фиолетовая ночь",
     forest: "Лес",
-    magenta: "Пурпур"
+    magenta: "Пурпур",
+    light: "Светлая (дневная)"
   },
   note: "Сохраняется в этом браузере."
 };

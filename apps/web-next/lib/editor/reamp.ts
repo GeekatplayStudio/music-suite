@@ -98,6 +98,19 @@ export interface RoundTrip {
   peak: number;
 }
 
+/** Why a keyboard check failed, for the interface to say in its own language. */
+export type ReampErrorCode = "noMidiOut" | "noOnset" | "nothingBack";
+
+/** A failed keyboard check: the English message plus a code the interface translates. */
+export class ReampError extends Error {
+  constructor(
+    readonly code: ReampErrorCode,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
 /**
  * Measure the round trip by playing one note and finding when it comes back.
  *
@@ -109,7 +122,7 @@ export async function measureRoundTrip(
   engine: EditorEngine,
   options: { deviceId?: string; pitch?: number; tries?: number } = {}
 ): Promise<RoundTrip> {
-  if (!midiOutHub.ready()) throw new Error("Choose the keyboard's MIDI output first.");
+  if (!midiOutHub.ready()) throw new ReampError("noMidiOut", "Choose the keyboard's MIDI output first.");
   const pitch = options.pitch ?? 60;
   const tries = Math.max(1, options.tries ?? 3);
   const measured: number[] = [];
@@ -137,11 +150,9 @@ export async function measureRoundTrip(
   }
 
   if (!measured.length) {
-    throw new Error(
-      peak > 0.002
-        ? "Sound arrived but its start could not be found. Try a louder volume on the keyboard."
-        : "Nothing came back. Check the keyboard is on, its volume is up, and the right audio input is chosen."
-    );
+    throw peak > 0.002
+      ? new ReampError("noOnset", "Sound arrived but its start could not be found. Try a louder volume on the keyboard.")
+      : new ReampError("nothingBack", "Nothing came back. Check the keyboard is on, its volume is up, and the right audio input is chosen.");
   }
   measured.sort((a, b) => a - b);
   return { seconds: measured[Math.floor(measured.length / 2)], peak };

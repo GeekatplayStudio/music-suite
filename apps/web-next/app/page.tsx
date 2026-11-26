@@ -70,52 +70,44 @@ import {
 } from "@/lib/types";
 import { startSongUrl } from "@/lib/handoff";
 import { AppPrefs } from "@/components/app-prefs";
+import { DetachButton, DetachedPlaceholder, useDetachable } from "@/components/detachable";
 import { HelpLink } from "@/components/help-link";
+import { type I18n, type MessageKey, useI18n } from "@/lib/i18n";
 
-const ALL_CHARTS: Array<{ key: string; title: string; height: number }> = [
-  { key: "waveform", title: "Waveform + Envelope", height: 680 },
-  { key: "loudness", title: "Loudness Timeline", height: 620 },
-  { key: "spectrum", title: "Average Spectrum", height: 620 },
-  { key: "stereo", title: "Stereo Correlation + M/S", height: 620 },
-  { key: "correlation_meter", title: "Correlation Meter", height: 620 },
-  { key: "ms_view", title: "Mid/Side View", height: 620 },
-  { key: "vectorscope", title: "Vectorscope / Goniometer", height: 680 },
-  { key: "spectrogram_stft_linear", title: "STFT Spectrogram (Linear)", height: 760 },
-  { key: "spectrogram_stft_log", title: "STFT Spectrogram (Log)", height: 760 },
-  { key: "spectrogram_mel", title: "Mel Spectrogram", height: 760 },
-  { key: "spectrogram_cqt", title: "CQT Spectrogram", height: 760 }
+const ALL_CHARTS: Array<{ key: string; height: number }> = [
+  { key: "waveform", height: 680 },
+  { key: "loudness", height: 620 },
+  { key: "spectrum", height: 620 },
+  { key: "stereo", height: 620 },
+  { key: "correlation_meter", height: 620 },
+  { key: "ms_view", height: 620 },
+  { key: "vectorscope", height: 680 },
+  { key: "spectrogram_stft_linear", height: 760 },
+  { key: "spectrogram_stft_log", height: 760 },
+  { key: "spectrogram_mel", height: 760 },
+  { key: "spectrogram_cqt", height: 760 }
 ];
 
 type ChartKey = (typeof ALL_CHARTS)[number]["key"];
 
 const CHART_GROUPS: Array<{
   id: "all" | "mix" | "stereo" | "spectral";
-  label: string;
-  description: string;
   keys: ChartKey[];
 }> = [
   {
     id: "all",
-    label: "All Views",
-    description: "Complete analysis surface for technical review.",
     keys: ALL_CHARTS.map((chart) => chart.key)
   },
   {
     id: "mix",
-    label: "Mix Review",
-    description: "Waveform, loudness, tonal balance, and issue markers.",
     keys: ["waveform", "loudness", "spectrum", "stereo", "correlation_meter", "ms_view", "vectorscope"]
   },
   {
     id: "stereo",
-    label: "Stereo Focus",
-    description: "Width, mono compatibility, and spatial balance.",
     keys: ["stereo", "correlation_meter", "ms_view", "vectorscope"]
   },
   {
     id: "spectral",
-    label: "Spectral",
-    description: "Detailed time-frequency inspection across STFT, mel, and CQT views.",
     keys: ["spectrogram_stft_linear", "spectrogram_stft_log", "spectrogram_mel", "spectrogram_cqt"]
   }
 ];
@@ -127,158 +119,55 @@ const EQ_BANDS = [
 ] as const;
 const DEFAULT_EQ_GAINS = EQ_BANDS.map(() => 0);
 
-const CHART_HELP: Record<string, string> = {
-  waveform:
-    "Shows amplitude over time plus peak/RMS envelopes. Use it to spot transients, dense limiting, and envelope shape.",
-  loudness:
-    "Momentary and short-term LUFS over time. Look for consistency and dips/spikes against your target delivery level.",
-  spectrum:
-    "Average frequency balance. Useful for tonal tilt checks and identifying too much sub, harshness, or missing air.",
-  stereo:
-    "Correlation and Mid/Side ratio together. Negative correlation warns of mono compatibility issues.",
-  correlation_meter:
-    "Correlation from -1 to +1. Values near +1 are mono-compatible; values below 0 can collapse in mono.",
-  ms_view:
-    "Mid/Side ratio and L-R balance trends. Helps detect width imbalance or side-heavy passages.",
-  vectorscope:
-    "Stereo image scatter of Left vs Right. Vertical tendency is mono-ish; wide cloud indicates broader stereo spread.",
-  spectrogram_stft_linear:
-    "Time-frequency energy with linear frequency axis. Good for detailed technical inspection of full spectrum content.",
-  spectrogram_stft_log:
-    "STFT on logarithmic frequency scale. Easier to read musically, especially low-frequency structure.",
-  spectrogram_mel:
-    "Perceptually-weighted spectrogram aligned to how hearing groups frequency bands.",
-  spectrogram_cqt:
-    "Constant-Q spectrogram with musical spacing across octaves, useful for pitch/harmonic structure."
-};
+/** Rows of the glossary (analyser.guide.rows.<id>). */
+const ELEMENT_GUIDE_ROWS = [
+  "compressionLoss",
+  "peakToNoise",
+  "peakToLufs",
+  "compressionAssessment",
+  "metadataTags",
+  "rawMetadata",
+  "integratedLufs",
+  "truePeak",
+  "crestFactor",
+  "noiseFloor",
+  "markersAround",
+  "stageTicker",
+  "hardReset",
+  "masteringBackend",
+  "masteringReference",
+  "refinePasses",
+  "adaptation",
+  "selfCheckAssessment",
+  "selfCheckScore",
+  "selfCheckLists",
+  "selfCheckMatch",
+  "refinementDiagnostics",
+  "proModules",
+  "naValues"
+] as const;
 
-const ELEMENT_GUIDE_ROWS: Array<{ element: string; meaning: string }> = [
-  {
-    element: "Compression Loss Estimate",
-    meaning:
-      "How far below the audible top (20 kHz, or Nyquist for low sample rates) the measured content stops. 0 Hz means nothing audible is missing; a large value on a lossless file suggests it was transcoded from a lossy source."
-  },
-  {
-    element: "Range Detail | Peak to Noise",
-    meaning:
-      "Difference between peak level and the measured noise floor. Larger values usually indicate cleaner dynamic span. N/A when the track has no quiet gaps to measure a floor in."
-  },
-  {
-    element: "Range Detail | Peak to LUFS",
-    meaning:
-      "Difference between true peak and integrated loudness. Useful for headroom and transient contrast context."
-  },
-  {
-    element: "Compression Assessment",
-    meaning:
-      "Heuristic summary from codec/container metadata and spectral behavior. Informative, but not a forensic codec detector."
-  },
-  {
-    element: "Metadata Tags",
-    meaning:
-      "Embedded tags like artist/title/album. 'No embedded tags detected' means tags are absent or unreadable in this file."
-  },
-  {
-    element: "Show Raw Metadata JSON",
-    meaning:
-      "Unfiltered metadata payload from ffprobe and mutagen for technical inspection."
-  },
-  {
-    element: "Integrated LUFS",
-    meaning:
-      "Overall perceived loudness of the full track measured with BS.1770-style loudness modeling."
-  },
-  {
-    element: "True Peak dBFS",
-    meaning:
-      "Oversampled peak estimate including possible inter-sample peaks that can clip during playback/encoding."
-  },
-  {
-    element: "Crest Factor dB",
-    meaning:
-      "Peak-to-RMS contrast. Higher crest factor often means more transient punch and less constant limiting."
-  },
-  {
-    element: "Noise Floor dBFS",
-    meaning:
-      "Level of the noise heard where the music drops out (fades, gaps, quiet intros). More negative is cleaner. Dense tracks with no such passages show N/A, because the music masks the floor."
-  },
-  {
-    element: "Markers Around Current Timeline Position",
-    meaning:
-      "Warnings active near current playback cursor. 'No rows' means no active warnings at that timeline point."
-  },
-  {
-    element: "Session Control | Stage Ticker",
-    meaning:
-      "Live progress detail for current analysis stage (decode, scan, spectrograms, report generation). Useful when percent appears static."
-  },
-  {
-    element: "Session Control | Hard Reset",
-    meaning:
-      "Clears run history and resets queued/running worker jobs to recover from stalled analysis loops."
-  },
-  {
-    element: "AI Mastering | Backend",
-    meaning:
-      "Execution path for mastering. 'auto' chooses best available backend at runtime; unavailable backends fall back safely."
-  },
-  {
-    element: "AI Mastering | Reference song",
-    meaning:
-      "Optional analyzed run id used as tonal/loudness reference (primarily for matchering-style reference mastering)."
-  },
-  {
-    element: "AI Mastering | Refine Passes",
-    meaning:
-      "Maximum marker-aware corrective passes. More passes can improve stubborn issues but are bounded to prevent loops."
-  },
-  {
-    element: "AI Mastering | Source-Aware Adaptation",
-    meaning:
-      "Before rendering outputs, AudioQI can nudge de-ess, low/high balance, compression, limiter drive, and peak headroom from detected source issues. Manual loudness targets stay in place unless extra peak safety is required."
-  },
-  {
-    element: "Post-Master Self-Check | Assessment",
-    meaning:
-      "Overall result label: strong improvement, partial improvement, unchanged, or regression (rollback protection is applied)."
-  },
-  {
-    element: "Post-Master Self-Check | Issue Score",
-    meaning:
-      "Weighted count of active issue classes before vs after mastering. Lower after-score indicates improvement."
-  },
-  {
-    element: "Post-Master Self-Check | Remaining/Resolved/Worsened",
-    meaning:
-      "Issue classes still present, removed, or increased after mastering. Remaining high-severity issues usually need mix/stem fixes."
-  },
-  {
-    element: "Post-Master Self-Check | AI Recommendation Match",
-    meaning:
-      "Compares applied mode/preset/targets to analyzer recommendations. Match does not guarantee issue resolution."
-  },
-  {
-    element: "Refinement Diagnostics",
-    meaning:
-      "Shows accepted passes, rollbacks, final issue score, and whether stem fallback was used."
-  },
-  {
-    element: "Pro Modules",
-    meaning:
-      "Runtime availability for optional integrations (ffmpeg, pedalboard, matchering, pyebur128)."
-  },
-  {
-    element: "N/A values",
-    meaning:
-      "Shown when signal/metadata is insufficient for a metric (e.g., no stable noise floor or missing codec metadata)."
-  }
-];
+/** Statuses and severities that come from the backend and have a translation. */
+const STATUS_WORDS = ["idle", "uploaded", "queued", "running", "completed", "failed", "cancelled"] as const;
+const SEVERITY_WORDS = ["critical", "high", "medium", "low", "info", "warning", "error"] as const;
 
-const CHART_GUIDE_ROWS = ALL_CHARTS.map((chart) => ({
-  element: chart.title,
-  meaning: CHART_HELP[chart.key] ?? "Graph interpretation description unavailable."
-}));
+function statusWord(t: I18n["t"], status: string): string {
+  const known = (STATUS_WORDS as readonly string[]).includes(status);
+  return known ? t(`analyser.status.${status as (typeof STATUS_WORDS)[number]}`) : status;
+}
+
+function severityWord(t: I18n["t"], severity: string): string {
+  const known = (SEVERITY_WORDS as readonly string[]).includes(severity);
+  return known ? t(`analyser.severity.${severity as (typeof SEVERITY_WORDS)[number]}`) : severity;
+}
+
+function chartTitle(t: I18n["t"], key: string): string {
+  return t(`analyser.chartTitles.${key}` as MessageKey);
+}
+
+function chartHelp(t: I18n["t"], key: string): string {
+  return t(`analyser.chartHelp.${key}` as MessageKey);
+}
 
 const statusVariant: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   completed: "default",
@@ -302,8 +191,8 @@ const MASTER_PRESETS = ["streaming", "club", "film", "voice"] as const;
 const MASTER_BACKENDS = ["auto", "internal", "ffmpeg", "pedalboard", "matchering"] as const;
 // "" keeps whatever the preset (and the adaptive preflight) decides; "0" turns bass mono off.
 const BASS_MONO_OPTIONS = [
-  { value: "", label: "Preset default" },
-  { value: "0", label: "Off" },
+  { value: "", label: "" },
+  { value: "0", label: "" },
   { value: "80", label: "80 Hz" },
   { value: "100", label: "100 Hz" },
   { value: "120", label: "120 Hz" },
@@ -313,59 +202,43 @@ const ANALYSIS_STALE_WARNING_SECONDS = 300;
 const NORMALIZATION_PROFILE_OPTIONS = [
   {
     id: "off",
-    label: "Off (Preset/Manual)",
     targetLufs: null,
-    truePeakDbfs: null,
-    help: "Use preset defaults or manual LUFS/TP values."
+    truePeakDbfs: null
   },
   {
     id: "youtube",
-    label: "YouTube",
     targetLufs: -14.0,
-    truePeakDbfs: -1.0,
-    help: "Common YouTube normalization target."
+    truePeakDbfs: -1.0
   },
   {
     id: "spotify",
-    label: "Spotify",
     targetLufs: -14.0,
-    truePeakDbfs: -1.0,
-    help: "Typical Spotify normalization alignment."
+    truePeakDbfs: -1.0
   },
   {
     id: "apple_music",
-    label: "Apple Music",
     targetLufs: -16.0,
-    truePeakDbfs: -1.0,
-    help: "Conservative Apple Music-style loudness."
+    truePeakDbfs: -1.0
   },
   {
     id: "instagram",
-    label: "Instagram",
     targetLufs: -14.0,
-    truePeakDbfs: -1.0,
-    help: "Social/mobile balanced target."
+    truePeakDbfs: -1.0
   },
   {
     id: "tiktok",
-    label: "TikTok",
     targetLufs: -14.0,
-    truePeakDbfs: -1.0,
-    help: "Short-form platform target."
+    truePeakDbfs: -1.0
   },
   {
     id: "broadcast_ebu",
-    label: "Broadcast EBU",
     targetLufs: -23.0,
-    truePeakDbfs: -1.0,
-    help: "EBU R128 broadcast delivery."
+    truePeakDbfs: -1.0
   },
   {
     id: "podcast_voice",
-    label: "Podcast Voice",
     targetLufs: -16.0,
-    truePeakDbfs: -1.5,
-    help: "Speech-forward podcast normalization."
+    truePeakDbfs: -1.5
   }
 ] as const;
 type NormalizationProfileId = (typeof NORMALIZATION_PROFILE_OPTIONS)[number]["id"];
@@ -437,9 +310,9 @@ const markerSeverityVariant: Record<string, "default" | "secondary" | "destructi
   info: "default"
 };
 
-function formatDate(value: string): string {
+function formatDate(value: string, locale: string): string {
   const d = new Date(value);
-  return `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+  return `${d.toLocaleDateString(locale)} ${d.toLocaleTimeString(locale)}`;
 }
 
 function metricNumber(obj: Record<string, unknown> | undefined, path: string[], fallback = 0): number {
@@ -481,19 +354,24 @@ function text(value: unknown, fallback = "N/A"): string {
   return String(value);
 }
 
-function stageLabel(stage: string | null | undefined): string {
+function stageLabel(stage: string | null | undefined, t: I18n["t"]): string {
   const raw = text(stage, "").trim();
-  if (!raw) return "Idle";
+  if (!raw || raw === "idle") return t("analyser.idle");
+  // A run's status standing in for its stage ("queued", "completed"…) is shown in the interface language.
+  if ((STATUS_WORDS as readonly string[]).includes(raw)) {
+    const word = t(`analyser.status.${raw as (typeof STATUS_WORDS)[number]}`);
+    return `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}`;
+  }
   return raw
     .split("_")
     .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1)}` : part))
     .join(" ");
 }
 
-function stageTickerText(detail: string | null | undefined, stage: string | null | undefined): string {
+function stageTickerText(detail: string | null | undefined, stage: string | null | undefined, t: I18n["t"]): string {
   const cleanedDetail = text(detail, "").trim();
   if (cleanedDetail) return cleanedDetail;
-  return `${stageLabel(stage)}.`;
+  return `${stageLabel(stage, t)}.`;
 }
 
 function secondsSinceIso(isoValue: string | null | undefined): number | null {
@@ -510,11 +388,6 @@ function hz(v: number): string {
 
 function hzRange(low: number, high: number): string {
   return `${hz(low)} - ${hz(high)}`;
-}
-
-function maybeHz(value: number | null): string {
-  if (value === null) return "N/A";
-  return hz(value);
 }
 
 function bytesLabel(value: number): string {
@@ -606,7 +479,7 @@ async function saveFileWithPicker(url: string, filename: string): Promise<void> 
     window.clearTimeout(timeout);
   }
   if (!response.ok) {
-    throw new Error(`Download failed: ${response.status}`);
+    throw new Error(`HTTP ${response.status}`);
   }
 
   if (pickerHost.showSaveFilePicker) {
@@ -749,8 +622,13 @@ function encodeAudioBufferToWav(audioBuffer: AudioBuffer): Blob {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
+const POPOUT_BUTTON =
+  "inline-flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-slate-200 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300";
+
 export default function HomePage() {
   const router = useRouter();
+  const { t, tp, locale } = useI18n();
+  const na = t("analyser.na");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaElementSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -808,7 +686,7 @@ export default function HomePage() {
   const [masterStereoWidthInput, setMasterStereoWidthInput] = useState("");
   const [optimizerVariants, setOptimizerVariants] = useState(4);
   const [maxRefinePasses, setMaxRefinePasses] = useState(2);
-  const [statusMessage, setStatusMessage] = useState("Pick an audio file to begin.");
+  const [statusMessage, setStatusMessage] = useState(() => t("analyser.msg.pickFile"));
   const [scrubTime, setScrubTime] = useState(0);
   const [duration, setDuration] = useState(1);
   const [selectionStart, setSelectionStart] = useState(0);
@@ -824,6 +702,9 @@ export default function HomePage() {
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [savingOutputId, setSavingOutputId] = useState<string | null>(null);
   const [visualizerOpen, setVisualizerOpen] = useState(false);
+  // Visual AI and the charts can each go to a window of their own, for another monitor.
+  const visualPop = useDetachable("visual", t("analyser.popout.visualTitle"), { width: 1100, height: 720 });
+  const chartsPop = useDetachable("charts", t("analyser.popout.chartsTitle"), { width: 1200, height: 900 });
   const [configurationOpen, setConfigurationOpen] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
@@ -999,30 +880,37 @@ export default function HomePage() {
         event.preventDefault();
       }
     };
-    window.addEventListener("mousemove", handleWindowMouseMove, { passive: false });
-    window.addEventListener("mouseup", handleWindowMouseUp);
-    window.addEventListener("contextmenu", handleWindowContextMenu, true);
+    // The charts may be in a window of their own: listen there as well as here.
+    const views = new Set<Window>([window, chartsTimelineRef.current?.ownerDocument.defaultView ?? window]);
+    for (const view of views) {
+      view.addEventListener("mousemove", handleWindowMouseMove, { passive: false });
+      view.addEventListener("mouseup", handleWindowMouseUp);
+      view.addEventListener("contextmenu", handleWindowContextMenu, true);
+    }
     return () => {
-      window.removeEventListener("mousemove", handleWindowMouseMove);
-      window.removeEventListener("mouseup", handleWindowMouseUp);
-      window.removeEventListener("contextmenu", handleWindowContextMenu, true);
+      for (const view of views) {
+        view.removeEventListener("mousemove", handleWindowMouseMove);
+        view.removeEventListener("mouseup", handleWindowMouseUp);
+        view.removeEventListener("contextmenu", handleWindowContextMenu, true);
+      }
     };
-  }, [applySelectionRange]);
+  }, [applySelectionRange, chartsPop.detached]);
 
   const savePendingOutput = async (item: PendingSaveOutput) => {
     setSavingOutputId(item.id);
     try {
       await saveFileWithPicker(item.url, item.filename);
       setPendingSaveOutputs((prev) => prev.filter((row) => row.id !== item.id));
-      setStatusMessage(`Saved ${item.filename}.`);
+      setStatusMessage(t("analyser.msg.saved", { name: item.filename }));
     } catch (err) {
-      const message = toErrorMessage(err, `Failed to save ${item.filename}.`);
+      // saveFileWithPicker's timeout message is English on purpose: it is checked here.
+      const message = toErrorMessage(err, "");
       if (message.toLowerCase().includes("timed out")) {
         triggerBrowserDownload(item.url, item.filename);
         setPendingSaveOutputs((prev) => prev.filter((row) => row.id !== item.id));
-        setStatusMessage(`Save dialog timed out. Started browser download for ${item.filename}.`);
+        setStatusMessage(t("analyser.msg.saveTimedOut", { name: item.filename }));
       } else {
-        setStatusMessage(message);
+        setStatusMessage(t("analyser.msg.saveFailed", { name: item.filename, reason: message || "?" }));
       }
     } finally {
       setSavingOutputId(null);
@@ -1031,45 +919,45 @@ export default function HomePage() {
 
   const runColumns = useMemo<ColumnDef<RunSummary>[]>(
     () => [
-      { header: "File", accessorKey: "filename" },
+      { header: t("analyser.columns.file"), accessorKey: "filename" },
       {
-        header: "Status",
+        header: t("analyser.columns.status"),
         cell: ({ row }) => (
-          <Badge variant={statusVariant[row.original.status] ?? "outline"}>{row.original.status}</Badge>
+          <Badge variant={statusVariant[row.original.status] ?? "outline"}>{statusWord(t, row.original.status)}</Badge>
         )
       },
       {
-        header: "Stage",
+        header: t("analyser.columns.stage"),
         cell: ({ row }) => (
           <span className="text-xs text-muted-foreground">
-            {stageTickerText(row.original.stage_detail ?? null, row.original.stage ?? row.original.status)}
+            {stageTickerText(row.original.stage_detail ?? null, row.original.stage ?? row.original.status, t)}
           </span>
         )
       },
       {
-        header: "Progress",
+        header: t("analyser.columns.progress"),
         cell: ({ row }) => <span>{row.original.progress.toFixed(1)}%</span>
       },
       {
-        header: "Updated",
-        cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatDate(row.original.updated_at)}</span>
+        header: t("analyser.columns.updated"),
+        cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatDate(row.original.updated_at, locale)}</span>
       }
     ],
-    []
+    [t, locale]
   );
 
   const markerColumns = useMemo<ColumnDef<Marker>[]>(
     () => [
-      { header: "Type", accessorKey: "type" },
+      { header: t("analyser.columns.type"), accessorKey: "type" },
       {
-        header: "Severity",
+        header: t("analyser.columns.severity"),
         cell: ({ row }) => {
           const sev = text(row.original.severity, "info").toLowerCase();
-          return <Badge variant={markerSeverityVariant[sev] ?? "outline"}>{sev}</Badge>;
+          return <Badge variant={markerSeverityVariant[sev] ?? "outline"}>{severityWord(t, sev)}</Badge>;
         }
       },
       {
-        header: "Window",
+        header: t("analyser.columns.window"),
         cell: ({ row }) => (
           <span>
             {row.original.start_seconds.toFixed(2)}s - {row.original.end_seconds.toFixed(2)}s
@@ -1077,18 +965,18 @@ export default function HomePage() {
         )
       },
       {
-        header: "Note",
+        header: t("analyser.columns.note"),
         cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.message ?? "-"}</span>
       }
     ],
-    []
+    [t]
   );
 
   const convertedColumns = useMemo<ColumnDef<ConvertedFile>[]>(
     () => [
-      { header: "Format", accessorKey: "format" },
+      { header: t("analyser.columns.format"), accessorKey: "format" },
       {
-        header: "Details",
+        header: t("analyser.columns.details"),
         cell: ({ row }) => (
           <span className="text-xs text-muted-foreground">
             {text(row.original.codec, "codec?")} | {text(row.original.container, "container?")}
@@ -1096,11 +984,11 @@ export default function HomePage() {
         )
       },
       {
-        header: "Size",
+        header: t("analyser.columns.size"),
         cell: ({ row }) => <span>{bytesLabel(num(row.original.size_bytes, 0))}</span>
       },
       {
-        header: "Download",
+        header: t("analyser.columns.download"),
         cell: ({ row }) =>
           selectedRunId ? (
             <a
@@ -1116,14 +1004,14 @@ export default function HomePage() {
           )
       }
     ],
-    [selectedRunId]
+    [selectedRunId, t]
   );
 
   const masteredColumns = useMemo<ColumnDef<MasteringOutput>[]>(
     () => [
-      { header: "Output", accessorKey: "id" },
+      { header: t("analyser.columns.output"), accessorKey: "id" },
       {
-        header: "Score",
+        header: t("analyser.columns.score"),
         cell: ({ row }) =>
           typeof row.original.score === "number" ? (
             <span>{row.original.score.toFixed(2)}</span>
@@ -1139,14 +1027,14 @@ export default function HomePage() {
         }
       },
       {
-        header: "True Peak",
+        header: t("analyser.columns.truePeak"),
         cell: ({ row }) => {
           const v = maybeNum(asRecord(row.original.metrics).true_peak_dbfs);
           return <span>{v !== null ? `${v.toFixed(2)} dBFS` : "-"}</span>;
         }
       },
       {
-        header: "Verify",
+        header: t("analyser.columns.verify"),
         cell: ({ row }) => {
           const hash = text(row.original.sha256, "");
           if (!hash) return <span className="text-muted-foreground">-</span>;
@@ -1158,7 +1046,7 @@ export default function HomePage() {
         }
       },
       {
-        header: "Download",
+        header: t("analyser.columns.download"),
         cell: ({ row }) =>
           selectedRunId ? (
             <a
@@ -1174,7 +1062,7 @@ export default function HomePage() {
           )
       }
     ],
-    [selectedRunId]
+    [selectedRunId, t]
   );
 
   const activeMarkers = useMemo(() => {
@@ -1232,10 +1120,10 @@ export default function HomePage() {
       setSelectedRunId((current) => sent ?? current ?? data[0]?.id ?? null);
     } catch (err) {
       setStatusMessage(
-        `${toErrorMessage(err, "Failed to fetch runs.")} (API: ${getApiBase()})`
+        `${toErrorMessage(err, t("analyser.msg.fetchRunsFailed"))} (API: ${getApiBase()})`
       );
     }
-  }, []);
+  }, [t]);
 
   const loadChartsForRun = useCallback(async (runId: string, chartNames: string[]) => {
     const inFlight = chartLoadInFlightRef.current;
@@ -1308,7 +1196,11 @@ export default function HomePage() {
       if (failedChartNames.length > 0) {
         chartsLoadedRunRef.current = null;
         setStatusMessage(
-          `Loaded ${loadedCount}/${uniqueChartNames.length} charts. Retrying missing: ${failedChartNames.join(", ")}`
+          t("analyser.msg.chartsPartial", {
+            loaded: loadedCount,
+            total: uniqueChartNames.length,
+            missing: failedChartNames.join(", ")
+          })
         );
       } else {
         chartsLoadedRunRef.current = runId;
@@ -1324,7 +1216,7 @@ export default function HomePage() {
         chartLoadInFlightRef.current = null;
       }
     }
-  }, []);
+  }, [t]);
 
   const refreshRunDetail = useCallback(async (runId: string, force = false) => {
     const inFlight = runDetailInFlightRef.current;
@@ -1358,14 +1250,14 @@ export default function HomePage() {
       const masteringProgress = detail.mastering?.progress ?? 0;
       const masteringStageDetail = text(detail.mastering?.detail, "").trim();
       const masteringStage = text(detail.mastering?.stage, "").trim();
-      const masteringTicker = masteringStageDetail || (masteringStage ? `${stageLabel(masteringStage)}.` : "");
-      const analysisTicker = stageTickerText(detail.stage_detail ?? null, detail.stage ?? detail.status);
+      const masteringTicker = masteringStageDetail || (masteringStage ? `${stageLabel(masteringStage, t)}.` : "");
+      const analysisTicker = stageTickerText(detail.stage_detail ?? null, detail.stage ?? detail.status, t);
       const stageAgeSeconds = secondsSinceIso(detail.stage_updated_at ?? null);
       const staleLoopHint =
         (detail.status === "running" || detail.status === "queued") &&
         stageAgeSeconds !== null &&
         stageAgeSeconds > ANALYSIS_STALE_WARNING_SECONDS
-          ? ` (no stage update for ${stageAgeSeconds}s)`
+          ? t("analyser.msg.noStageUpdate", { n: stageAgeSeconds })
           : "";
       if (detail.status === "completed") {
         const expectedChartNames = (detail.chart_names ?? []).filter((name) => name.length > 0);
@@ -1380,38 +1272,44 @@ export default function HomePage() {
         if (unresolvedChartNames.length > 0) {
           const loaded = expectedChartNames.length - unresolvedChartNames.length;
           setStatusMessage(
-            `Analysis complete. Loading charts (${loaded}/${expectedChartNames.length})... Missing: ${unresolvedChartNames.join(", ")}`
+            t("analyser.msg.chartsLoading", {
+              loaded,
+              total: expectedChartNames.length,
+              missing: unresolvedChartNames.join(", ")
+            })
           );
         } else if (masteringStatus === "queued" || masteringStatus === "running") {
           setStatusMessage(
-            `Mastering ${masteringStatus}... ${masteringProgress.toFixed(1)}%${masteringTicker ? ` | ${masteringTicker}` : ""}`
+            `${t("analyser.msg.masteringProgress", { status: statusWord(t, masteringStatus), pct: masteringProgress.toFixed(1) })}${masteringTicker ? ` | ${masteringTicker}` : ""}`
           );
         } else if (masteringStatus === "failed") {
-          setStatusMessage(detail.mastering?.error_message || "Mastering failed.");
+          setStatusMessage(detail.mastering?.error_message || t("analyser.msg.masteringFailed"));
         } else if (conversionStatus === "queued" || conversionStatus === "running") {
-          setStatusMessage(`Conversion ${conversionStatus}... ${conversionProgress.toFixed(1)}%`);
+          setStatusMessage(t("analyser.msg.conversionProgress", { status: statusWord(t, conversionStatus), pct: conversionProgress.toFixed(1) }));
         } else if (conversionStatus === "failed") {
-          setStatusMessage(detail.conversions?.error_message || "Conversion failed.");
+          setStatusMessage(detail.conversions?.error_message || t("analyser.msg.conversionFailed"));
         } else {
-          setStatusMessage(analysisTicker || "Analysis complete.");
+          setStatusMessage(analysisTicker || t("analyser.msg.analysisComplete"));
         }
       } else if (detail.status === "failed") {
-        setStatusMessage(detail.error_message || "Analysis failed.");
+        setStatusMessage(detail.error_message || t("analyser.msg.analysisFailed"));
       } else if (masteringStatus === "queued" || masteringStatus === "running") {
         setStatusMessage(
-          `Mastering ${masteringStatus}... ${masteringProgress.toFixed(1)}%${masteringTicker ? ` | ${masteringTicker}` : ""}`
+          `${t("analyser.msg.masteringProgress", { status: statusWord(t, masteringStatus), pct: masteringProgress.toFixed(1) })}${masteringTicker ? ` | ${masteringTicker}` : ""}`
         );
       } else if (conversionStatus === "queued" || conversionStatus === "running") {
-        setStatusMessage(`Conversion ${conversionStatus}... ${conversionProgress.toFixed(1)}%`);
+        setStatusMessage(t("analyser.msg.conversionProgress", { status: statusWord(t, conversionStatus), pct: conversionProgress.toFixed(1) }));
       } else {
-        setStatusMessage(`${detail.status}... ${detail.progress.toFixed(1)}% | ${analysisTicker}${staleLoopHint}`);
+        setStatusMessage(
+          `${t("analyser.msg.runProgress", { status: statusWord(t, detail.status), pct: detail.progress.toFixed(1), ticker: analysisTicker })}${staleLoopHint}`
+        );
       }
       } catch (err) {
         if ((err as { name?: string }).name === "AbortError") {
           return;
         }
         setStatusMessage(
-          `${toErrorMessage(err, "Failed to fetch run details.")} (API: ${getApiBase()})`
+          `${toErrorMessage(err, t("analyser.msg.fetchRunFailed"))} (API: ${getApiBase()})`
         );
       } finally {
         if (runDetailAbortRef.current === controller) {
@@ -1425,7 +1323,7 @@ export default function HomePage() {
 
     runDetailInFlightRef.current = { runId, seq: requestSeq, promise: requestPromise };
     return requestPromise;
-  }, [loadChartsForRun]);
+  }, [loadChartsForRun, t]);
 
   useEffect(() => {
     refreshRunDetailRef.current = refreshRunDetail;
@@ -1601,7 +1499,7 @@ export default function HomePage() {
               source: "mastering",
               filename: item.filename,
               url: masteredFileUrl(selectedRunId, item.id),
-              detail: `${item.id} | ${lufs !== null ? `${lufs.toFixed(2)} LUFS` : "LUFS N/A"} | ${bytesLabel(num(item.size_bytes, 0))}`
+              detail: `${item.id} | ${lufs !== null ? `${lufs.toFixed(2)} LUFS` : `LUFS ${t("analyser.na")}`} | ${bytesLabel(num(item.size_bytes, 0))}`
             });
           }
           masteringPromptRequestsRef.current.delete(selectedRunId);
@@ -1629,8 +1527,10 @@ export default function HomePage() {
       return merged;
     });
     setSaveDialogOpen(true);
-    setStatusMessage(`New output files ready. Select where to save ${nextPending.length} file(s).`);
+    setStatusMessage(tp("analyser.msg.outputsReady", nextPending.length));
   }, [
+    t,
+    tp,
     selectedRunId,
     runDetail,
     runDetail?.conversions?.status,
@@ -1653,7 +1553,7 @@ export default function HomePage() {
 
   const handleAutoUpload = async (file: File) => {
     setIsBusy(true);
-    setStatusMessage("Uploading...");
+    setStatusMessage(t("analyser.msg.uploading"));
     try {
       console.log("[AudioQI Debug] Starting upload for file:", file.name);
       const payload = await uploadAudio(file);
@@ -1661,10 +1561,10 @@ export default function HomePage() {
       setSelectedRunId(payload.run.id);
       console.log("[AudioQI Debug] Refreshing runs...");
       await refreshRuns();
-      setStatusMessage(`Uploaded ${payload.run.filename}. Ready to analyze.`);
+      setStatusMessage(t("analyser.msg.uploaded", { name: payload.run.filename }));
     } catch (err) {
       console.error("[AudioQI Debug] Error during upload:", err);
-      setStatusMessage(toErrorMessage(err, "Upload failed."));
+      setStatusMessage(toErrorMessage(err, t("analyser.msg.uploadFailed")));
     } finally {
       setIsBusy(false);
     }
@@ -1687,9 +1587,9 @@ export default function HomePage() {
       setCharts({});
       await analyzeRun(selectedRunId, useGpu);
       await refreshRunDetail(selectedRunId);
-      setStatusMessage("Analysis queued.");
+      setStatusMessage(t("analyser.msg.analysisQueued"));
     } catch (err) {
-      setStatusMessage(toErrorMessage(err, "Failed to start analysis."));
+      setStatusMessage(toErrorMessage(err, t("analyser.msg.analysisStartFailed")));
     } finally {
       setIsBusy(false);
     }
@@ -1699,11 +1599,11 @@ export default function HomePage() {
     if (!selectedRunId) return;
     const formats = FORMAT_OPTIONS.filter((fmt) => formatSelection[fmt]);
     if (formats.length === 0) {
-      setStatusMessage("Select at least one target format for conversion.");
+      setStatusMessage(t("analyser.msg.pickFormat"));
       return;
     }
     setIsConverting(true);
-    setStatusMessage("Queueing conversion...");
+    setStatusMessage(t("analyser.msg.queueingConversion"));
     try {
       await convertRun(
         selectedRunId,
@@ -1716,10 +1616,10 @@ export default function HomePage() {
         requestedFormats: formats.map((fmt) => fmt.toLowerCase())
       });
       await refreshRunDetail(selectedRunId);
-      setStatusMessage(`Conversion queued: ${formats.join(", ").toUpperCase()}`);
+      setStatusMessage(t("analyser.msg.conversionQueued", { formats: formats.join(", ").toUpperCase() }));
     } catch (err) {
       conversionPromptRequestsRef.current.delete(selectedRunId);
-      setStatusMessage(toErrorMessage(err, "Failed to start conversion."));
+      setStatusMessage(toErrorMessage(err, t("analyser.msg.conversionStartFailed")));
     } finally {
       setIsConverting(false);
     }
@@ -1728,7 +1628,7 @@ export default function HomePage() {
   const onMaster = async () => {
     if (!selectedRunId) return;
     setIsMastering(true);
-    setStatusMessage("Queueing mastering...");
+    setStatusMessage(t("analyser.msg.queueingMastering"));
     try {
       const parsedTargetLufs = parseOptionalNumberInput(masterTargetLufsInput);
       const parsedTruePeak = parseOptionalNumberInput(masterTruePeakDbfsInput);
@@ -1763,11 +1663,17 @@ export default function HomePage() {
       });
       await refreshRunDetail(selectedRunId);
       setStatusMessage(
-        `Mastering queued (${masterMode.toUpperCase()}, ${masterPreset}, ${masterBackend}, norm: ${normalizationProfile}, input gain: ${inputGainDb >= 0 ? "+" : ""}${inputGainDb.toFixed(1)} dB).`
+        t("analyser.msg.masteringQueued", {
+          mode: masterMode.toUpperCase(),
+          preset: masterPreset,
+          backend: masterBackend,
+          norm: normalizationProfile,
+          gain: `${inputGainDb >= 0 ? "+" : ""}${inputGainDb.toFixed(1)}`
+        })
       );
     } catch (err) {
       masteringPromptRequestsRef.current.delete(selectedRunId);
-      setStatusMessage(toErrorMessage(err, "Failed to start mastering."));
+      setStatusMessage(toErrorMessage(err, t("analyser.msg.masteringStartFailed")));
     } finally {
       setIsMastering(false);
     }
@@ -1775,13 +1681,11 @@ export default function HomePage() {
 
   const onClearHistory = async (hardReset = false) => {
     const confirmed = hardReset
-      ? window.confirm(
-          "Hard reset services and clear all runs (including active/queued jobs)? This will cancel queued workers."
-        )
-      : window.confirm("Clear run history for all non-active runs?");
+      ? window.confirm(t("analyser.msg.confirmHardReset"))
+      : window.confirm(t("analyser.msg.confirmClear"));
     if (!confirmed) return;
     setIsBusy(true);
-    setStatusMessage(hardReset ? "Hard resetting services and clearing history..." : "Clearing run history...");
+    setStatusMessage(hardReset ? t("analyser.msg.hardResetting") : t("analyser.msg.clearing"));
     try {
       const result = await clearRunHistory(hardReset);
       setSelectedRunId(null);
@@ -1806,14 +1710,17 @@ export default function HomePage() {
       masteringPromptRequestsRef.current.clear();
       initializedSelectionRunRef.current = null;
       await refreshRuns();
-      const suffix = result.skipped_active > 0 ? ` (${result.skipped_active} active run(s) kept)` : "";
+      const suffix = result.skipped_active > 0 ? tp("analyser.msg.keptActive", result.skipped_active) : "";
       const hardResetSuffix = hardReset
-        ? ` Jobs reset: cancelled ${result.jobs_reset?.cancelled ?? 0}, running ${result.jobs_reset?.running ?? 0}.`
+        ? t("analyser.msg.jobsReset", {
+            cancelled: result.jobs_reset?.cancelled ?? 0,
+            running: result.jobs_reset?.running ?? 0
+          })
         : "";
-      setStatusMessage(`Cleared ${result.deleted} run(s).${suffix}${hardResetSuffix}`);
+      setStatusMessage(`${tp("analyser.msg.cleared", result.deleted)}${suffix}${hardResetSuffix}`);
     } catch (err) {
       setStatusMessage(
-        toErrorMessage(err, hardReset ? "Failed to hard reset services." : "Failed to clear run history.")
+        toErrorMessage(err, hardReset ? t("analyser.msg.hardResetFailed") : t("analyser.msg.clearFailed"))
       );
     } finally {
       setIsBusy(false);
@@ -1823,12 +1730,12 @@ export default function HomePage() {
   const currentStatus = runDetail?.status ?? "idle";
   const progress = runDetail?.progress ?? 0;
   const analysisStage = runDetail?.stage ?? currentStatus;
-  const analysisTicker = stageTickerText(runDetail?.stage_detail ?? null, analysisStage);
+  const analysisTicker = stageTickerText(runDetail?.stage_detail ?? null, analysisStage, t);
   const analysisStageAgeSeconds = secondsSinceIso(runDetail?.stage_updated_at ?? null);
   const analysisStageMeta =
     analysisStageAgeSeconds !== null
-      ? `Stage: ${stageLabel(analysisStage)} | Updated ${analysisStageAgeSeconds}s ago`
-      : `Stage: ${stageLabel(analysisStage)}`;
+      ? t("analyser.session.stageUpdated", { stage: stageLabel(analysisStage, t), n: analysisStageAgeSeconds })
+      : t("analyser.session.stage", { stage: stageLabel(analysisStage, t) });
   const conversionInfo = runDetail?.conversions;
   const conversionStatus = conversionInfo?.status ?? "idle";
   const conversionProgress = conversionInfo?.progress ?? 0;
@@ -1837,11 +1744,11 @@ export default function HomePage() {
   const masteringStatus = masteringInfo?.status ?? "idle";
   const masteringProgress = masteringInfo?.progress ?? 0;
   const masteringOutputs = masteringInfo?.manifest?.outputs ?? [];
-  const bestMasterId = text(masteringInfo?.manifest?.best_output_id, "N/A");
-  const masteringStage = text(masteringInfo?.stage, "idle");
+  const bestMasterId = text(masteringInfo?.manifest?.best_output_id, na);
+  const masteringStage = text(masteringInfo?.stage, "");
   const masteringDetail = text(masteringInfo?.detail, "");
   const masteringSelfCheck = asRecord(masteringInfo?.manifest?.self_check);
-  const selfCheckAssessment = text(masteringSelfCheck.assessment, "n/a");
+  const selfCheckAssessment = text(masteringSelfCheck.assessment, na);
   const selfCheckScoreBefore = maybeNum(masteringSelfCheck.score_before);
   const selfCheckScoreAfter = maybeNum(masteringSelfCheck.score_after);
   const selfCheckScoreDelta = maybeNum(masteringSelfCheck.score_delta);
@@ -1954,16 +1861,18 @@ export default function HomePage() {
   const bitDepth = maybeNum(metadata.bit_depth);
   const bitDepthLabel =
     bitDepth !== null && bitDepth > 0
-      ? `${bitDepth}-bit${text(metadata.codec, "").toLowerCase().startsWith("pcm_f") ? " float" : ""}`
-      : "Bit depth N/A";
+      ? t(text(metadata.codec, "").toLowerCase().startsWith("pcm_f") ? "analyser.file.bitDepthFloat" : "analyser.file.bitDepth", {
+          n: bitDepth
+        })
+      : t("analyser.file.bitDepthNa");
   const selectedSegmentLength = Math.max(0, selectionEnd - selectionStart);
   const masteringRecommendations = Array.isArray(metrics.mastering_recommendations)
     ? metrics.mastering_recommendations
         .map((item) => asRecord(item))
         .map((item) => ({
           priority: text(item.priority, "info"),
-          issue: text(item.issue, "N/A"),
-          action: text(item.action, "N/A")
+          issue: text(item.issue, na),
+          action: text(item.action, na)
         }))
     : [];
   const aiMasteringAdvice = asRecord(metrics.ai_mastering_advice);
@@ -1988,7 +1897,7 @@ export default function HomePage() {
     recommendedTruePeak !== null && appliedTargetTruePeak !== null
       ? Math.abs(recommendedTruePeak - appliedTargetTruePeak) <= 0.2
       : null;
-  const recommendationConfidence = text(aiMasteringAdvice.confidence, "N/A");
+  const recommendationConfidence = severityWord(t, text(aiMasteringAdvice.confidence, na).toLowerCase());
   const recommendationIssueScore = maybeNum(aiMasteringAdvice.issue_score);
   const recommendationReasons = Array.isArray(aiMasteringAdvice.reasons)
     ? aiMasteringAdvice.reasons.map((r) => text(r, "")).filter((r) => r.length > 0)
@@ -2002,14 +1911,14 @@ export default function HomePage() {
     parsedMasterInputGain === null ? 0 : Math.max(-12, Math.min(12, parsedMasterInputGain));
   const masterInputGainSummary =
     masterInputGainDb === 0
-      ? "Unity (source level untouched)"
-      : `${masterInputGainDb > 0 ? "+" : ""}${masterInputGainDb.toFixed(1)} dB before the chain`;
+      ? t("analyser.mastering.unity")
+      : t("analyser.mastering.gainBefore", { gain: `${masterInputGainDb > 0 ? "+" : ""}${masterInputGainDb.toFixed(1)}` });
   const integratedLufs = metricNumber(metrics, ["loudness", "integrated_lufs"], 0);
   const truePeakDbfs = metricNumber(metrics, ["dynamics", "true_peak_dbfs"], 0);
   const crestFactorDb = metricNumber(metrics, ["dynamics", "crest_factor_db"], 0);
   const loudnessRangeLu = metricNumber(metrics, ["loudness", "lra_approx"], 0);
   const selectedRunSummary = selectedRunId ? runs.find((run) => run.id === selectedRunId) ?? null : null;
-  const selectedRunFilename = text(runDetail?.filename, selectedRunSummary?.filename ?? "No run selected");
+  const selectedRunFilename = text(runDetail?.filename, selectedRunSummary?.filename ?? t("analyser.tiles.noRun"));
   const availableChartNames = (runDetail?.chart_names ?? []).filter((name) => name.length > 0);
   const loadedChartNames = Object.keys(charts).filter((name) => charts[name]);
   const activeChartGroupConfig = CHART_GROUPS.find((group) => group.id === activeChartGroup) ?? CHART_GROUPS[0];
@@ -2028,39 +1937,50 @@ export default function HomePage() {
     (markerSeverityCounts.warning ?? 0);
   const masteringRecommendationSummary = canApplyAiMasteringAdvice
     ? `${recommendedMode?.toUpperCase()} / ${recommendedPreset}`
-    : "Awaiting analyzer recommendation";
+    : t("analyser.mastering.awaiting");
   const loudnessTargetForReadiness = selectedNormalizationProfile.targetLufs ?? -14.0;
   const loudnessOffset = integratedLufs - loudnessTargetForReadiness;
-  const loudnessReadiness = Math.abs(loudnessOffset) <= 1.5 ? "Aligned" : loudnessOffset > 0 ? "Hot" : "Quiet";
-  const peakReadiness = truePeakDbfs <= -1.0 ? "Safe" : truePeakDbfs <= -0.2 ? "Tight" : "Risk";
-  const markerReadiness = highlightedMarkerCount === 0 ? "Clean" : highlightedMarkerCount <= 3 ? "Review" : "Attention";
-  const dynamicsReadiness = crestFactorDb >= 8 ? "Open" : crestFactorDb >= 5 ? "Controlled" : "Dense";
+  const loudnessReadiness = t(
+    Math.abs(loudnessOffset) <= 1.5 ? "analyser.readiness.aligned" : loudnessOffset > 0 ? "analyser.readiness.hot" : "analyser.readiness.quiet"
+  );
+  const peakReadiness = t(
+    truePeakDbfs <= -1.0 ? "analyser.readiness.safe" : truePeakDbfs <= -0.2 ? "analyser.readiness.tight" : "analyser.readiness.risk"
+  );
+  const markerReadiness = t(
+    highlightedMarkerCount === 0
+      ? "analyser.readiness.clean"
+      : highlightedMarkerCount <= 3
+        ? "analyser.readiness.review"
+        : "analyser.readiness.attention"
+  );
+  const dynamicsReadiness = t(
+    crestFactorDb >= 8 ? "analyser.readiness.open" : crestFactorDb >= 5 ? "analyser.readiness.controlled" : "analyser.readiness.dense"
+  );
   const unavailableHints: string[] = [];
   if (lossPct === null) {
-    unavailableHints.push(
-      "Compression-loss estimate unavailable because codec metadata or spectral estimate is missing, or this run predates the current analyzer (re-analyze to refresh)."
-    );
+    unavailableHints.push(t("analyser.hints.lossUnavailable"));
   }
   if (dynamicSpan === null) {
     unavailableHints.push(
       noiseFloorStatus === "stale"
-        ? "Peak-to-noise and noise floor are hidden because this run predates the current noise-floor estimator; re-analyze to measure them."
+        ? t("analyser.hints.noiseStale")
         : noiseFloorStatus === "digital_silence"
-          ? "Peak-to-noise is unavailable because the gaps are digital silence, so there is no noise floor to measure."
-          : "Peak-to-noise is unavailable because the track has no quiet gaps (fades, intros, pauses) to read a noise floor from; the music masks it."
+          ? t("analyser.hints.noiseDigital")
+          : t("analyser.hints.noiseMasked")
     );
   }
   if (peakToLoudness === null) {
-    unavailableHints.push("Peak-to-LUFS is unavailable when integrated loudness is undefined (very short/silent material).");
+    unavailableHints.push(t("analyser.hints.peakLufs"));
   }
   if (tagEntries.length === 0 && suppressedTagCount === 0) {
-    unavailableHints.push("No embedded metadata tags detected in this file.");
+    unavailableHints.push(t("analyser.hints.noTags"));
   }
   if (tagEntries.length === 0 && suppressedTagCount > 0) {
-    unavailableHints.push(
-      `No descriptive embedded tags were found. Hidden ${suppressedTagCount} bulky or system tag(s); open raw metadata JSON to inspect them.`
-    );
+    unavailableHints.push(tp("analyser.hints.hiddenOnly", suppressedTagCount));
   }
+
+  const yesNo = (value: boolean | null) => (value === null ? na : value ? t("analyser.yes") : t("analyser.no"));
+  const signed = (value: number) => `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
 
   const onApplyAiMasteringAdvice = () => {
     if (!canApplyAiMasteringAdvice || !recommendedMode || !recommendedPreset) return;
@@ -2095,12 +2015,16 @@ export default function HomePage() {
     });
     setNormalizationProfile(matchedProfile?.id ?? "off");
     setStatusMessage(
-      `Applied suggested mastering settings (${recommendedMode.toUpperCase()} / ${recommendedPreset} / ${recommendedBackend ?? masterBackend}).`
+      t("analyser.msg.appliedAdvice", {
+        mode: recommendedMode.toUpperCase(),
+        preset: recommendedPreset,
+        backend: recommendedBackend ?? masterBackend
+      })
     );
   };
 
   const scrollToChart = (chartKey: string) => {
-    const target = document.getElementById(`chart-${chartKey}`);
+    const target = (chartsTimelineRef.current?.ownerDocument ?? document).getElementById(`chart-${chartKey}`);
     target?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -2137,12 +2061,12 @@ export default function HomePage() {
       try {
         await audio.play();
       } catch (err) {
-        setStatusMessage(toErrorMessage(err, "Playback failed to start."));
+        setStatusMessage(toErrorMessage(err, t("analyser.msg.playbackFailed")));
       }
       return;
     }
     audio.pause();
-  }, [ensurePlaybackGraph, eqEnabled]);
+  }, [ensurePlaybackGraph, eqEnabled, t]);
 
   const seekBySeconds = useCallback((delta: number) => {
     const audio = audioRef.current;
@@ -2189,19 +2113,19 @@ export default function HomePage() {
 
   const exportEqWav = async () => {
     if (!selectedRunId) {
-      setStatusMessage("Select a run before exporting EQ audio.");
+      setStatusMessage(t("analyser.msg.selectRunForEq"));
       return;
     }
     setIsEqExporting(true);
     try {
       const response = await fetch(audioUrl(selectedRunId), { cache: "no-store" });
       if (!response.ok) {
-        throw new Error(`Failed to fetch source audio: ${response.status}`);
+        throw new Error(t("analyser.msg.sourceFetchFailed", { status: response.status }));
       }
       const arrayBuffer = await response.arrayBuffer();
       const AudioContextCtor = window.AudioContext;
       if (!AudioContextCtor || typeof OfflineAudioContext === "undefined") {
-        throw new Error("Web Audio offline rendering is not available in this browser.");
+        throw new Error(t("analyser.msg.noOfflineRendering"));
       }
 
       const decodeContext = new AudioContextCtor();
@@ -2225,9 +2149,9 @@ export default function HomePage() {
       } finally {
         void decodeContext.close();
       }
-      setStatusMessage("EQ export complete. Saved processed WAV.");
+      setStatusMessage(t("analyser.msg.eqExported"));
     } catch (err) {
-      setStatusMessage(toErrorMessage(err, "EQ export failed."));
+      setStatusMessage(toErrorMessage(err, t("analyser.msg.eqExportFailed")));
     } finally {
       setIsEqExporting(false);
     }
@@ -2250,9 +2174,9 @@ export default function HomePage() {
     try {
       const result = await checkForUpdates();
       setUpdateStatus(result);
-      setStatusMessage(result.update_available ? "A Music Suite update is available." : result.message);
+      setStatusMessage(result.update_available ? t("analyser.msg.updateAvailable") : result.message);
     } catch (err) {
-      setStatusMessage(toErrorMessage(err, "Update check failed."));
+      setStatusMessage(toErrorMessage(err, t("analyser.msg.updateCheckFailed")));
     } finally {
       setIsCheckingUpdate(false);
     }
@@ -2285,7 +2209,7 @@ export default function HomePage() {
         );
       }
     } catch (err) {
-      setStatusMessage(toErrorMessage(err, "Update installation failed."));
+      setStatusMessage(toErrorMessage(err, t("analyser.msg.updateInstallFailed")));
     } finally {
       setIsInstallingUpdate(false);
     }
@@ -2300,26 +2224,23 @@ export default function HomePage() {
               <Rocket className="h-3.5 w-3.5" /> Geekatplay Studio
             </p>
             <h1 className="mt-3 display-font text-3xl font-semibold md:text-4xl">
-              Music Suite by Geekatplay Studio
+              {t("analyser.header.title")}
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Backend stack: FFmpeg/ffprobe, SoundFile (libsndfile), Mutagen, NumPy, SciPy, Librosa, pyloudnorm,
-              Plotly, and optional CUDA spectrogram acceleration with torchaudio + nnAudio.
-            </p>
+            <p className="mt-1 text-sm text-muted-foreground">{t("analyser.header.stack")}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={onToggleConfiguration} disabled={isBusy}>
               <Settings className="mr-2 h-4 w-4" />
-              Configuration
+              {t("analyser.header.configuration")}
             </Button>
             <Button variant="secondary" onClick={() => void refreshRuns()} disabled={isBusy}>
               <RefreshCcw className="mr-2 h-4 w-4" />
-              Refresh Runs
+              {t("analyser.header.refreshRuns")}
             </Button>
             <Button
               variant="secondary"
               disabled={!selectedRunId}
-              title={selectedRunId ? "Open the selected song in Geometry Mapper" : "Select or upload a song first"}
+              title={selectedRunId ? t("analyser.header.mapperTitle") : t("analyser.header.needSong")}
               onClick={() => {
                 if (!selectedRunId) return;
                 const params = new URLSearchParams({ run: selectedRunId, name: selectedRunFilename });
@@ -2327,14 +2248,14 @@ export default function HomePage() {
               }}
             >
               <Network className="mr-2 h-4 w-4" />
-              Geometry Mapper
+              {t("common.workspaces.mapper")}
             </Button>
             <Button
               variant="secondary"
               title={
                 selectedRunId
-                  ? "Start a new AI song from the selected track: its tempo, key and style fill the form, and you can restyle, extend or add parts to it"
-                  : "Write and generate a new song with AI on this computer"
+                  ? t("analyser.header.songFromThisTitle")
+                  : t("analyser.header.newSongTitle")
               }
               onClick={() =>
                 router.push(
@@ -2343,14 +2264,14 @@ export default function HomePage() {
               }
             >
               <Sparkles className="mr-2 h-4 w-4" />
-              {selectedRunId ? "Make a song from this" : "AI Song Studio"}
+              {selectedRunId ? t("analyser.header.songFromThis") : t("common.workspaces.studio")}
             </Button>
             <Button
               variant="secondary"
               title={
                 selectedRunId
-                  ? "Add the selected song to a Studio Editor session (new or existing), optionally split into stems"
-                  : "Open the multitrack Studio Editor"
+                  ? t("analyser.header.editorAddTitle")
+                  : t("analyser.header.editorOpenTitle")
               }
               onClick={() => {
                 if (!selectedRunId) {
@@ -2362,41 +2283,41 @@ export default function HomePage() {
               }}
             >
               <AudioWaveform className="mr-2 h-4 w-4" />
-              Studio Editor
+              {t("common.workspaces.editor")}
             </Button>
-            <Button variant="secondary" title="Design and play synth sounds, and browse Surge XT's library" onClick={() => router.push("/synth")}>
+            <Button variant="secondary" title={t("analyser.header.synthTitle")} onClick={() => router.push("/synth")}>
               <Piano className="mr-2 h-4 w-4" />
-              Synth Studio
+              {t("common.workspaces.synth")}
             </Button>
             <Button
               variant="secondary"
-              title="Install optional engines and AI models: more stems, the music engine, the lyrics writer"
+              title={t("analyser.header.modelsTitle")}
               onClick={() => router.push("/models")}
             >
               <Cpu className="mr-2 h-4 w-4" />
-              Models &amp; engines
+              {t("common.workspaces.models")}
             </Button>
             <AppPrefs />
             <Button
               variant="secondary"
-              title="The user manual: every workspace and setting explained"
+              title={t("analyser.header.helpTitle")}
               onClick={() => window.open("/help#analyser-and-mastering", "_blank", "noreferrer")}
             >
               <CircleHelp className="mr-2 h-4 w-4" />
-              Help
+              {t("common.workspaces.help")}
             </Button>
             <Button variant="danger" onClick={() => void onClearHistory()} disabled={isBusy || runs.length === 0}>
               <Trash2 className="mr-2 h-4 w-4" />
-              Clear History
+              {t("analyser.header.clearHistory")}
             </Button>
             <Button
               variant="danger"
               onClick={() => void onClearHistory(true)}
               disabled={isBusy || runs.length === 0}
-              title="Force reset job workers and clear all runs (including active ones)."
+              title={t("analyser.header.hardResetTitle")}
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              Hard Reset
+              {t("analyser.header.hardReset")}
             </Button>
           </div>
         </div>
@@ -2405,24 +2326,24 @@ export default function HomePage() {
       {configurationOpen ? (
         <Card className="mb-5 border-cyan-500/25 bg-slate-950/70">
           <CardHeader>
-            <CardTitle>Configuration &amp; Updates</CardTitle>
+            <CardTitle>{t("analyser.config.title")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-xl border border-border/70 bg-background/40 p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Product</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("analyser.config.product")}</p>
                 <p className="mt-1 font-semibold">Geekatplay Studio Music Suite</p>
-                <p className="text-xs text-muted-foreground">Created by Geekatplay Studio</p>
+                <p className="text-xs text-muted-foreground">{t("analyser.config.createdBy")}</p>
               </div>
               <div className="rounded-xl border border-border/70 bg-background/40 p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Installed version</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("analyser.config.installedVersion")}</p>
                 <p className="mt-1 font-semibold">{updateStatus?.version ?? "1.0.0"}</p>
                 <p className="truncate text-xs text-muted-foreground">
-                  Revision {updateStatus?.current_commit?.slice(0, 12) ?? "not available"}
+                  {t("analyser.config.revision", { rev: updateStatus?.current_commit?.slice(0, 12) ?? t("analyser.config.notAvailable") })}
                 </p>
               </div>
               <div className="rounded-xl border border-border/70 bg-background/40 p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Official source</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("analyser.config.officialSource")}</p>
                 <a
                   className="mt-1 block font-semibold text-cyan-300 hover:text-cyan-200"
                   href="https://github.com/GeekatplayStudio/music-suite"
@@ -2431,7 +2352,7 @@ export default function HomePage() {
                 >
                   GeekatplayStudio/music-suite
                 </a>
-                <p className="text-xs text-muted-foreground">Stable branch: main</p>
+                <p className="text-xs text-muted-foreground">{t("analyser.config.stableBranch")}</p>
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 p-3">
@@ -2439,15 +2360,14 @@ export default function HomePage() {
                 <p className="font-medium">
                   {updateStatus
                     ? updateStatus.update_available
-                      ? "Update available"
-                      : "Music Suite is up to date"
-                    : "Ready to check for updates"}
+                      ? t("analyser.config.updateAvailable")
+                      : t("analyser.config.upToDate")
+                    : t("analyser.config.readyToCheck")}
                 </p>
                 <p className="max-w-3xl text-xs text-muted-foreground">
                   {updateStatus?.working_tree_dirty
-                    ? "Local changes detected. Installation is blocked until they are committed or removed."
-                    : updateStatus?.message ??
-                      "Checks only the official Geekatplay Studio repository. Updates are fast-forward-only and never overwrite local changes."}
+                    ? t("analyser.config.dirty")
+                    : updateStatus?.message ?? t("analyser.config.officialOnly")}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -2457,7 +2377,7 @@ export default function HomePage() {
                   disabled={isCheckingUpdate || isInstallingUpdate}
                 >
                   <RefreshCcw className="mr-2 h-4 w-4" />
-                  {isCheckingUpdate ? "Checking..." : "Check for Updates"}
+                  {isCheckingUpdate ? t("analyser.config.checking") : t("analyser.config.check")}
                 </Button>
                 <Button
                   onClick={() => void onInstallUpdate()}
@@ -2469,7 +2389,7 @@ export default function HomePage() {
                     updateStatus.working_tree_dirty
                   }
                 >
-                  {isInstallingUpdate ? "Installing..." : "Install Update"}
+                  {isInstallingUpdate ? t("analyser.config.installing") : t("analyser.config.install")}
                 </Button>
               </div>
             </div>
@@ -2479,7 +2399,16 @@ export default function HomePage() {
 
       {visualizerOpen && selectedRunId ? (
         <div ref={visualizerRef} className="mb-5 scroll-mt-4">
-          <SonicVisualizer audioSrc={audioUrl(selectedRunId)} filename={selectedRunFilename} />
+          {visualPop.detached ? <DetachedPlaceholder state={visualPop} label={t("analyser.popout.visual")} /> : null}
+          {visualPop.render(
+            <div className={visualPop.detached ? "min-h-0 flex-1 overflow-auto bg-slate-950 p-3" : undefined}>
+              <SonicVisualizer
+                audioSrc={audioUrl(selectedRunId)}
+                filename={selectedRunFilename}
+                headerExtra={<DetachButton state={visualPop} label={t("analyser.popout.visual")} className={POPOUT_BUTTON} />}
+              />
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -2488,7 +2417,7 @@ export default function HomePage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
-                <FileAudio2 className="h-5 w-5 text-primary" /> Session Control
+                <FileAudio2 className="h-5 w-5 text-primary" /> {t("analyser.session.title")}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -2517,7 +2446,7 @@ export default function HomePage() {
                   {selectedFile ? (
                     <span className="font-semibold text-foreground">{selectedFile.name}</span>
                   ) : (
-                    "Drag & drop audio here or browse"
+                    t("analyser.session.dropHint")
                   )}
                 </p>
                 <input
@@ -2544,24 +2473,24 @@ export default function HomePage() {
                   variant="secondary"
                   size="sm"
                 >
-                  Browse File
+                  {t("analyser.session.browse")}
                 </Button>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button onClick={() => void onUpload()} disabled={!selectedFile || isBusy}>
-                  Upload
+                  {t("analyser.session.upload")}
                 </Button>
                 <Button variant="secondary" onClick={() => void onAnalyze()} disabled={!selectedRunId || isBusy}>
-                  Analyze
+                  {t("analyser.session.analyze")}
                 </Button>
                 <Button
                   variant="secondary"
                   onClick={openVisualizer}
                   disabled={!selectedRunId}
-                  title="Open real-time visuals for the uploaded song"
+                  title={t("analyser.session.visualTitle")}
                 >
                   <Waves className="mr-2 h-4 w-4" />
-                  Visual AI
+                  {t("analyser.session.visual")}
                 </Button>
               </div>
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -2572,11 +2501,11 @@ export default function HomePage() {
                   className="h-4 w-4 rounded-[0.25rem] border-input"
                 />
                 <Cpu className="h-4 w-4" />
-                Use optional GPU spectrogram path
+                {t("analyser.session.useGpu")}
               </label>
               <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
                 <div className="mb-2 flex items-center justify-between">
-                  <Badge variant={statusVariant[currentStatus] ?? "outline"}>{currentStatus}</Badge>
+                  <Badge variant={statusVariant[currentStatus] ?? "outline"}>{statusWord(t, currentStatus)}</Badge>
                   <span className="text-xs text-muted-foreground">{progress.toFixed(1)}%</span>
                 </div>
                 <Progress value={progress} />
@@ -2586,13 +2515,13 @@ export default function HomePage() {
                 (currentStatus === "running" || currentStatus === "queued") &&
                 analysisStageAgeSeconds > ANALYSIS_STALE_WARNING_SECONDS ? (
                   <p className="mt-1 text-xs text-amber-300">
-                    Stage heartbeat is unusually old. Long spectrogram work can take time, but the backend loop guard will still abort truly stalled analysis automatically.
+                    {t("analyser.session.staleHeartbeat")}
                   </p>
                 ) : null}
                 {statusMessage && (
                   <p className={cn(
                     "mt-2 text-sm transition-colors duration-200",
-                    statusMessage.toLowerCase().includes("fail") || statusMessage.toLowerCase().includes("error") || statusMessage.toLowerCase().includes("not found")
+                    /fail|error|not found|не удал|ошибк|не найден/i.test(statusMessage)
                       ? "text-red-400 font-semibold bg-red-950/20 border border-red-900/30 rounded-lg p-2"
                       : "text-muted-foreground"
                   )}>
@@ -2602,7 +2531,7 @@ export default function HomePage() {
               </div>
               {selectedRunId ? (
                 <div className="text-sm">
-                  <p className="font-semibold">Exports</p>
+                  <p className="font-semibold">{t("analyser.session.exports")}</p>
                   <div className="mt-1 flex flex-wrap gap-3 text-primary">
                     <a href={exportUrl(selectedRunId, "json")} target="_blank" rel="noreferrer">
                       JSON
@@ -2618,7 +2547,7 @@ export default function HomePage() {
               ) : null}
               {pendingSaveOutputs.length > 0 ? (
                 <Button variant="secondary" size="sm" onClick={() => setSaveDialogOpen(true)}>
-                  Save Ready Files ({pendingSaveOutputs.length})
+                  {t("analyser.session.saveReady", { n: pendingSaveOutputs.length })}
                 </Button>
               ) : null}
             </CardContent>
@@ -2626,11 +2555,11 @@ export default function HomePage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Format Conversion</CardTitle>
+              <CardTitle className="text-lg">{t("analyser.convert.title")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-xs text-muted-foreground">
-                Convert the selected song into additional delivery formats with async progress.
+                {t("analyser.convert.intro")}
               </p>
 
               <div className="grid grid-cols-2 gap-2">
@@ -2680,13 +2609,13 @@ export default function HomePage() {
                 onClick={() => void onConvert()}
                 disabled={!selectedRunId || isConverting || isBusy}
               >
-                Convert Selected
+                {t("analyser.convert.convertSelected")}
               </Button>
 
               <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <Badge variant={conversionStatusVariant[conversionStatus] ?? "outline"}>
-                    {conversionStatus}
+                    {statusWord(t, conversionStatus)}
                   </Badge>
                   <span className="text-xs text-muted-foreground">{conversionProgress.toFixed(1)}%</span>
                 </div>
@@ -2698,11 +2627,11 @@ export default function HomePage() {
 
               {conversionFiles.length > 0 ? (
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Converted Files</p>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.convert.files")}</p>
                   <DataTable data={conversionFiles} columns={convertedColumns} />
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">No converted files generated yet.</p>
+                <p className="text-xs text-muted-foreground">{t("analyser.convert.none")}</p>
               )}
             </CardContent>
           </Card>
@@ -2710,42 +2639,48 @@ export default function HomePage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between text-lg">
-                AI Mastering
-                <HelpLink section="ai-mastering" label="the mastering settings" />
+                {t("analyser.mastering.title")}
+                <HelpLink section="ai-mastering" label={t("analyser.mastering.helpLabel")} />
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
                 <p className="text-xs text-muted-foreground">
-                  V1 = transparent chain, V2 = optimizer variants, V3 = stem-aware corrective workflow.
+                  {t("analyser.mastering.modesIntro")}
                 </p>
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  AudioQI now applies a source-aware preflight adjustment pass before rendering variants or stem rescue.
-                  Use Backend, Refine Passes, and Reference song for advanced pro mastering control.
+                  {t("analyser.mastering.preflightIntro")}
                 </p>
               </div>
 
               <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Suggested From Analysis</p>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.mastering.suggested")}</p>
                   <Badge variant={canApplyAiMasteringAdvice ? "default" : "outline"}>
-                    {canApplyAiMasteringAdvice ? recommendationConfidence : "No advice"}
+                    {canApplyAiMasteringAdvice ? recommendationConfidence : t("analyser.mastering.noAdvice")}
                   </Badge>
                 </div>
                 {canApplyAiMasteringAdvice ? (
                   <div className="space-y-2">
                     <p className="text-sm">
-                      Mode <span className="font-semibold">{recommendedMode?.toUpperCase()}</span> | Preset{" "}
+                      {t("analyser.mastering.mode")} <span className="font-semibold">{recommendedMode?.toUpperCase()}</span> |{" "}
+                      {t("analyser.mastering.preset")}{" "}
                       <span className="font-semibold">{recommendedPreset}</span>
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Target LUFS {recommendedTargetLufs !== null ? recommendedTargetLufs.toFixed(1) : "N/A"} | True Peak{" "}
-                      {recommendedTruePeak !== null ? `${recommendedTruePeak.toFixed(1)} dBFS` : "N/A"} | Variants{" "}
-                      {recommendedVariants ?? "N/A"} | Backend {recommendedBackend ?? "N/A"} | Refine {recommendedRefinePasses ?? "N/A"}
-                      {recommendationIssueScore !== null ? ` | Issue score ${recommendationIssueScore.toFixed(0)}` : ""}
+                      {t("analyser.mastering.targetsLine", {
+                        lufs: recommendedTargetLufs !== null ? recommendedTargetLufs.toFixed(1) : na,
+                        tp: recommendedTruePeak !== null ? `${recommendedTruePeak.toFixed(1)} dBFS` : na,
+                        variants: recommendedVariants ?? na,
+                        backend: recommendedBackend ?? na,
+                        refine: recommendedRefinePasses ?? na
+                      })}
+                      {recommendationIssueScore !== null
+                        ? t("analyser.mastering.issueScore", { n: recommendationIssueScore.toFixed(0) })
+                        : ""}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Score policy: dense, lossy, or peak-sensitive sources stay on V1; cleaner corrective cases move to V2; V3 is reserved for stronger intervention on recoverable material.
+                      {t("analyser.mastering.scorePolicy")}
                     </p>
                     {recommendationReasons.length > 0 ? (
                       <ul className="space-y-1 text-xs text-muted-foreground">
@@ -2755,22 +2690,22 @@ export default function HomePage() {
                       </ul>
                     ) : null}
                     <Button size="sm" variant="secondary" onClick={onApplyAiMasteringAdvice}>
-                      Apply Suggested Settings
+                      {t("analyser.mastering.apply")}
                     </Button>
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    Analyze a track first to get recommended AI mastering mode, preset, and targets.
+                    {t("analyser.mastering.analyzeFirst")}
                   </p>
                 )}
               </div>
 
               <div className="space-y-3 rounded-xl border border-border/70 bg-card/70 p-3">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">Mastering Settings</p>
+                <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.mastering.settings")}</p>
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Mode</span>
+                    <span className="font-medium text-foreground">{t("analyser.mastering.mode")}</span>
                     <select
                       value={masterMode}
                       onChange={(e) => setMasterMode(e.target.value as (typeof MASTER_MODES)[number])}
@@ -2785,7 +2720,7 @@ export default function HomePage() {
                   </label>
 
                   <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Preset</span>
+                    <span className="font-medium text-foreground">{t("analyser.mastering.preset")}</span>
                     <select
                       value={masterPreset}
                       onChange={(e) => setMasterPreset(e.target.value as (typeof MASTER_PRESETS)[number])}
@@ -2802,7 +2737,7 @@ export default function HomePage() {
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Normalization Profile</span>
+                    <span className="font-medium text-foreground">{t("analyser.mastering.normProfile")}</span>
                     <select
                       value={normalizationProfile}
                       onChange={(e) => applyNormalizationProfile(e.target.value as NormalizationProfileId)}
@@ -2810,25 +2745,28 @@ export default function HomePage() {
                     >
                       {NORMALIZATION_PROFILE_OPTIONS.map((profile) => (
                         <option key={profile.id} value={profile.id}>
-                          {profile.label}
+                          {t(`analyser.norm.${profile.id}.label`)}
                         </option>
                       ))}
                     </select>
                   </label>
                   <div className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Profile Targets</span>
+                    <span className="font-medium text-foreground">{t("analyser.mastering.profileTargets")}</span>
                     <div className="rounded-xl border border-border/70 bg-secondary/45 px-3 py-2 text-sm text-foreground">
                       {selectedNormalizationProfile.targetLufs !== null
-                        ? `${selectedNormalizationProfile.targetLufs.toFixed(1)} LUFS | ${selectedNormalizationProfile.truePeakDbfs?.toFixed(1)} dBFS TP`
-                        : "Using preset/manual targets"}
+                        ? t("analyser.mastering.profileTargetsValue", {
+                            lufs: selectedNormalizationProfile.targetLufs.toFixed(1),
+                            tp: selectedNormalizationProfile.truePeakDbfs?.toFixed(1) ?? na
+                          })
+                        : t("analyser.mastering.presetTargets")}
                     </div>
-                    <p className="text-[11px] text-muted-foreground">{selectedNormalizationProfile.help}</p>
+                    <p className="text-[11px] text-muted-foreground">{t(`analyser.norm.${selectedNormalizationProfile.id}.help`)}</p>
                   </div>
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Backend</span>
+                    <span className="font-medium text-foreground">{t("analyser.mastering.backend")}</span>
                     <select
                       value={masterBackend}
                       onChange={(e) => setMasterBackend(e.target.value as (typeof MASTER_BACKENDS)[number])}
@@ -2843,24 +2781,24 @@ export default function HomePage() {
                   </label>
 
                   <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Reference song (matchering)</span>
+                    <span className="font-medium text-foreground">{t("analyser.mastering.reference")}</span>
                     {/* Chosen by name: the run ID it needs is not something anyone can read off the page. */}
                     <select
                       value={masterReferenceRunId}
                       onChange={(e) => setMasterReferenceRunId(e.target.value)}
                       className="w-full rounded-xl border border-input bg-input px-3 py-2 text-sm text-foreground"
-                      aria-label="Reference song for matchering"
+                      aria-label={t("analyser.mastering.referenceAria")}
                     >
-                      <option value="">None</option>
+                      <option value="">{t("analyser.mastering.none")}</option>
                       {runs
                         .filter((run) => run.id !== selectedRunId)
                         .map((run) => (
                           <option key={run.id} value={run.id}>
-                            {run.filename} · {new Date(run.created_at).toLocaleDateString()}
+                            {run.filename} · {new Date(run.created_at).toLocaleDateString(locale)}
                           </option>
                         ))}
                       {masterReferenceRunId && !runs.some((run) => run.id === masterReferenceRunId) ? (
-                        <option value={masterReferenceRunId}>Run {masterReferenceRunId.slice(0, 8)}…</option>
+                        <option value={masterReferenceRunId}>{t("analyser.mastering.runShort", { id: masterReferenceRunId.slice(0, 8) })}</option>
                       ) : null}
                     </select>
                   </label>
@@ -2868,7 +2806,7 @@ export default function HomePage() {
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Target LUFS</span>
+                    <span className="font-medium text-foreground">{t("analyser.mastering.targetLufs")}</span>
                     <Input
                       type="number"
                       step={0.1}
@@ -2879,7 +2817,7 @@ export default function HomePage() {
                     />
                   </label>
                   <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">True Peak dBFS</span>
+                    <span className="font-medium text-foreground">{t("analyser.mastering.truePeak")}</span>
                     <Input
                       type="number"
                       step={0.1}
@@ -2893,7 +2831,7 @@ export default function HomePage() {
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Input Gain (dB)</span>
+                    <span className="font-medium text-foreground">{t("analyser.mastering.inputGain")}</span>
                     <Input
                       type="number"
                       step={0.5}
@@ -2904,7 +2842,7 @@ export default function HomePage() {
                     />
                   </label>
                   <div className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Gain Staging</span>
+                    <span className="font-medium text-foreground">{t("analyser.mastering.gainStaging")}</span>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 rounded-xl border border-border/70 bg-secondary/45 px-3 py-2 text-sm text-foreground">
                         {masterInputGainSummary}
@@ -2915,7 +2853,7 @@ export default function HomePage() {
                         onClick={() => setMasterInputGainDbInput("0")}
                         disabled={masterInputGainDb === 0}
                       >
-                        Reset
+                        {t("analyser.mastering.reset")}
                       </Button>
                     </div>
                   </div>
@@ -2923,7 +2861,7 @@ export default function HomePage() {
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Bass Mono</span>
+                    <span className="font-medium text-foreground">{t("analyser.mastering.bassMono")}</span>
                     <select
                       value={masterBassMonoHz}
                       onChange={(e) => setMasterBassMonoHz(e.target.value)}
@@ -2931,19 +2869,23 @@ export default function HomePage() {
                     >
                       {BASS_MONO_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
-                          {option.label}
+                          {option.value === ""
+                            ? t("analyser.bassMono.presetDefault")
+                            : option.value === "0"
+                              ? t("analyser.bassMono.off")
+                              : `${option.value} Hz`}
                         </option>
                       ))}
                     </select>
                   </label>
                   <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Stereo Width</span>
+                    <span className="font-medium text-foreground">{t("analyser.mastering.stereoWidth")}</span>
                     <Input
                       type="number"
                       step={0.05}
                       min={0.5}
                       max={1.5}
-                      placeholder="preset default (1.0)"
+                      placeholder={t("analyser.mastering.widthPlaceholder")}
                       value={masterStereoWidthInput}
                       onChange={(e) => setMasterStereoWidthInput(e.target.value)}
                     />
@@ -2952,7 +2894,7 @@ export default function HomePage() {
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">V2 Variants</span>
+                    <span className="font-medium text-foreground">{t("analyser.mastering.variants")}</span>
                     <Input
                       type="number"
                       min={2}
@@ -2963,7 +2905,7 @@ export default function HomePage() {
                     />
                   </label>
                   <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Refine Passes</span>
+                    <span className="font-medium text-foreground">{t("analyser.mastering.refinePasses")}</span>
                     <Input
                       type="number"
                       min={1}
@@ -2975,14 +2917,7 @@ export default function HomePage() {
                 </div>
 
                 <p className="text-[11px] text-muted-foreground">
-                  Backend notes: `internal` is the safest default, `auto` is for advanced backend selection, and `matchering`
-                  requires a valid Reference song. Input Gain (-12..+12 dB) trims the source before profiling,
-                  adaptation, and every backend pass, so it changes how the chain hears the mix. Bass Mono
-                  collapses out-of-phase side energy below the cutoff (the mid is untouched) and Stereo Width
-                  scales the side channel; leaving both on preset default lets the preflight tighten them when
-                  mono-compatibility markers fire. Refine Passes are loop-guarded. Normalization profile sets
-                  platform targets; manual LUFS/TP values override profile defaults. Source-aware adaptation can
-                  trim harshness, sub energy, density, or true-peak risk before the main master renders.
+                  {t("analyser.mastering.backendNotes")}
                 </p>
               </div>
 
@@ -2992,27 +2927,27 @@ export default function HomePage() {
                 onClick={() => void onMaster()}
                 disabled={!selectedRunId || isMastering || isBusy}
               >
-                Run Mastering
+                {t("analyser.mastering.run")}
               </Button>
 
               <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <Badge variant={masteringStatusVariant[masteringStatus] ?? "outline"}>
-                    {masteringStatus}
+                    {statusWord(t, masteringStatus)}
                   </Badge>
                   <span className="text-xs text-muted-foreground">{masteringProgress.toFixed(1)}%</span>
                 </div>
                 <Progress value={masteringProgress} />
                 <p className="mt-2 text-xs font-semibold text-primary">
-                  {masteringDetail || `${stageLabel(masteringStage)}.`}
+                  {masteringDetail || `${stageLabel(masteringStage, t)}.`}
                 </p>
-                <p className="mt-2 text-xs text-muted-foreground">Best output: {bestMasterId}</p>
+                <p className="mt-2 text-xs text-muted-foreground">{t("analyser.mastering.bestOutput", { id: bestMasterId })}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Backend selected: {backendSelected}
+                  {t("analyser.mastering.backendSelected", { backend: backendSelected })}
                 </p>
                 {bestOutputHash ? (
                   <p className="mt-1 text-[11px] text-muted-foreground" title={bestOutputHash}>
-                    Output SHA256: {bestOutputHash.slice(0, 12)}...
+                    {t("analyser.mastering.outputHash", { hash: bestOutputHash.slice(0, 12) })}
                   </p>
                 ) : null}
                 {masteringInfo?.error_message ? (
@@ -3020,22 +2955,25 @@ export default function HomePage() {
                 ) : null}
                 {(refineAcceptedPasses !== null || refineFinalScore !== null) ? (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Refinement: {refineAcceptedPasses !== null ? refineAcceptedPasses.toFixed(0) : "0"}
-                    {" / "}
-                    {refineMaxPasses !== null ? refineMaxPasses.toFixed(0) : "?"} accepted
-                    {refineFinalScore !== null ? ` | Final issue score ${refineFinalScore.toFixed(0)}` : ""}
-                    {refineRollbackCount !== null ? ` | Rollbacks ${refineRollbackCount.toFixed(0)}` : ""}
-                    {refineFallbackApplied ? " | Stem fallback applied" : ""}
+                    {t("analyser.mastering.refinement", {
+                      accepted: refineAcceptedPasses !== null ? refineAcceptedPasses.toFixed(0) : "0",
+                      max: refineMaxPasses !== null ? refineMaxPasses.toFixed(0) : "?"
+                    })}
+                    {refineFinalScore !== null ? t("analyser.mastering.finalScore", { n: refineFinalScore.toFixed(0) }) : ""}
+                    {refineRollbackCount !== null ? t("analyser.mastering.rollbacks", { n: refineRollbackCount.toFixed(0) }) : ""}
+                    {refineFallbackApplied ? t("analyser.mastering.stemFallback") : ""}
                     {refineNonRegressionApplied
-                      ? ` | Non-regression safeguard (${refineNonRegressionReason || "applied"})`
+                      ? t("analyser.mastering.nonRegression", {
+                          reason: refineNonRegressionReason || t("analyser.mastering.applied")
+                        })
                       : ""}
                   </p>
                 ) : null}
                 {proFeatureEntries.length > 0 ? (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Pro modules:{" "}
+                    {t("analyser.mastering.proModules")}{" "}
                     {proFeatureEntries
-                      .map(([key, value]) => `${key}:${value ? "yes" : "no"}`)
+                      .map(([key, value]) => `${key}:${value ? t("analyser.yes") : t("analyser.no")}`)
                       .join(" | ")}
                   </p>
                 ) : null}
@@ -3043,22 +2981,26 @@ export default function HomePage() {
 
               {Object.keys(adaptationInfo).length > 0 ? (
                 <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Source-Aware Adaptation</p>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.mastering.adaptationTitle")}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Source issue score: {adaptationSourceIssueScore !== null ? adaptationSourceIssueScore.toFixed(0) : "N/A"}
-                    {adaptationAdjustmentCount !== null ? ` | Adjustments ${adaptationAdjustmentCount.toFixed(0)}` : ""}
+                    {t("analyser.mastering.sourceScore", {
+                      n: adaptationSourceIssueScore !== null ? adaptationSourceIssueScore.toFixed(0) : na
+                    })}
+                    {adaptationAdjustmentCount !== null
+                      ? t("analyser.mastering.adjustments", { n: adaptationAdjustmentCount.toFixed(0) })
+                      : ""}
                   </p>
                   {adaptationAdjustments.length > 0 ? (
                     <div className="mt-2 space-y-1">
                       {adaptationAdjustments.slice(0, 6).map((row) => (
                         <p key={`${row.field}-${row.reason}`} className="text-xs text-muted-foreground">
-                          {row.field}: {row.before !== null ? row.before.toFixed(2) : "N/A"} {"->"} {row.after !== null ? row.after.toFixed(2) : "N/A"} | {row.reason}
+                          {row.field}: {row.before !== null ? row.before.toFixed(2) : na} {"->"} {row.after !== null ? row.after.toFixed(2) : na} | {row.reason}
                         </p>
                       ))}
                     </div>
                   ) : (
                     <p className="mt-2 text-xs text-muted-foreground">
-                      No preflight parameter changes were required for this source.
+                      {t("analyser.mastering.noChanges")}
                     </p>
                   )}
                 </div>
@@ -3066,37 +3008,40 @@ export default function HomePage() {
 
               {Object.keys(masteringSelfCheck).length > 0 ? (
                 <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Post-Master Self-Check</p>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.mastering.selfCheckTitle")}</p>
                   <p className="mt-1 text-sm">
-                    Assessment: <span className="font-semibold">{selfCheckAssessment}</span>
+                    {t("analyser.mastering.assessment")} <span className="font-semibold">{selfCheckAssessment}</span>
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Issue score:{" "}
-                    {selfCheckScoreBefore !== null ? selfCheckScoreBefore.toFixed(0) : "N/A"} {"->"}{" "}
-                    {selfCheckScoreAfter !== null ? selfCheckScoreAfter.toFixed(0) : "N/A"}
+                    {t("analyser.mastering.issueScoreLabel")}{" "}
+                    {selfCheckScoreBefore !== null ? selfCheckScoreBefore.toFixed(0) : na} {"->"}{" "}
+                    {selfCheckScoreAfter !== null ? selfCheckScoreAfter.toFixed(0) : na}
                     {selfCheckScoreDelta !== null
                       ? ` (${selfCheckScoreDelta > 0 ? "+" : ""}${selfCheckScoreDelta.toFixed(0)})`
                       : ""}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Applied settings: {text(appliedSettings.name, masterPreset)} | Target{" "}
-                    {appliedTargetLufs !== null ? `${appliedTargetLufs.toFixed(1)} LUFS` : "N/A"}{" "}
-                    | TP{" "}
-                    {appliedTargetTruePeak !== null ? `${appliedTargetTruePeak.toFixed(1)} dBFS` : "N/A"} | Norm{" "}
-                    {appliedNormalizationProfile} | Input gain{" "}
-                    {appliedInputGainDb !== null
-                      ? `${appliedInputGainDb > 0 ? "+" : ""}${appliedInputGainDb.toFixed(1)} dB`
-                      : "0.0 dB"}
+                    {t("analyser.mastering.appliedSettings", {
+                      name: text(appliedSettings.name, masterPreset),
+                      target: appliedTargetLufs !== null ? `${appliedTargetLufs.toFixed(1)} LUFS` : na,
+                      tp: appliedTargetTruePeak !== null ? `${appliedTargetTruePeak.toFixed(1)} dBFS` : na,
+                      norm: appliedNormalizationProfile,
+                      gain:
+                        appliedInputGainDb !== null
+                          ? `${appliedInputGainDb > 0 ? "+" : ""}${appliedInputGainDb.toFixed(1)} dB`
+                          : "0.0 dB"
+                    })}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Stereo stage: bass mono{" "}
-                    {appliedBassMonoHz !== null
-                      ? appliedBassMonoHz > 0
-                        ? `${appliedBassMonoHz.toFixed(0)} Hz`
-                        : "off"
-                      : "N/A"}{" "}
-                    | width{" "}
-                    {appliedStereoWidth !== null ? appliedStereoWidth.toFixed(2) : "N/A"}
+                    {t("analyser.mastering.stereoStage", {
+                      bass:
+                        appliedBassMonoHz !== null
+                          ? appliedBassMonoHz > 0
+                            ? `${appliedBassMonoHz.toFixed(0)} Hz`
+                            : t("analyser.mastering.off")
+                          : na,
+                      width: appliedStereoWidth !== null ? appliedStereoWidth.toFixed(2) : na
+                    })}
                   </p>
                   {inputGainNotes.length > 0 ? (
                     <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-muted-foreground">
@@ -3106,41 +3051,55 @@ export default function HomePage() {
                     </ul>
                   ) : null}
                   <p className="mt-1 text-xs text-muted-foreground">
-                    AI recommendation match: mode {aiModeMatch === null ? "N/A" : aiModeMatch ? "yes" : "no"} | preset{" "}
-                    {aiPresetMatch === null ? "N/A" : aiPresetMatch ? "yes" : "no"} | target{" "}
-                    {aiTargetLufsMatch === null ? "N/A" : aiTargetLufsMatch ? "yes" : "no"} | TP{" "}
-                    {aiTruePeakMatch === null ? "N/A" : aiTruePeakMatch ? "yes" : "no"}
+                    {t("analyser.mastering.aiMatch", {
+                      mode: yesNo(aiModeMatch),
+                      preset: yesNo(aiPresetMatch),
+                      target: yesNo(aiTargetLufsMatch),
+                      tp: yesNo(aiTruePeakMatch)
+                    })}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Compliance: {selfCheckCompliancePassed ? "pass" : "review required"}
-                    {selfCheckComplianceLufsDelta !== null ? ` | LUFS delta ${selfCheckComplianceLufsDelta > 0 ? "+" : ""}${selfCheckComplianceLufsDelta.toFixed(2)}` : ""}
-                    {selfCheckComplianceTruePeakDelta !== null ? ` | TP delta ${selfCheckComplianceTruePeakDelta > 0 ? "+" : ""}${selfCheckComplianceTruePeakDelta.toFixed(2)} dB` : ""}
-                    {selfCheckComplianceCrestDelta !== null ? ` | Crest delta ${selfCheckComplianceCrestDelta > 0 ? "+" : ""}${selfCheckComplianceCrestDelta.toFixed(2)} dB` : ""}
+                    {t("analyser.mastering.compliance", {
+                      result: selfCheckCompliancePassed ? t("analyser.mastering.pass") : t("analyser.mastering.reviewRequired")
+                    })}
+                    {selfCheckComplianceLufsDelta !== null
+                      ? t("analyser.mastering.lufsDelta", { n: signed(selfCheckComplianceLufsDelta) })
+                      : ""}
+                    {selfCheckComplianceTruePeakDelta !== null
+                      ? t("analyser.mastering.tpDelta", { n: signed(selfCheckComplianceTruePeakDelta) })
+                      : ""}
+                    {selfCheckComplianceCrestDelta !== null
+                      ? t("analyser.mastering.crestDelta", { n: signed(selfCheckComplianceCrestDelta) })
+                      : ""}
                   </p>
                   {selfCheckComplianceFailed.length > 0 ? (
                     <p className="mt-1 text-xs text-amber-300">
-                      Compliance issues: {selfCheckComplianceFailed.join(", ")}
+                      {t("analyser.mastering.complianceIssues", { list: selfCheckComplianceFailed.join(", ") })}
                     </p>
                   ) : null}
                   {postCheckRepairAttempted ? (
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Post-check rescue: {postCheckRepairApplied ? "applied" : "attempted only"}
-                      {postCheckRepairRound !== null && postCheckRepairRound > 0 ? ` | round ${postCheckRepairRound.toFixed(0)}` : ""}
+                      {t("analyser.mastering.rescue", {
+                        state: postCheckRepairApplied ? t("analyser.mastering.applied") : t("analyser.mastering.rescueAttempted")
+                      })}
+                      {postCheckRepairRound !== null && postCheckRepairRound > 0
+                        ? t("analyser.mastering.round", { n: postCheckRepairRound.toFixed(0) })
+                        : ""}
                     </p>
                   ) : null}
                   {selfCheckResolved.length > 0 ? (
                     <p className="mt-2 text-xs text-emerald-300">
-                      Resolved: {selfCheckResolved.join(", ")}
+                      {t("analyser.mastering.resolved", { list: selfCheckResolved.join(", ") })}
                     </p>
                   ) : null}
                   {selfCheckRemaining.length > 0 ? (
                     <p className="mt-1 text-xs text-amber-300">
-                      Remaining: {selfCheckRemaining.join(", ")}
+                      {t("analyser.mastering.remaining", { list: selfCheckRemaining.join(", ") })}
                     </p>
                   ) : null}
                   {selfCheckWorsened.length > 0 ? (
                     <p className="mt-1 text-xs text-red-300">
-                      Worsened: {selfCheckWorsened.join(", ")}
+                      {t("analyser.mastering.worsened", { list: selfCheckWorsened.join(", ") })}
                     </p>
                   ) : null}
                   {selfCheckRecommendedFixes.length > 0 ? (
@@ -3157,18 +3116,18 @@ export default function HomePage() {
 
               {masteringOutputs.length > 0 ? (
                 <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Mastered Outputs</p>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.mastering.outputs")}</p>
                   <DataTable data={masteringOutputs} columns={masteredColumns} />
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">No mastering outputs generated yet.</p>
+                <p className="text-xs text-muted-foreground">{t("analyser.mastering.noOutputs")}</p>
               )}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Run History</CardTitle>
+              <CardTitle className="text-lg">{t("analyser.history.title")}</CardTitle>
             </CardHeader>
             <CardContent>
               <DataTable
@@ -3183,7 +3142,7 @@ export default function HomePage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
-                <Waves className="h-5 w-5 text-primary" /> Playback + Timeline
+                <Waves className="h-5 w-5 text-primary" /> {t("analyser.playback.title")}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -3212,26 +3171,26 @@ export default function HomePage() {
                   }
                 }}
                 onTimeUpdate={(e) => {
-                  const t = (e.target as HTMLAudioElement).currentTime;
-                  if (isLoopSelection && t >= selectionEnd - 0.02) {
+                  const time = (e.target as HTMLAudioElement).currentTime;
+                  if (isLoopSelection && time >= selectionEnd - 0.02) {
                     (e.target as HTMLAudioElement).currentTime = selectionStart;
                     scrubTimeRef.current = selectionStart;
                     setScrubTime(selectionStart);
                     return;
                   }
-                  if (Math.abs(t - scrubTimeRef.current) < 0.025) {
+                  if (Math.abs(time - scrubTimeRef.current) < 0.025) {
                     return;
                   }
-                  scrubTimeRef.current = t;
-                  setScrubTime(t);
+                  scrubTimeRef.current = time;
+                  setScrubTime(time);
                 }}
                 onPlay={handleAudioPlay}
                 onPause={() => setIsPlaying(false)}
                 onEnded={() => setIsPlaying(false)}
-                onError={() => setStatusMessage("Audio playback failed to load for this run.")}
+                onError={() => setStatusMessage(t("analyser.msg.audioLoadFailed"))}
               />
               <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">Playhead</p>
+                <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.playback.playhead")}</p>
                 <input
                   type="range"
                   min={0}
@@ -3239,10 +3198,10 @@ export default function HomePage() {
                   step={0.01}
                   value={scrubTime}
                   onChange={(e) => {
-                    const t = Number(e.target.value);
-                    setScrubTime(t);
+                    const time = Number(e.target.value);
+                    setScrubTime(time);
                     if (audioRef.current) {
-                      audioRef.current.currentTime = t;
+                      audioRef.current.currentTime = time;
                     }
                   }}
                   className="mt-2 w-full accent-[hsl(var(--primary))]"
@@ -3251,27 +3210,30 @@ export default function HomePage() {
                   {scrubTime.toFixed(2)}s / {duration.toFixed(2)}s
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span>Playback {playbackRate.toFixed(2)}x</span>
+                  <span>{t("analyser.playback.rate", { rate: playbackRate.toFixed(2) })}</span>
                   <span>|</span>
-                  <span>{isLoopSelection ? "Selection loop active" : "Selection loop off"}</span>
+                  <span>{isLoopSelection ? t("analyser.playback.loopOn") : t("analyser.playback.loopOff")}</span>
                   <span>|</span>
-                  <span>{eqEnabled ? "EQ monitoring enabled" : "EQ bypassed"}</span>
+                  <span>{eqEnabled ? t("analyser.playback.eqOn") : t("analyser.playback.eqOff")}</span>
                 </div>
               </div>
 
               <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
                 <div className="mb-2 flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Selected Segment (Zoom Range)</p>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.playback.segment")}</p>
                   <Button size="sm" variant="ghost" onClick={() => applySelectionRange(0, duration)}>
-                    Full Track
+                    {t("analyser.playback.fullTrack")}
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Start {selectionStart.toFixed(2)}s | End {selectionEnd.toFixed(2)}s | Length{" "}
-                  {selectedSegmentLength.toFixed(2)}s
+                  {t("analyser.playback.segmentLine", {
+                    start: selectionStart.toFixed(2),
+                    end: selectionEnd.toFixed(2),
+                    length: selectedSegmentLength.toFixed(2)
+                  })}
                 </p>
                 <label className="mt-3 block text-xs text-muted-foreground">
-                  Left Marker
+                  {t("analyser.playback.leftMarker")}
                   <input
                     type="range"
                     min={0}
@@ -3283,7 +3245,7 @@ export default function HomePage() {
                   />
                 </label>
                 <label className="mt-3 block text-xs text-muted-foreground">
-                  Right Marker
+                  {t("analyser.playback.rightMarker")}
                   <input
                     type="range"
                     min={0}
@@ -3297,7 +3259,7 @@ export default function HomePage() {
               </div>
 
               <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">Markers (Click To Jump + Zoom)</p>
+                <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.playback.markers")}</p>
                 {allMarkers.length > 0 ? (
                   <div className="mt-2 flex max-h-28 flex-wrap gap-2 overflow-y-auto">
                     {allMarkers.map((marker, idx) => (
@@ -3312,7 +3274,7 @@ export default function HomePage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="mt-2 text-xs text-muted-foreground">No markers available yet.</p>
+                  <p className="mt-2 text-xs text-muted-foreground">{t("analyser.playback.noMarkers")}</p>
                 )}
               </div>
             </CardContent>
@@ -3323,7 +3285,7 @@ export default function HomePage() {
           <section className="grid gap-3 xl:grid-cols-4">
             <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Active Run
+                {t("analyser.tiles.activeRun")}
               </p>
               <p className="mt-2 truncate display-font text-lg font-semibold text-foreground">
                 {selectedRunFilename}
@@ -3331,13 +3293,13 @@ export default function HomePage() {
               {selectedRunId ? (
                 <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                   <span className="truncate font-mono" title={selectedRunId}>
-                    Run ID {selectedRunId}
+                    {t("analyser.tiles.runId", { id: selectedRunId })}
                   </span>
                   <button
                     type="button"
                     className="shrink-0 rounded p-1 hover:bg-white/10 hover:text-foreground"
-                    title="Copy the full run ID"
-                    aria-label="Copy the full run ID"
+                    title={t("analyser.tiles.copyRunId")}
+                    aria-label={t("analyser.tiles.copyRunId")}
                     onClick={() => {
                       void navigator.clipboard?.writeText(selectedRunId).then(() => {
                         setRunIdCopied(true);
@@ -3349,57 +3311,60 @@ export default function HomePage() {
                   </button>
                 </div>
               ) : (
-                <p className="mt-1 text-xs text-muted-foreground">Upload a file to create a run.</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t("analyser.tiles.uploadToCreate")}</p>
               )}
             </div>
 
             <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Analysis State
+                {t("analyser.tiles.analysisState")}
               </p>
               <p className="mt-2 display-font text-lg font-semibold text-foreground">
-                {stageLabel(analysisStage)}
+                {stageLabel(analysisStage, t)}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">{analysisTicker}</p>
-              <p className="mt-2 text-xs text-primary">{progress.toFixed(1)}% complete</p>
+              <p className="mt-2 text-xs text-primary">{t("analyser.tiles.complete", { pct: progress.toFixed(1) })}</p>
             </div>
 
             <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Review Assets
+                {t("analyser.tiles.reviewAssets")}
               </p>
               <p className="mt-2 display-font text-lg font-semibold text-foreground">
-                {loadedChartNames.length}/{availableChartNames.length || ALL_CHARTS.length} charts loaded
+                {t("analyser.tiles.chartsLoaded", {
+                  loaded: loadedChartNames.length,
+                  total: availableChartNames.length || ALL_CHARTS.length
+                })}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {allMarkers.length} markers detected | {highlightedMarkerCount} attention items
+                {t("analyser.tiles.markersLine", { markers: allMarkers.length, attention: highlightedMarkerCount })}
               </p>
               <p className="mt-2 text-xs text-muted-foreground">
-                Selection window {selectedSegmentLength.toFixed(2)}s
+                {t("analyser.tiles.selectionWindow", { length: selectedSegmentLength.toFixed(2) })}
               </p>
             </div>
 
             <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Mastering Strategy
+                {t("analyser.tiles.strategy")}
               </p>
               <p className="mt-2 display-font text-lg font-semibold text-foreground">
                 {masteringRecommendationSummary}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Backend {masterBackend} | Profile {normalizationProfile}
+                {t("analyser.tiles.backendProfile", { backend: masterBackend, profile: normalizationProfile })}
               </p>
               <p className="mt-2 text-xs text-muted-foreground">
                 {masteringOutputs.length > 0
-                  ? `${masteringOutputs.length} mastered output${masteringOutputs.length === 1 ? "" : "s"} ready`
-                  : "No mastered outputs yet"}
+                  ? tp("analyser.tiles.masteredReady", masteringOutputs.length)
+                  : t("analyser.tiles.noMastered")}
               </p>
             </div>
           </section>
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Overview Deck</CardTitle>
+              <CardTitle className="text-lg">{t("analyser.overview.title")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-3">
@@ -3416,7 +3381,7 @@ export default function HomePage() {
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Button size="sm" variant="secondary" onClick={() => void togglePlayback()} disabled={!selectedRunId}>
                       {isPlaying ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-                      {isPlaying ? "Pause" : "Play"}
+                      {isPlaying ? t("analyser.overview.pause") : t("analyser.overview.play")}
                     </Button>
                     <Button size="sm" variant="secondary" onClick={() => seekBySeconds(-5)} disabled={!selectedRunId}>
                       <SkipBack className="mr-2 h-4 w-4" />
@@ -3428,7 +3393,7 @@ export default function HomePage() {
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => scrubToTime(selectionStart)} disabled={!selectedRunId}>
                       <RotateCcw className="mr-2 h-4 w-4" />
-                      Selection Start
+                      {t("analyser.overview.selectionStart")}
                     </Button>
                     <Button
                       size="sm"
@@ -3437,10 +3402,10 @@ export default function HomePage() {
                       disabled={!selectedRunId}
                     >
                       <Repeat className="mr-2 h-4 w-4" />
-                      Loop Selection
+                      {t("analyser.overview.loopSelection")}
                     </Button>
                     <label className="inline-flex items-center gap-2 rounded-xl border border-border/70 bg-secondary/45 px-3 py-2 text-sm text-foreground">
-                      Speed
+                      {t("analyser.overview.speed")}
                       <select
                         value={playbackRate}
                         onChange={(event) => setPlaybackRate(Number(event.target.value))}
@@ -3454,41 +3419,46 @@ export default function HomePage() {
                       </select>
                     </label>
                     <Button size="sm" variant="ghost" onClick={markSelectionStartAtScrub} disabled={!selectedRunId}>
-                      Set Start @ {scrubTime.toFixed(2)}s
+                      {t("analyser.overview.setStart", { time: scrubTime.toFixed(2) })}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={markSelectionEndAtScrub} disabled={!selectedRunId}>
-                      Set End @ {scrubTime.toFixed(2)}s
+                      {t("analyser.overview.setEnd", { time: scrubTime.toFixed(2) })}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={resetReviewSelection} disabled={!selectedRunId}>
-                      Reset Range
+                      {t("analyser.overview.resetRange")}
                     </Button>
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Delivery Readiness</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t("analyser.overview.readiness")}</p>
                   <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                      <p className="text-xs text-muted-foreground">Loudness</p>
+                      <p className="text-xs text-muted-foreground">{t("analyser.overview.loudness")}</p>
                       <p className="mt-1 text-base font-semibold">{loudnessReadiness}</p>
-                      <p className="text-xs text-muted-foreground">{integratedLufs.toFixed(2)} LUFS vs {loudnessTargetForReadiness.toFixed(1)} target</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t("analyser.overview.loudnessLine", {
+                          lufs: integratedLufs.toFixed(2),
+                          target: loudnessTargetForReadiness.toFixed(1)
+                        })}
+                      </p>
                     </div>
                     <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                      <p className="text-xs text-muted-foreground">True Peak</p>
+                      <p className="text-xs text-muted-foreground">{t("analyser.overview.truePeak")}</p>
                       <p className="mt-1 text-base font-semibold">{peakReadiness}</p>
-                      <p className="text-xs text-muted-foreground">{truePeakDbfs.toFixed(2)} dBFS current ceiling</p>
+                      <p className="text-xs text-muted-foreground">{t("analyser.overview.peakLine", { tp: truePeakDbfs.toFixed(2) })}</p>
                     </div>
                     <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                      <p className="text-xs text-muted-foreground">Marker Load</p>
+                      <p className="text-xs text-muted-foreground">{t("analyser.overview.markerLoad")}</p>
                       <p className="mt-1 text-base font-semibold">{markerReadiness}</p>
-                      <p className="text-xs text-muted-foreground">{highlightedMarkerCount} high-attention markers</p>
+                      <p className="text-xs text-muted-foreground">{tp("analyser.overview.markerLine", highlightedMarkerCount)}</p>
                     </div>
                     <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                      <p className="text-xs text-muted-foreground">Dynamics</p>
+                      <p className="text-xs text-muted-foreground">{t("analyser.overview.dynamics")}</p>
                       <p className="mt-1 text-base font-semibold">{dynamicsReadiness}</p>
                       <p className="text-xs text-muted-foreground">
-                        Crest {crestFactorDb.toFixed(2)} dB | LRA {loudnessRangeLu.toFixed(1)} LU
-                        {loudnessRangeLu < 3 ? " (flat sections)" : ""}
+                        {t("analyser.overview.dynamicsLine", { crest: crestFactorDb.toFixed(2), lra: loudnessRangeLu.toFixed(1) })}
+                        {loudnessRangeLu < 3 ? t("analyser.overview.flatSections") : ""}
                       </p>
                     </div>
                   </div>
@@ -3497,8 +3467,12 @@ export default function HomePage() {
                 <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
                   <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
                     <SlidersHorizontal className="h-4 w-4 text-primary" />
-                    Manual EQ
-                    {eqEnabled ? <Badge variant="default">Live</Badge> : <Badge variant="outline">Bypass</Badge>}
+                    {t("analyser.overview.manualEq")}
+                    {eqEnabled ? (
+                      <Badge variant="default">{t("analyser.overview.live")}</Badge>
+                    ) : (
+                      <Badge variant="outline">{t("analyser.overview.bypass")}</Badge>
+                    )}
                   </div>
                   <EqualizerPanel
                     enabled={eqEnabled}
@@ -3521,17 +3495,17 @@ export default function HomePage() {
                   />
                   <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
                     <Download className="h-3.5 w-3.5" />
-                    EQ export renders a full-track WAV in the browser so your backend pipeline remains unchanged.
+                    {t("analyser.overview.eqExportNote")}
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Review Guidance</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t("analyser.overview.guidanceTitle")}</p>
                   <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                    <p>Use the review strip to jump quickly through the file before opening the full analysis plots.</p>
-                    <p>Keep the chart group on Mix Review for first-pass diagnostics, then switch to Spectral for root-cause inspection.</p>
-                    <p>If delivery readiness is not aligned, apply the suggested mastering profile before running a new mastering pass.</p>
-                    <p>Use the optional EQ for manual auditioning and export the processed full track as WAV when you want to keep that curve.</p>
+                    <p>{t("analyser.overview.guidance1")}</p>
+                    <p>{t("analyser.overview.guidance2")}</p>
+                    <p>{t("analyser.overview.guidance3")}</p>
+                    <p>{t("analyser.overview.guidance4")}</p>
                   </div>
                 </div>
               </div>
@@ -3541,9 +3515,9 @@ export default function HomePage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
-                File Intelligence
+                {t("analyser.file.title")}
                 <span
-                  title="Top-level recording/encoding details, estimated frequency content, compression implications, and dynamic range context."
+                  title={t("analyser.file.titleHelp")}
                   className="inline-flex cursor-help rounded-full bg-secondary/80 p-1 text-muted-foreground"
                 >
                   <CircleHelp className="h-4 w-4" />
@@ -3552,74 +3526,79 @@ export default function HomePage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title="Container format and codec tell you how audio was stored and encoded.">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Format / Codec</p>
+                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.formatHelp")}>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.formatCodec")}</p>
                   <p className="mt-1 text-sm font-semibold">
-                    {text(metadata.format)} / {text(metadata.codec)}
+                    {text(metadata.format, na)} / {text(metadata.codec, na)}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Compression: <span className="font-medium">{compressionType}</span>
+                    {t("analyser.file.compression")} <span className="font-medium">{compressionType}</span>
                   </p>
                 </div>
-                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title="Sample rate defines Nyquist limit; practical hearing reference is about 20 Hz to 20 kHz.">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Frequency Range</p>
+                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.freqHelp")}>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.freqRange")}</p>
                   <p className="mt-1 text-sm font-semibold">{hzRange(theoLowHz, theoHighHz)}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Estimated content:{" "}
-                    {estLowHz !== null && estHighHz !== null ? hzRange(estLowHz, estHighHz) : "N/A"}
+                    {t("analyser.file.estimatedContent")}{" "}
+                    {estLowHz !== null && estHighHz !== null ? hzRange(estLowHz, estHighHz) : na}
                   </p>
                 </div>
-                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title="Dynamic range combines crest factor, loudness range, and peak-to-noise span.">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Dynamic Range Snapshot</p>
+                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.dynHelp")}>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.dynSnapshot")}</p>
                   <p className="mt-1 text-sm font-semibold">
-                    Crest {metricNumber(metrics, ["dynamics", "crest_factor_db"], 0).toFixed(2)} dB
+                    {t("analyser.file.crest", { n: metricNumber(metrics, ["dynamics", "crest_factor_db"], 0).toFixed(2) })}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    LRA {loudnessRangeLu.toFixed(2)} LU (gated approx.)
+                    {t("analyser.file.lra", { n: loudnessRangeLu.toFixed(2) })}
                   </p>
                 </div>
-                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title="Bitrate and bit depth influence potential quality and headroom.">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Signal Properties</p>
+                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.signalHelp")}>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.signal")}</p>
                   <p className="mt-1 text-sm font-semibold">
-                    {num(metadata.sample_rate, metricNumber(metrics, ["technical", "sample_rate"], 0)).toLocaleString()} Hz,{" "}
-                    {num(metadata.channels, metricNumber(metrics, ["technical", "channels"], 0))} ch
+                    {t("analyser.file.channels", {
+                      rate: num(metadata.sample_rate, metricNumber(metrics, ["technical", "sample_rate"], 0)).toLocaleString(locale),
+                      ch: num(metadata.channels, metricNumber(metrics, ["technical", "channels"], 0))
+                    })}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {bitrateKbps > 0 ? `${bitrateKbps.toFixed(0)} kbps` : "Bitrate N/A"} |{" "}
+                    {bitrateKbps > 0 ? t("analyser.file.kbps", { n: bitrateKbps.toFixed(0) }) : t("analyser.file.bitrateNa")} |{" "}
                     {bitDepthLabel}
                   </p>
                 </div>
-                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title="Estimated high-frequency loss is inferred from measured top-band content vs Nyquist limit.">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Compression Loss Estimate</p>
+                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.lossHelp")}>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.lossEstimate")}</p>
                   <p className="mt-1 text-sm font-semibold">
                     {/* Runs analysed before the audible-band fix carry only the old Nyquist-based figure. */}
-                    {lossPct !== null ? maybeHz(lossHz) : "N/A"}
+                    {lossPct !== null && lossHz !== null ? hz(lossHz) : na}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {lossPct !== null
-                      ? `${lossPct.toFixed(1)}% of the ${lossReferenceHz !== null ? hz(lossReferenceHz) : "audible"} band`
-                      : "N/A"}
+                      ? t("analyser.file.lossOfBand", {
+                          pct: lossPct.toFixed(1),
+                          band: lossReferenceHz !== null ? hz(lossReferenceHz) : t("analyser.file.audible")
+                        })
+                      : na}
                   </p>
                 </div>
-                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title="Peak-to-loudness ratio and peak-to-noise span help evaluate punch and usable dynamic headroom.">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Range Detail</p>
+                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.rangeHelp")}>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.rangeDetail")}</p>
                   <p className="mt-1 text-sm font-semibold">
-                    Peak to Noise: {dynamicSpan !== null ? `${dynamicSpan.toFixed(2)} dB` : "N/A"}
+                    {t("analyser.file.peakToNoise", { value: dynamicSpan !== null ? `${dynamicSpan.toFixed(2)} dB` : na })}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Peak to LUFS: {peakToLoudness !== null ? `${peakToLoudness.toFixed(2)} dB` : "N/A"}
+                    {t("analyser.file.peakToLufs", { value: peakToLoudness !== null ? `${peakToLoudness.toFixed(2)} dB` : na })}
                   </p>
                 </div>
               </div>
 
               <div className="rounded-xl border border-border/80 bg-card/70 p-3">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">Compression Assessment</p>
-                <p className="mt-1 text-sm text-foreground">{text(compression.assessment, "No assessment available.")}</p>
+                <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.compressionAssessment")}</p>
+                <p className="mt-1 text-sm text-foreground">{text(compression.assessment, t("analyser.file.noAssessment"))}</p>
               </div>
 
               {unavailableHints.length > 0 ? (
                 <div className="rounded-xl border border-border/80 bg-card/70 p-3">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Why Some Values Are N/A</p>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.whyNa")}</p>
                   <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
                     {unavailableHints.map((hint, idx) => (
                       <li key={`${hint}-${idx}`}>{hint}</li>
@@ -3629,10 +3608,10 @@ export default function HomePage() {
               ) : null}
 
               <div className="rounded-xl border border-border/80 bg-card/70 p-3">
-                <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Metadata Tags</p>
+                <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.metadataTags")}</p>
                 {suppressedTagCount > 0 ? (
                   <p className="mb-3 text-xs text-muted-foreground">
-                    Hidden {suppressedTagCount} bulky or system tag{suppressedTagCount === 1 ? "" : "s"}
+                    {tp("analyser.file.hiddenTags", suppressedTagCount)}
                     {suppressedTagKeys.length > 0
                       ? ` (${suppressedTagKeys.slice(0, 3).join(", ")}${suppressedTagKeys.length > 3 ? ", ..." : ""})`
                       : ""}
@@ -3644,15 +3623,15 @@ export default function HomePage() {
                     {tagEntries.map(([key, value]) => (
                       <div key={key} className="rounded-lg bg-secondary/45 p-2">
                         <p className="text-[11px] font-semibold uppercase text-muted-foreground">{key}</p>
-                        <p className="text-sm">{text(value)}</p>
+                        <p className="text-sm">{text(value, na)}</p>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No embedded tags detected.</p>
+                  <p className="text-sm text-muted-foreground">{t("analyser.file.noTags")}</p>
                 )}
                 <details className="mt-3">
-                  <summary className="cursor-pointer text-xs font-semibold text-primary">Show Raw Metadata JSON</summary>
+                  <summary className="cursor-pointer text-xs font-semibold text-primary">{t("analyser.file.rawJson")}</summary>
                   <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-slate-900/95 p-3 text-xs text-slate-100">
                     {JSON.stringify(metadata, null, 2)}
                   </pre>
@@ -3662,25 +3641,25 @@ export default function HomePage() {
               <div className="rounded-xl border border-border/80 bg-card/70 p-3">
                 <details>
                   <summary className="cursor-pointer text-xs font-semibold uppercase text-primary">
-                    Guide: What Everything Means
+                    {t("analyser.guide.title")}
                   </summary>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    This glossary explains every metric and graph in this view so you can interpret results quickly.
+                    {t("analyser.guide.intro")}
                   </p>
 
                   <div className="mt-3 overflow-x-auto rounded-lg border border-border/70">
                     <table className="w-full min-w-[700px] text-left text-sm">
                       <thead className="bg-secondary/60 text-xs uppercase text-muted-foreground">
                         <tr>
-                          <th className="px-3 py-2">Element</th>
-                          <th className="px-3 py-2">What it tells you</th>
+                          <th className="px-3 py-2">{t("analyser.guide.element")}</th>
+                          <th className="px-3 py-2">{t("analyser.guide.whatItTells")}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {ELEMENT_GUIDE_ROWS.map((row) => (
-                          <tr key={row.element} className="border-t border-border/60">
-                            <td className="px-3 py-2 font-medium text-foreground">{row.element}</td>
-                            <td className="px-3 py-2 text-muted-foreground">{row.meaning}</td>
+                          <tr key={row} className="border-t border-border/60">
+                            <td className="px-3 py-2 font-medium text-foreground">{t(`analyser.guide.rows.${row}.element`)}</td>
+                            <td className="px-3 py-2 text-muted-foreground">{t(`analyser.guide.rows.${row}.meaning`)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -3691,15 +3670,15 @@ export default function HomePage() {
                     <table className="w-full min-w-[700px] text-left text-sm">
                       <thead className="bg-secondary/60 text-xs uppercase text-muted-foreground">
                         <tr>
-                          <th className="px-3 py-2">Graph</th>
-                          <th className="px-3 py-2">How to read it</th>
+                          <th className="px-3 py-2">{t("analyser.guide.graph")}</th>
+                          <th className="px-3 py-2">{t("analyser.guide.howToRead")}</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {CHART_GUIDE_ROWS.map((row) => (
-                          <tr key={row.element} className="border-t border-border/60">
-                            <td className="px-3 py-2 font-medium text-foreground">{row.element}</td>
-                            <td className="px-3 py-2 text-muted-foreground">{row.meaning}</td>
+                        {ALL_CHARTS.map((chart) => (
+                          <tr key={chart.key} className="border-t border-border/60">
+                            <td className="px-3 py-2 font-medium text-foreground">{chartTitle(t, chart.key)}</td>
+                            <td className="px-3 py-2 text-muted-foreground">{chartHelp(t, chart.key)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -3711,36 +3690,36 @@ export default function HomePage() {
           </Card>
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div title="Integrated LUFS: overall perceived loudness across the full track.">
+            <div title={t("analyser.kpi.integratedHelp")}>
               <KpiTile
-                label="Integrated LUFS"
+                label={t("analyser.kpi.integrated")}
                 value={`${integratedLufs.toFixed(2)}`}
               />
             </div>
-            <div title="True Peak dBFS: oversampled peak estimate including inter-sample peaks.">
+            <div title={t("analyser.kpi.truePeakHelp")}>
               <KpiTile
-                label="True Peak dBFS"
+                label={t("analyser.kpi.truePeak")}
                 value={`${truePeakDbfs.toFixed(2)}`}
               />
             </div>
-            <div title="Crest Factor: transient punch/peak contrast relative to RMS level.">
+            <div title={t("analyser.kpi.crestHelp")}>
               <KpiTile
-                label="Crest Factor dB"
+                label={t("analyser.kpi.crest")}
                 value={`${crestFactorDb.toFixed(2)}`}
               />
             </div>
-            <div title="Noise floor read from fades, gaps, and quiet intros. Dense tracks with no such passages have no measurable floor.">
+            <div title={t("analyser.kpi.noiseHelp")}>
               <KpiTile
-                label="Noise Floor dBFS"
-                value={noiseFloorDbfs !== null ? noiseFloorDbfs.toFixed(2) : "N/A"}
+                label={t("analyser.kpi.noise")}
+                value={noiseFloorDbfs !== null ? noiseFloorDbfs.toFixed(2) : na}
                 hint={
                   noiseFloorDbfs !== null
                     ? undefined
                     : noiseFloorStatus === "stale"
-                      ? "Re-analyze to measure"
+                      ? t("analyser.kpi.reanalyze")
                       : noiseFloorStatus === "digital_silence"
-                        ? "Gaps are digital silence"
-                        : "No quiet gaps; the music masks it"
+                        ? t("analyser.kpi.digitalSilence")
+                        : t("analyser.kpi.masked")
                 }
               />
             </div>
@@ -3748,7 +3727,7 @@ export default function HomePage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Remastering Recommendations</CardTitle>
+              <CardTitle className="text-lg">{t("analyser.recs.title")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {masteringRecommendations.length > 0 ? (
@@ -3757,7 +3736,7 @@ export default function HomePage() {
                     <div key={`${rec.issue}-${idx}`} className="rounded-xl border border-border/70 bg-secondary/45 p-3">
                       <div className="mb-1 flex items-center gap-2">
                         <Badge variant={markerSeverityVariant[rec.priority.toLowerCase()] ?? "outline"}>
-                          {rec.priority}
+                          {severityWord(t, rec.priority.toLowerCase())}
                         </Badge>
                         <p className="text-sm font-semibold">{rec.issue}</p>
                       </div>
@@ -3766,14 +3745,14 @@ export default function HomePage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No remastering recommendations available yet.</p>
+                <p className="text-sm text-muted-foreground">{t("analyser.recs.none")}</p>
               )}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Markers Near Playhead / Selection</CardTitle>
+              <CardTitle className="text-lg">{t("analyser.markers.title")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {warnings.length > 0 ? (
@@ -3790,7 +3769,7 @@ export default function HomePage() {
                 </div>
               ) : null}
               <p className="text-xs text-muted-foreground">
-                Click a marker row to jump and set timeline selection. Table is de-duplicated and prioritized by playhead proximity.
+                {t("analyser.markers.hint")}
               </p>
               <DataTable
                 data={markerRows}
@@ -3807,7 +3786,7 @@ export default function HomePage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Chart Studio</CardTitle>
+              <CardTitle className="text-lg">{t("analyser.chartStudio.title")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-wrap gap-2">
@@ -3824,7 +3803,7 @@ export default function HomePage() {
                           : "rounded-full border border-border/70 bg-secondary/45 px-3 py-1.5 text-xs font-semibold text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
                       }
                     >
-                      {group.label}
+                      {t(`analyser.groups.${group.id}.label`)}
                     </button>
                   );
                 })}
@@ -3832,17 +3811,20 @@ export default function HomePage() {
 
               <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr]">
                 <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">View Focus</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">{activeChartGroupConfig.label}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{activeChartGroupConfig.description}</p>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.chartStudio.viewFocus")}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{t(`analyser.groups.${activeChartGroupConfig.id}.label`)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{t(`analyser.groups.${activeChartGroupConfig.id}.description`)}</p>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Showing {visibleCharts.length} panel{visibleCharts.length === 1 ? "" : "s"}. Loaded {loadedChartNames.length} of{" "}
-                    {availableChartNames.length || ALL_CHARTS.length} expected charts.
+                    {tp("analyser.chartStudio.showing", visibleCharts.length)}{" "}
+                    {t("analyser.chartStudio.loadedOf", {
+                      loaded: loadedChartNames.length,
+                      total: availableChartNames.length || ALL_CHARTS.length
+                    })}
                   </p>
                 </div>
 
                 <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Quick Jump</p>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.chartStudio.quickJump")}</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {visibleCharts.map((chart) => (
                       <button
@@ -3851,7 +3833,7 @@ export default function HomePage() {
                         onClick={() => scrollToChart(chart.key)}
                         className="rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-foreground transition hover:border-primary/50 hover:text-primary"
                       >
-                        {chart.title}
+                        {chartTitle(t, chart.key)}
                       </button>
                     ))}
                   </div>
@@ -3860,8 +3842,12 @@ export default function HomePage() {
             </CardContent>
           </Card>
 
-          <div className="rounded-xl border border-border/70 bg-secondary/45 px-3 py-2 text-xs text-muted-foreground">
-            Timeline tip: right-click and drag on the chart area to pan the selected time window.
+          {chartsPop.detached ? <DetachedPlaceholder state={chartsPop} label={t("analyser.popout.charts")} /> : null}
+          {chartsPop.render(
+          <div className={chartsPop.detached ? "min-h-0 flex-1 space-y-4 overflow-auto p-4" : "space-y-4"}>
+          <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-secondary/45 px-3 py-2 text-xs text-muted-foreground">
+            <span className="flex-1">{t("analyser.chartStudio.timelineTip")}</span>
+            <DetachButton state={chartsPop} label={t("analyser.popout.charts")} />
           </div>
 
           <div
@@ -3874,9 +3860,9 @@ export default function HomePage() {
             {visibleCharts.map((chart) => (
               <div key={chart.key} id={`chart-${chart.key}`} className="scroll-mt-24">
                 <PlotPanel
-                  title={chart.title}
+                  title={chartTitle(t, chart.key)}
                   height={chart.height}
-                  helpText={CHART_HELP[chart.key]}
+                  helpText={chartHelp(t, chart.key)}
                   figure={charts[chart.key] as Record<string, unknown>}
                   xRange={
                     TIME_SELECTION_CHART_KEYS.has(chart.key)
@@ -3887,6 +3873,8 @@ export default function HomePage() {
               </div>
             ))}
           </div>
+          </div>
+          )}
         </div>
       </div>
 
@@ -3895,13 +3883,13 @@ export default function HomePage() {
           <div className="w-full max-w-3xl rounded-2xl border border-border/80 bg-card/95 p-4 shadow-soft">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <p className="text-lg font-semibold">Outputs Ready To Save</p>
+                <p className="text-lg font-semibold">{t("analyser.saveDialog.title")}</p>
                 <p className="text-xs text-muted-foreground">
-                  Choose where to save each converted/mastered file.
+                  {t("analyser.saveDialog.intro")}
                 </p>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setSaveDialogOpen(false)}>
-                Later
+                {t("analyser.saveDialog.later")}
               </Button>
             </div>
 
@@ -3914,7 +3902,7 @@ export default function HomePage() {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold">{item.filename}</p>
                     <p className="text-xs text-muted-foreground">
-                      {item.source === "conversion" ? "Conversion" : "Mastering"} | {item.detail}
+                      {item.source === "conversion" ? t("analyser.saveDialog.conversion") : t("analyser.saveDialog.mastering")} | {item.detail}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -3923,14 +3911,14 @@ export default function HomePage() {
                       onClick={() => void savePendingOutput(item)}
                       disabled={savingOutputId === item.id}
                     >
-                      {savingOutputId === item.id ? "Saving..." : "Save As..."}
+                      {savingOutputId === item.id ? t("analyser.saveDialog.saving") : t("analyser.saveDialog.saveAs")}
                     </Button>
                     <Button
                       size="sm"
                       variant="secondary"
                       onClick={() => triggerBrowserDownload(item.url, item.filename)}
                     >
-                      Quick Download
+                      {t("analyser.saveDialog.quickDownload")}
                     </Button>
                     <Button
                       size="sm"
@@ -3939,7 +3927,7 @@ export default function HomePage() {
                         setPendingSaveOutputs((prev) => prev.filter((row) => row.id !== item.id))
                       }
                     >
-                      Dismiss
+                      {t("analyser.saveDialog.dismiss")}
                     </Button>
                   </div>
                 </div>
@@ -3949,10 +3937,8 @@ export default function HomePage() {
         </div>
       ) : null}
       <footer className="mt-12 border-t border-border/40 py-6 text-center text-xs text-muted-foreground">
-        <p>&copy; {new Date().getFullYear()} Geekatplay Studio. All rights reserved.</p>
-        <p className="mt-1 text-[11px] opacity-75">
-          Music Suite &bull; Created by Geekatplay Studio &bull; Version 1.0.0
-        </p>
+        <p>{t("analyser.footer.rights", { year: new Date().getFullYear() })}</p>
+        <p className="mt-1 text-[11px] opacity-75">{t("analyser.footer.version")}</p>
       </footer>
     </main>
   );

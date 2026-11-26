@@ -9,6 +9,7 @@ import {
   UpdateStatus,
   UploadResponse
 } from "@/lib/types";
+import { localizeServerFields, localizeServerText } from "@/lib/i18n/server-messages";
 
 const API_BASE = "/suite-api";
 
@@ -26,8 +27,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       throw err;
     }
     throw new Error(
-      "Failed to reach the Music Suite API through the local application proxy. " +
-        "Restart Music Suite with its start launcher."
+      localizeServerText(
+        "Failed to reach the Music Suite API through the local application proxy. " +
+          "Restart Music Suite with its start launcher."
+      )
     );
   }
   if (!res.ok) {
@@ -40,9 +43,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* not JSON: keep the text as it is */
     }
-    throw new Error(message || `Request failed: ${res.status}`);
+    throw new Error(localizeServerText(message || `Request failed: ${res.status}`));
   }
-  return (await res.json()) as T;
+  const body = (await res.json()) as T;
+  // Chart payloads are large and hold no messages.
+  return path.includes("/charts") ? body : localizeServerFields(body);
 }
 
 export async function listRuns(): Promise<RunSummary[]> {

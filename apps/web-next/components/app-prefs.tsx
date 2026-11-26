@@ -42,7 +42,7 @@ export function AppPrefs({ className }: { className?: string }) {
       >
         <Languages className="h-4 w-4" aria-hidden />
         {locale.toUpperCase()}
-        <span className="h-3 w-3 rounded-full border border-white/30" style={{ background: THEMES.find((entry) => entry.id === theme)?.swatch }} aria-hidden />
+        <span className="h-3 w-3 rounded-full border border-slate-400/60" style={{ background: THEMES.find((entry) => entry.id === theme)?.swatch }} aria-hidden />
       </button>
       {open ? (
         <div
@@ -75,7 +75,7 @@ export function AppPrefs({ className }: { className?: string }) {
                   checked={theme === entry.id}
                   onChange={() => setTheme(entry.id as ThemeId)}
                 />
-                <span className="h-3.5 w-3.5 rounded-full border border-white/30" style={{ background: entry.swatch }} aria-hidden />
+                <span className="h-3.5 w-3.5 rounded-full border border-slate-400/60" style={{ background: entry.swatch }} aria-hidden />
                 <span className="text-slate-100">{t(`prefs.themes.${entry.id}`)}</span>
               </label>
             ))}

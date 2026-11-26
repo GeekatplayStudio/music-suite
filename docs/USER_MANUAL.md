@@ -26,12 +26,30 @@ Songs move between workspaces with the buttons at the top of each page: for exam
 
 The **language and colours** button (a globe with the current language, beside the header buttons in every workspace) sets:
 
-- **Language:** English or Русский. The AI Song Studio, Models & engines and the editor's sessions page are translated so far; the rest of the app follows in later updates, and messages that come from the engines stay in English for now.
-- **Colour theme:** Midnight cyan (the original), Amber studio, Violet night, Forest or Magenta. Status colours keep their meaning in every theme: red for errors, amber for warnings, green for success.
+- **Language:** English or Русский. The whole interface is translated, including messages from the engines and this manual (the Help page shows the Russian edition, [USER_MANUAL.ru.md](USER_MANUAL.ru.md), when the interface is Russian). Some things stay as they are on purpose:
+  - names of models, plug-ins and presets;
+  - units musicians use in English (BPM, LUFS, dB);
+  - text that is sent to the music models, such as style prompts and the plan's section names, because the models read English;
+  - track names the editor creates and later recognises, such as "Sing-along".
+- **Colour theme:** Midnight cyan (the original), Amber studio, Violet night, Forest, Magenta or **Light (daytime)**. Status colours keep their meaning in every theme: red for errors, amber for warnings, green for success. In the light theme, the waveforms, piano roll, charts and visuals keep their dark drawing area.
 
 Both are saved in this browser.
 
-**Panels in their own windows (for a second monitor).** In the Studio Editor, the **pop-out** button (a box with an arrow) opens a panel in a separate window that you can drag to another monitor: the **inspector** (button in the header), the **piano roll, sheet music and spectral view** (button beside each panel's close button) and the **on-screen piano** (beside *Hide*). The panel keeps working exactly as before, and keys you press in its window (Space, undo, shortcuts) still reach the editor. Close the window, or press **Bring it back**, to return it. The first time, a message explains that each extra window uses more memory, processor and graphics power. Works in Chrome and Edge; allow pop-ups for Music Suite if the browser blocks the window.
+**Panels in their own windows (for a second monitor).** The **pop-out** button (a box with an arrow) opens a panel in a separate window that you can drag to another monitor.
+
+- **Studio Editor:**
+  - the **inspector** (button in the header);
+  - the **piano roll, sheet music and spectral view** (button beside each panel's close button);
+  - the **on-screen piano** (beside *Hide*).
+- **Analyser:**
+  - **Visual AI** (button beside its full-screen button);
+  - the **charts** (button on the tip line above them). The Chart Studio's group buttons and quick-jump links stay on the page and work on the charts in the other window.
+
+The panel keeps working exactly as before, and keys you press in its window (Space, undo, shortcuts) still reach the page. Close the window, or press **Bring it back**, to return it.
+
+Each window remembers where it was and how big it was, and opens there next time. With more than one monitor, the browser asks once whether Music Suite may place windows; allow it, and a panel opens on the other screen the first time and returns to the screen you left it on after that.
+
+The first time, a message explains that each extra window uses more memory, processor and graphics power. Works in Chrome and Edge; allow pop-ups for Music Suite if the browser blocks the window.
 
 ### Installing (Windows)
 

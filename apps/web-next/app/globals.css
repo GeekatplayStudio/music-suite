@@ -42,7 +42,7 @@
     background:
       radial-gradient(circle at 8% 0%, rgba(var(--app-glow-accent), 0.28), transparent 30%),
       radial-gradient(circle at 92% 6%, rgba(var(--app-glow-second), 0.2), transparent 35%),
-      linear-gradient(180deg, #06090f 0%, #0b1020 48%, #121725 100%);
+      var(--app-page, linear-gradient(180deg, #06090f 0%, #0b1020 48%, #121725 100%));
   }
 
   /* Tailwind 4 resets buttons to the default cursor. */
@@ -57,6 +57,6 @@
 }
 
 .glass {
-  background: linear-gradient(180deg, rgba(13, 19, 35, 0.86), rgba(13, 20, 35, 0.78));
+  background: linear-gradient(180deg, var(--app-glass-top, rgba(13, 19, 35, 0.86)), var(--app-glass-bottom, rgba(13, 20, 35, 0.78)));
   backdrop-filter: blur(12px);
 }

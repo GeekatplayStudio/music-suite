@@ -2,6 +2,7 @@
 
 import { useMemo, useRef } from "react";
 
+import { useI18n } from "@/lib/i18n";
 import type { Marker } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +49,7 @@ export function AudioReviewStrip({
   onScrub,
   className,
 }: AudioReviewStripProps) {
+  const { t } = useI18n();
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const dragStartRef = useRef<number | null>(null);
   const activePointerIdRef = useRef<number | null>(null);
@@ -148,14 +150,14 @@ export function AudioReviewStrip({
     <div className={cn("space-y-3", className)}>
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Waveform Review Strip</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t("charts.review.title")}</p>
           <p className="mt-1 text-[11px] text-muted-foreground">
-            Click to scrub. Use the Start and End buttons below to mark the active review window.
+            {t("charts.review.intro")}
           </p>
         </div>
         <div className="text-right text-[11px] text-muted-foreground">
-          <p>Playhead {scrubTime.toFixed(2)}s</p>
-          <p>Selection {selectionStart.toFixed(2)}s to {selectionEnd.toFixed(2)}s</p>
+          <p>{t("charts.review.playhead", { time: scrubTime.toFixed(2) })}</p>
+          <p>{t("charts.review.selection", { start: selectionStart.toFixed(2), end: selectionEnd.toFixed(2) })}</p>
         </div>
       </div>
 

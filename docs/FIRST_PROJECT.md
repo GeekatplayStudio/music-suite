@@ -1,5 +1,7 @@
 # Your first song in Music Suite, step by step
 
+*По-русски: [FIRST_PROJECT.ru.md](FIRST_PROJECT.ru.md)*
+
 From a melody you play on a keyboard (or hum, or upload) to a finished, cleaned-up song with
 your own lyrics. Every step names the button to press. It takes about 20–30 minutes the
 first time, most of it installing and waiting for the model.

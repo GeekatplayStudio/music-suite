@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { IconButton, Slider, formatDb, formatPan } from "@/components/editor/controls";
 import { TRACK_HEIGHT } from "@/components/editor/timeline";
 import type { Track } from "@/lib/editor/types";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 interface TrackHeaderProps {
@@ -30,6 +31,7 @@ export function TrackHeader({
   onMove,
   meterRef
 }: TrackHeaderProps) {
+  const { t } = useI18n();
   return (
     <div
       className={cn(
@@ -50,15 +52,15 @@ export function TrackHeader({
           </span>
           <input
             value={track.name}
-            aria-label={`Track ${index + 1} name`}
+            aria-label={t("editor.track.name", { n: index + 1 })}
             onChange={(event) => onChange({ name: event.target.value.slice(0, 60) }, `name:${track.id}`)}
             className="h-6 min-w-0 flex-1 rounded bg-transparent px-1 text-xs font-semibold text-slate-100 hover:bg-white/5 focus-visible:bg-slate-950 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-cyan-300"
           />
           <button
             type="button"
-            aria-label={`Mute ${track.name}`}
+            aria-label={t("editor.track.mute", { track: track.name })}
             aria-pressed={track.mute}
-            title="Mute (M)"
+            title={t("editor.track.muteTitle")}
             onClick={() => onChange({ mute: !track.mute }, "")}
             className={cn(
               "h-6 w-6 shrink-0 rounded text-[11px] font-bold",
@@ -69,9 +71,9 @@ export function TrackHeader({
           </button>
           <button
             type="button"
-            aria-label={`Solo ${track.name}`}
+            aria-label={t("editor.track.solo", { track: track.name })}
             aria-pressed={track.solo}
-            title="Solo (Shift+S)"
+            title={t("editor.track.soloTitle")}
             onClick={() => onChange({ solo: !track.solo }, "")}
             className={cn(
               "h-6 w-6 shrink-0 rounded text-[11px] font-bold",
@@ -83,7 +85,7 @@ export function TrackHeader({
         </div>
         <Slider
           compact
-          label="Vol"
+          label={t("editor.track.vol")}
           value={track.volumeDb}
           min={-60}
           max={6}
@@ -94,7 +96,7 @@ export function TrackHeader({
         />
         <Slider
           compact
-          label="Pan"
+          label={t("editor.track.pan")}
           value={track.pan}
           min={-1}
           max={1}
@@ -104,13 +106,13 @@ export function TrackHeader({
           onChange={(pan) => onChange({ pan }, `pan:${track.id}`)}
         />
         <div className="flex items-center gap-1">
-          <IconButton size="sm" label="Move track up" disabled={index === 0} onClick={() => onMove(-1)}>
+          <IconButton size="sm" label={t("editor.track.up")} disabled={index === 0} onClick={() => onMove(-1)}>
             <ChevronUp className="h-3.5 w-3.5" />
           </IconButton>
-          <IconButton size="sm" label="Move track down" disabled={index === count - 1} onClick={() => onMove(1)}>
+          <IconButton size="sm" label={t("editor.track.down")} disabled={index === count - 1} onClick={() => onMove(1)}>
             <ChevronDown className="h-3.5 w-3.5" />
           </IconButton>
-          <IconButton size="sm" label={`Delete ${track.name}`} onClick={onRemove} className="ml-auto">
+          <IconButton size="sm" label={t("editor.track.remove", { track: track.name })} onClick={onRemove} className="ml-auto">
             <X className="h-3.5 w-3.5" />
           </IconButton>
         </div>
@@ -118,7 +120,7 @@ export function TrackHeader({
       <div
         className="absolute inset-y-2 right-1 w-1.5 overflow-hidden rounded-full bg-slate-950"
         role="meter"
-        aria-label={`${track.name} level`}
+        aria-label={t("editor.track.level", { track: track.name })}
         aria-valuemin={0}
         aria-valuemax={1}
         aria-valuenow={0}

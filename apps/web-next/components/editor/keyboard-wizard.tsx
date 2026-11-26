@@ -16,10 +16,12 @@ import {
   MIN_VOLUME,
   QUIETER,
   type PartShape,
+  ReampError,
   guessInstrumentInput,
   listAudioInputs,
   measureRoundTrip
 } from "@/lib/editor/reamp";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export interface WizardPart {
@@ -71,24 +73,15 @@ interface KeyboardWizardProps {
 }
 
 type SourceKind = "song" | "piano" | "instrument" | "voice";
-const SOURCES: { id: SourceKind; label: string; hint: string }[] = [
-  { id: "song", label: "A full song, or not sure", hint: "Split into vocals, bass, drums and the rest. One instrument on its own is recognised and kept whole." },
-  { id: "piano", label: "Just a piano", hint: "Written down directly by the piano model. The most accurate there is." },
-  { id: "instrument", label: "One other instrument", hint: "Written down directly, chords included." },
-  { id: "voice", label: "One voice or melody line", hint: "Written down as a single line, one note at a time." }
-];
+/** Labels and hints are editorTools.wizard.sources.<id>. */
+const SOURCES: SourceKind[] = ["song", "piano", "instrument", "voice"];
 
 type Step = "song" | "keyboard" | "voices" | "record" | "done";
 /** Takes of one part before the wizard asks for the keyboard's own volume to come down. */
 const MAX_TRIES = 3;
 
-const STEPS: { id: Step; label: string }[] = [
-  { id: "song", label: "Song" },
-  { id: "keyboard", label: "Keyboard" },
-  { id: "voices", label: "Voices" },
-  { id: "record", label: "Record" },
-  { id: "done", label: "Done" }
-];
+/** Labels are editorTools.wizard.steps.<id>. */
+const STEPS: { id: Step }[] = [{ id: "song" }, { id: "keyboard" }, { id: "voices" }, { id: "record" }, { id: "done" }];
 
 interface PartChoice extends PartShape {
   include: boolean;
@@ -159,6 +152,7 @@ function wait(ms: number): Promise<void> {
  */
 export function KeyboardWizard(props: KeyboardWizardProps) {
   const { engine, songs, parts, progress, passRunning, editorBusy } = props;
+  const { t, tp } = useI18n();
   const out = useSyncExternalStore(midiOutHub.watch, midiOutHub.snapshot, midiOutHub.serverSnapshot);
   const [step, setStep] = useState<Step>(parts.length ? "keyboard" : "song");
   const [songId, setSongId] = useState<string>(songs[0]?.clipId ?? "");
@@ -211,26 +205,27 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
   // Adding a voice records only the part written for it; replacing records the ticked parts of the song.
   const wanted = (part: WizardPart) => (goal === "add" ? isSingAlong(part) : choiceOf(part).include && !isSingAlong(part));
 
-  const fail = (err: unknown, fallback: string) => setProblem(err instanceof Error ? err.message : fallback);
+  const fail = (err: unknown, fallback: string) =>
+    setProblem(err instanceof ReampError ? t(`editorTools.reampErrors.${err.code}`) : err instanceof Error ? err.message : fallback);
 
   /* ---------- Step 1: the song ---------- */
 
   const prepare = async (clipId: string) => {
     setProblem(null);
-    setWorking("Splitting the song and writing its notes. A three-minute song takes a few minutes.");
+    setWorking(t("editorTools.wizard.splitting"));
     const ok = await props.onPrepare(clipId, source);
     setWorking(null);
     if (ok) setStep("keyboard");
-    else setProblem("The song could not be prepared. The message at the top of the editor says why.");
+    else setProblem(t("editorTools.wizard.prepareFailed"));
   };
 
   const loadFile = async (file: File) => {
     setProblem(null);
-    setWorking(`Loading ${file.name}…`);
+    setWorking(t("editorTools.wizard.loading", { name: file.name }));
     const clipId = await props.onImport(file);
     setWorking(null);
     if (!clipId) {
-      setProblem("That file could not be read as audio.");
+      setProblem(t("editorTools.wizard.notAudio"));
       return;
     }
     setSongId(clipId);
@@ -242,27 +237,27 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
   const checkKeyboard = async () => {
     setProblem(null);
     try {
-      setWorking("Connecting to the keyboard's MIDI…");
+      setWorking(t("editorTools.wizard.connecting"));
       await midiOutHub.connect();
-      if (!midiOutHub.ready()) throw new Error("No keyboard was found on MIDI. Plug it in by USB, switch it on, and allow MIDI for this page.");
-      setWorking("Finding the keyboard's audio input…");
+      if (!midiOutHub.ready()) throw new Error(t("editorTools.wizard.noKeyboard"));
+      setWorking(t("editorTools.wizard.findingInput"));
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         for (const track of stream.getTracks()) track.stop();
       } catch {
-        throw new Error("Audio input was refused. Allow the microphone for this page; the keyboard's sound arrives that way.");
+        throw new Error(t("editorTools.wizard.inputRefused"));
       }
       const inputs = await listAudioInputs();
       const chosen = guessInstrumentInput(inputs);
-      if (!chosen) throw new Error("No audio input was found.");
+      if (!chosen) throw new Error(t("editorTools.wizard.noInput"));
       setInputId(chosen);
-      setInputName(inputs.find((input) => input.deviceId === chosen)?.label ?? "audio input");
-      setWorking("Playing a test note and timing its return…");
+      setInputName(inputs.find((input) => input.deviceId === chosen)?.label ?? t("editorTools.wizard.audioInput"));
+      setWorking(t("editorTools.wizard.testing"));
       const measured = await measureRoundTrip(engine, { deviceId: chosen });
       setLatency(measured.seconds);
     } catch (err) {
       setLatency(null);
-      fail(err, "The keyboard check failed.");
+      fail(err, t("editorTools.wizard.checkFailed"));
     }
     setWorking(null);
   };
@@ -327,7 +322,7 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
           managed: true
         });
         if (!(await until(() => liveRef.current.passRunning, 25_000))) {
-          if (!cancelRef.current) setProblem(`The pass for ${part.name} did not start. The message at the top of the editor says why.`);
+          if (!cancelRef.current) setProblem(t("editorTools.wizard.passNotStarted", { name: part.name }));
           return "stopped";
         }
         // A pass ends itself when its part has played; an hour is only a backstop.
@@ -335,10 +330,7 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
         await until(() => liveRef.current.passResult.count > before, 5000);
         const result = liveRef.current.passResult;
         if (result.silent) {
-          setProblem(
-            `The keyboard made no sound for ${plain}. Its MIDI connection has stopped answering: ` +
-              "switch the keyboard off and on (or unplug and replug its USB cable), then check the keyboard again."
-          );
+          setProblem(t("editorTools.wizard.noSound", { name: plain }));
           setLatency(null);
           return "silent";
         }
@@ -349,13 +341,10 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
         const used = result.volume ?? 100;
         const next = Math.round(used * QUIETER);
         if (attempt === MAX_TRIES || next < MIN_VOLUME || cancelRef.current) {
-          setProblem(
-            `${pass.label} still came back distorted with the keyboard's MIDI volume at ${used} of 127. ` +
-              "The keyboard's own volume knob is set very high: turn it down to about half and record again."
-          );
+          setProblem(t("editorTools.wizard.stillDistorted", { name: pass.label, volume: used }));
           break;
         }
-        setProblem(`${pass.label} came back too loud, so it is being recorded again a little quieter (try ${attempt + 1} of ${MAX_TRIES}).`);
+        setProblem(t("editorTools.wizard.tooLoud", { name: pass.label, attempt: attempt + 1, tries: MAX_TRIES }));
         level = next;
         // The take just saved must finish saving before the next one replaces it.
         await until(() => !liveRef.current.editorBusy, 120_000);
@@ -460,48 +449,48 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                           {part.drums ? null : (
                             <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 text-slate-400">
                               <label className="flex items-center gap-1">
-                                Notes at once
+                                {t("editorTools.wizard.notesAtOnce")}
                                 <select className={cn(fieldClass, "w-24")} value={choice.voices} onChange={(event) => setChoice(part, { voices: Number(event.target.value) })}>
-                                  <option value={1}>1 (melody)</option>
+                                  <option value={1}>{t("editorTools.wizard.melody")}</option>
                                   <option value={2}>2</option>
                                   <option value={3}>3</option>
                                   <option value={4}>4</option>
-                                  <option value={0}>All</option>
+                                  <option value={0}>{t("editorTools.wizard.all")}</option>
                                 </select>
                               </label>
                               <label className="flex items-center gap-1">
-                                Octave
+                                {t("editorTools.wizard.octave")}
                                 <select
                                   className={cn(fieldClass, "w-32")}
                                   value={String(choice.octave)}
                                   onChange={(event) => setChoice(part, { octave: event.target.value === "auto" ? "auto" : Number(event.target.value) })}
                                 >
-                                  <option value="auto">Singing range</option>
-                                  <option value="2">2 up</option>
-                                  <option value="1">1 up</option>
-                                  <option value="0">As written</option>
-                                  <option value="-1">1 down</option>
+                                  <option value="auto">{t("editorTools.wizard.singingRange")}</option>
+                                  <option value="2">{t("editorTools.wizard.up2")}</option>
+                                  <option value="1">{t("editorTools.wizard.up1")}</option>
+                                  <option value="0">{t("editorTools.wizard.asWritten")}</option>
+                                  <option value="-1">{t("editorTools.wizard.down1")}</option>
                                 </select>
                               </label>
                               <label className="flex items-center gap-1">
-                                Note length
+                                {t("editorTools.wizard.noteLength")}
                                 <select
                                   className={cn(fieldClass, "w-36")}
                                   value={choice.length}
                                   onChange={(event) => setChoice(part, { length: event.target.value as PartShape["length"] })}
                                 >
-                                  <option value="legato">Held to the next</option>
-                                  <option value="full">Room to speak</option>
-                                  <option value="written">As written</option>
+                                  <option value="legato">{t("editorTools.wizard.legato")}</option>
+                                  <option value="full">{t("editorTools.wizard.full")}</option>
+                                  <option value="written">{t("editorTools.wizard.asWritten")}</option>
                                 </select>
                               </label>
                               <label className="flex items-center gap-1">
                                 <input type="checkbox" className="h-4 w-4 accent-cyan-400" checked={choice.harmony} onChange={(event) => setChoice(part, { harmony: event.target.checked })} />
-                                Move it a third up
+                                {t("editorTools.wizard.thirdUp")}
                               </label>
                               <label
                                 className="flex w-full items-center gap-2"
-                                title="Measured on the GO:KEYS 3 Minion voices: a new note cuts off the one still sounding."
+                                title={t("editorTools.wizard.monoTitle")}
                               >
                                 <input
                                   type="checkbox"
@@ -509,10 +498,10 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                                   checked={Boolean(choice.mono)}
                                   onChange={(event) => setChoice(part, { mono: event.target.checked })}
                                 />
-                                One note at a time (this voice cuts a word off when the next note starts)
+                                {t("editorTools.wizard.mono")}
                               </label>
-                              <label className="flex w-full flex-wrap items-center gap-2" title="A voice that says a word is cut off when its note ends: give each note long enough for its word.">
-                                Shortest note
+                              <label className="flex w-full flex-wrap items-center gap-2" title={t("editorTools.wizard.shortestTitle")}>
+                                {t("editorTools.wizard.shortest")}
                                 <input
                                   type="range"
                                   className="w-40 accent-cyan-400"
@@ -520,27 +509,27 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                                   max={2}
                                   step={0.05}
                                   value={choice.minLength ?? 0}
-                                  aria-label="Shortest note, in seconds"
+                                  aria-label={t("editorTools.wizard.shortestLabel")}
                                   onChange={(event) => setChoice(part, { minLength: Number(event.target.value) })}
                                 />
                                 <span className="w-24 tabular-nums text-slate-200">
-                                  {(choice.minLength ?? 0) > 0 ? `${(choice.minLength ?? 0).toFixed(2)} s` : "As shaped"}
+                                  {(choice.minLength ?? 0) > 0 ? `${(choice.minLength ?? 0).toFixed(2)} s` : t("editorTools.wizard.asShaped")}
                                 </span>
                                 {(choice.minLength ?? 0) > 0 && !choice.mono ? (
                                   <select
                                     className={cn(fieldClass, "w-56")}
-                                    aria-label="When a note runs into the next"
+                                    aria-label={t("editorTools.wizard.overlapLabel")}
                                     value={choice.overlap ?? true ? "overlap" : "skip"}
                                     onChange={(event) => setChoice(part, { overlap: event.target.value === "overlap" })}
                                   >
-                                    <option value="skip">Skip the next note (words finish)</option>
-                                    <option value="overlap">Let them overlap</option>
+                                    <option value="skip">{t("editorTools.wizard.skipNext")}</option>
+                                    <option value="overlap">{t("editorTools.wizard.overlap")}</option>
                                   </select>
                                 ) : null}
                               </label>
-                              <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1" role="group" aria-label="Layers">
-                                <span title="Notes stacked on every note of the part">
-                                  Add layers{choice.mono ? " (each recorded as its own take)" : ""}
+                              <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1" role="group" aria-label={t("editorTools.wizard.layersLabel")}>
+                                <span title={t("editorTools.wizard.layersTitle")}>
+                                  {choice.mono ? t("editorTools.wizard.addLayersMono") : t("editorTools.wizard.addLayers")}
                                 </span>
                                 {LAYERS.map((layer) => {
                                   const on = (choice.layers ?? []).includes(layer.id);
@@ -555,7 +544,7 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                                           setChoice(part, { layers: event.target.checked ? [...rest, layer.id] : rest });
                                         }}
                                       />
-                                      {layer.label}
+                                      {t(`editorTools.wizard.layers.${layer.id}`)}
                                     </label>
                                   );
                                 })}
@@ -572,10 +561,10 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
   const busyLine = working ?? (progress ? `${progress.title}${progress.detail ? ` — ${progress.detail}` : ""}` : null);
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label="Keyboard wizard">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label={t("editorTools.wizard.title")}>
       <div className="flex max-h-full w-full max-w-2xl flex-col rounded-2xl border border-white/10 bg-slate-900 text-sm text-slate-200 shadow-2xl">
         <header className="flex items-center gap-3 border-b border-white/10 px-5 py-3">
-          <h2 className="display-font text-sm font-semibold uppercase tracking-wider">Keyboard wizard</h2>
+          <h2 className="display-font text-sm font-semibold uppercase tracking-wider">{t("editorTools.wizard.title")}</h2>
           <ol className="flex flex-1 items-center gap-1 text-[11px]">
             {STEPS.map((entry, index) => (
               <li
@@ -585,14 +574,14 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                   index === stepIndex ? "bg-cyan-400 font-semibold text-slate-950" : index < stepIndex ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-800 text-slate-400"
                 )}
               >
-                {index + 1}. {entry.label}
+                {index + 1}. {t(`editorTools.wizard.steps.${entry.id}`)}
               </li>
             ))}
           </ol>
-          <HelpLink section="keyboard-wizard" label="the keyboard wizard" />
+          <HelpLink section="keyboard-wizard" label={t("editorTools.wizard.helpLabel")} />
           <button
             type="button"
-            aria-label="Close the wizard"
+            aria-label={t("editorTools.wizard.close")}
             className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-40"
             disabled={step === "record" && (!stepwise || phase === "recording")}
             onClick={() => {
@@ -607,21 +596,21 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
           {step === "song" ? (
             <>
-              <p className="text-slate-300">Say what the recording is, then choose it. Its notes are written out with the settings that measured best.</p>
+              <p className="text-slate-300">{t("editorTools.wizard.songIntro")}</p>
               <div className="grid grid-cols-2 gap-2">
-                {SOURCES.map((entry) => (
+                {SOURCES.map((id) => (
                   <button
-                    key={entry.id}
+                    key={id}
                     type="button"
-                    aria-pressed={source === entry.id}
-                    onClick={() => setSource(entry.id)}
+                    aria-pressed={source === id}
+                    onClick={() => setSource(id)}
                     className={cn(
                       "rounded-lg border p-2 text-left text-[12px] transition-colors",
-                      source === entry.id ? "border-cyan-400 bg-cyan-400/10" : "border-white/10 bg-black/30 hover:border-white/30"
+                      source === id ? "border-cyan-400 bg-cyan-400/10" : "border-white/10 bg-black/30 hover:border-white/30"
                     )}
                   >
-                    <span className="block font-semibold text-slate-100">{entry.label}</span>
-                    <span className="text-slate-400">{entry.hint}</span>
+                    <span className="block font-semibold text-slate-100">{t(`editorTools.wizard.sources.${id}.label`)}</span>
+                    <span className="text-slate-400">{t(`editorTools.wizard.sources.${id}.hint`)}</span>
                   </button>
                 ))}
               </div>
@@ -638,14 +627,14 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
               />
               <div className="flex flex-wrap gap-2">
                 <ActionButton variant="primary" disabled={working !== null} onClick={() => fileRef.current?.click()}>
-                  Load a song file…
+                  {t("editorTools.wizard.loadFile")}
                 </ActionButton>
               </div>
               {songs.length ? (
                 <div className="space-y-2 rounded-lg bg-black/30 p-3">
-                  <p className="text-[12px] text-slate-400">Or use a song already on the timeline:</p>
+                  <p className="text-[12px] text-slate-400">{t("editorTools.wizard.orTimeline")}</p>
                   <div className="flex gap-2">
-                    <select className={fieldClass} value={songId} onChange={(event) => setSongId(event.target.value)} aria-label="Song on the timeline">
+                    <select className={fieldClass} value={songId} onChange={(event) => setSongId(event.target.value)} aria-label={t("editorTools.wizard.songOnTimeline")}>
                       {songs.map((song) => (
                         <option key={song.clipId} value={song.clipId}>
                           {song.name}
@@ -653,14 +642,14 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                       ))}
                     </select>
                     <ActionButton disabled={working !== null || !songId} onClick={() => void prepare(songId)}>
-                      Use this
+                      {t("editorTools.wizard.useThis")}
                     </ActionButton>
                   </div>
                 </div>
               ) : null}
               {parts.length ? (
                 <ActionButton disabled={working !== null} onClick={() => setStep("keyboard")}>
-                  Skip: this session already has {parts.length} parts written as notes
+                  {tp("editorTools.wizard.skipSong", parts.length)}
                 </ActionButton>
               ) : null}
             </>
@@ -669,22 +658,21 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
           {step === "keyboard" ? (
             <>
               <p className="text-slate-300">
-                Plug the keyboard in by USB and switch it on, with its volume about three-quarters up. One button finds it, plays a test note and
-                times how long the sound takes to come back.
+                {t("editorTools.wizard.keyboardIntro")}
               </p>
               <ActionButton variant="primary" disabled={working !== null} onClick={() => void checkKeyboard()}>
-                {latency === null ? "Check the keyboard" : "Check again"}
+                {latency === null ? t("editorTools.wizard.check") : t("editorTools.wizard.checkAgain")}
               </ActionButton>
               {latency !== null ? (
                 <ul className="space-y-1 rounded-lg bg-black/30 p-3 text-[12px]">
                   <li className="flex items-center gap-2 text-emerald-300">
-                    <Check className="h-3.5 w-3.5" /> MIDI out: {out.outputs.find((o) => o.id === out.selected)?.name ?? "keyboard"}, channel {out.channel}
+                    <Check className="h-3.5 w-3.5" /> {t("editorTools.wizard.midiOut", { name: out.outputs.find((o) => o.id === out.selected)?.name ?? t("editorTools.wizard.keyboard"), channel: out.channel })}
                   </li>
                   <li className="flex items-center gap-2 text-emerald-300">
-                    <Check className="h-3.5 w-3.5" /> Audio in: {inputName}
+                    <Check className="h-3.5 w-3.5" /> {t("editorTools.wizard.audioIn", { name: inputName })}
                   </li>
                   <li className="flex items-center gap-2 text-emerald-300">
-                    <Check className="h-3.5 w-3.5" /> Round trip: {(latency * 1000).toFixed(1)} ms, corrected automatically
+                    <Check className="h-3.5 w-3.5" /> {t("editorTools.wizard.roundTrip", { ms: (latency * 1000).toFixed(1) })}
                   </li>
                 </ul>
               ) : null}
@@ -694,12 +682,7 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
           {step === "voices" ? (
             <>
               <div className="grid grid-cols-2 gap-2">
-                {(
-                  [
-                    { id: "add", label: "Add a voice to the song", hint: "The song stays as it is. A new part is written to go with it and the keyboard sings it on top." },
-                    { id: "replace", label: "Re-voice the song's parts", hint: "The song's own parts are played by the keyboard in voices you choose." }
-                  ] as const
-                ).map((entry) => (
+                {([{ id: "add" }, { id: "replace" }] as const).map((entry) => (
                   <button
                     key={entry.id}
                     type="button"
@@ -710,17 +693,17 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                       goal === entry.id ? "border-cyan-400 bg-cyan-400/10" : "border-white/10 bg-black/30 hover:border-white/30"
                     )}
                   >
-                    <span className="block font-semibold text-slate-100">{entry.label}</span>
-                    <span className="text-slate-400">{entry.hint}</span>
+                    <span className="block font-semibold text-slate-100">{t(`editorTools.wizard.goals.${entry.id}.label`)}</span>
+                    <span className="text-slate-400">{t(`editorTools.wizard.goals.${entry.id}.hint`)}</span>
                   </button>
                 ))}
               </div>
               {goal === "add" ? (
                 <div className="space-y-2 rounded-lg bg-black/30 p-3 text-[12px]">
                   <p className="text-slate-300">
-                    What should the new voice do? It is written from the song&apos;s own notes, so it is in its key, on its beat and follows its chords.
+                    {t("editorTools.wizard.addIntro")}
                   </p>
-                  <div className="space-y-1" role="group" aria-label="What the new voice does">
+                  <div className="space-y-1" role="group" aria-label={t("editorTools.wizard.stylesLabel")}>
                     {SING_STYLES.map((entry) => (
                       <label key={entry.id} className="flex items-start gap-2">
                         <input
@@ -732,8 +715,8 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                           }
                         />
                         <span>
-                          <span className="text-slate-200">{entry.label}</span>
-                          <span className="block text-slate-400">{entry.hint}</span>
+                          <span className="text-slate-200">{t(`editorTools.wizard.styles.${entry.id}.label`)}</span>
+                          <span className="block text-slate-400">{t(`editorTools.wizard.styles.${entry.id}.hint`)}</span>
                         </span>
                       </label>
                     ))}
@@ -744,25 +727,24 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                       disabled={!styles.length}
                       onClick={() => {
                         setProblem(null);
-                        if (!props.onSingAlong(styles)) setProblem("The new part could not be written: the song has no notes to build it from.");
+                        if (!props.onSingAlong(styles)) setProblem(t("editorTools.wizard.noNotesForPart"));
                       }}
                     >
-                      {shown.length ? "Write it again" : "Write the sing-along part"}
+                      {shown.length ? t("editorTools.wizard.writeAgain") : t("editorTools.wizard.write")}
                     </ActionButton>
-                    <span className="text-slate-400">Each ticked style is its own part, recorded in turn and played together.</span>
+                    <span className="text-slate-400">{t("editorTools.wizard.eachStyle")}</span>
                   </div>
                 </div>
               ) : (
                 <>
                   <p className="text-slate-300">
-                    Tick the parts the keyboard should play and give each a voice: pick a bank, then step through its sounds or type a number, or
-                    click a part and press a sound button on the keyboard itself.
+                    {t("editorTools.wizard.replaceIntro")}
                   </p>
                   <label className="flex items-start gap-2 rounded-lg bg-black/30 p-3 text-[12px]">
                     <input type="checkbox" className="mt-0.5 h-4 w-4 accent-cyan-400" checked={replaceToo} onChange={(event) => setReplaceToo(event.target.checked)} />
                     <span>
-                      <span className="font-semibold text-slate-100">Silence what the keyboard replaces.</span>{" "}
-                      <span className="text-slate-400">Left unticked, the original keeps playing in full under the keyboard&apos;s takes.</span>
+                      <span className="font-semibold text-slate-100">{t("editorTools.wizard.silence")}</span>{" "}
+                      <span className="text-slate-400">{t("editorTools.wizard.silenceHint")}</span>
                     </span>
                   </label>
                 </>
@@ -786,7 +768,7 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                           />
                         )}
                         {part.name.replace(/ \(MIDI\)$/, "")}
-                        <span className="font-normal text-slate-400">{part.noteCount} notes</span>
+                        <span className="font-normal text-slate-400">{tp("editorTools.wizard.notes", part.noteCount)}</span>
                       </label>
                       {choice.include || goal === "add" ? (
                         settingsFor(part)
@@ -801,15 +783,14 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
           {step === "record" && stepwise && queued ? (
             <>
               <p className="text-slate-300">
-                Part {position + 1} of {queue.length}. Record it, listen, and keep it only when you like it. Change the voice or the settings and
-                record again as often as you want; the new take replaces the old one.
+                {t("editorTools.wizard.stepIntro", { n: position + 1, total: queue.length })}
               </p>
               <div className="space-y-2 rounded-lg border border-cyan-400/40 bg-black/30 p-3">
                 <p className="flex items-center gap-2 font-semibold text-slate-100">
                   {phase === "recording" ? <CircleDot className="h-3.5 w-3.5 animate-pulse text-rose-300" /> : null}
                   {queued.name.replace(/ \(MIDI\)$/, "")}
                   <span className="font-normal text-slate-400">
-                    {phase === "recording" ? (passRunning ? "playing and recording…" : "getting ready…") : phase === "review" ? "recorded: listen to it" : `${queued.noteCount} notes`}
+                    {phase === "recording" ? (passRunning ? t("editorTools.wizard.playingRecording") : t("editorTools.wizard.gettingReady")) : phase === "review" ? t("editorTools.wizard.listenToIt") : tp("editorTools.wizard.notes", queued.noteCount)}
                   </span>
                 </p>
                 {phase === "recording" ? null : settingsFor(queued)}
@@ -817,29 +798,29 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                   {phase === "ready" ? (
                     <>
                       <ActionButton variant="primary" onClick={() => void recordQueued()}>
-                        Record this part
+                        {t("editorTools.wizard.recordThis")}
                       </ActionButton>
-                      <ActionButton onClick={() => moveOn(false)}>Skip it</ActionButton>
+                      <ActionButton onClick={() => moveOn(false)}>{t("editorTools.wizard.skipIt")}</ActionButton>
                     </>
                   ) : null}
                   {phase === "recording" ? (
                     <ActionButton variant="danger" onClick={stopAll}>
-                      Stop
+                      {t("editorTools.wizard.stop")}
                     </ActionButton>
                   ) : null}
                   {phase === "review" ? (
                     <>
                       {props.playing ? (
-                        <ActionButton onClick={props.onStopAudition}>Stop playing</ActionButton>
+                        <ActionButton onClick={props.onStopAudition}>{t("editorTools.wizard.stopPlaying")}</ActionButton>
                       ) : (
                         <>
-                          <ActionButton onClick={() => props.onAudition(queued.id, true)}>Hear it alone</ActionButton>
-                          <ActionButton onClick={() => props.onAudition(queued.id, false)}>Hear it with the song</ActionButton>
+                          <ActionButton onClick={() => props.onAudition(queued.id, true)}>{t("editorTools.wizard.hearAlone")}</ActionButton>
+                          <ActionButton onClick={() => props.onAudition(queued.id, false)}>{t("editorTools.wizard.hearWithSong")}</ActionButton>
                         </>
                       )}
-                      <ActionButton onClick={() => void recordQueued()}>Record again</ActionButton>
+                      <ActionButton onClick={() => void recordQueued()}>{t("editorTools.wizard.recordAgain")}</ActionButton>
                       <ActionButton variant="primary" onClick={() => moveOn(true)}>
-                        {position + 1 < queue.length ? "Keep it, next part" : "Keep it and finish"}
+                        {position + 1 < queue.length ? t("editorTools.wizard.keepNext") : t("editorTools.wizard.keepFinish")}
                       </ActionButton>
                     </>
                   ) : null}
@@ -853,7 +834,7 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                     <li key={id} className="flex items-center gap-2">
                       {recorded.includes(id) ? <Check className="h-3.5 w-3.5 text-emerald-300" /> : <span className="h-3.5 w-3.5 rounded-full border border-slate-600" />}
                       <span className={index === position ? "font-semibold text-slate-100" : "text-slate-300"}>{part.name.replace(/ \(MIDI\)$/, "")}</span>
-                      <span className="text-slate-500">{recorded.includes(id) ? "kept" : index === position ? "now" : index < position ? "skipped" : "waiting"}</span>
+                      <span className="text-slate-500">{recorded.includes(id) ? t("editorTools.wizard.kept") : index === position ? t("editorTools.wizard.now") : index < position ? t("editorTools.wizard.skipped") : t("editorTools.wizard.waiting")}</span>
                     </li>
                   );
                 })}
@@ -863,7 +844,7 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
 
           {step === "record" && !stepwise ? (
             <>
-              <p className="text-slate-300">Recording each part through the keyboard. Leave the keyboard alone until this finishes.</p>
+              <p className="text-slate-300">{t("editorTools.wizard.recordingAll")}</p>
               <ul className="space-y-1 rounded-lg bg-black/30 p-3 text-[12px]">
                 {included.map((part) => (
                   <li key={part.id} className="flex items-center gap-2">
@@ -876,7 +857,7 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                     )}
                     <span className={current === part.id ? "font-semibold text-slate-100" : "text-slate-300"}>{part.name.replace(/ \(MIDI\)$/, "")}</span>
                     <span className="text-slate-500">
-                      {recorded.includes(part.id) ? "recorded" : current === part.id ? (passRunning ? "playing and recording…" : "getting ready…") : "waiting"}
+                      {recorded.includes(part.id) ? t("editorTools.wizard.recorded") : current === part.id ? (passRunning ? t("editorTools.wizard.playingRecording") : t("editorTools.wizard.gettingReady")) : t("editorTools.wizard.waiting")}
                     </span>
                   </li>
                 ))}
@@ -887,17 +868,15 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
           {step === "done" ? (
             <>
               <p className="flex items-center gap-2 text-emerald-300">
-                <Check className="h-4 w-4" /> {recorded.length} part{recorded.length === 1 ? "" : "s"} recorded through the keyboard and placed in time.
+                <Check className="h-4 w-4" /> {tp("editorTools.wizard.doneCount", recorded.length)}
               </p>
               <p className="text-slate-300">
-                Each take is on its own track, named after its part. The note tracks are muted.{" "}
-                {addOnly
-                  ? "Nothing else was changed: the original plays in full with the keyboard voices on top."
-                  : "What the keyboard replaced is muted too; everything it did not replace still plays."}{" "}
-                Adjust the faders and export from the editor as usual.
+                {t("editorTools.wizard.doneTracks")}{" "}
+                {addOnly ? t("editorTools.wizard.doneAdd") : t("editorTools.wizard.doneReplace")}{" "}
+                {t("editorTools.wizard.doneExport")}
               </p>
               <ActionButton variant="primary" onClick={props.onPlayResult}>
-                Play the result
+                {t("editorTools.wizard.playResult")}
               </ActionButton>
             </>
           ) : null}
@@ -925,17 +904,17 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
             disabled={step === "song" || (step === "record" && (!stepwise || phase === "recording")) || working !== null}
             onClick={() => setStep(STEPS[Math.max(0, stepIndex - 1)].id === "record" ? "voices" : STEPS[Math.max(0, stepIndex - 1)].id)}
           >
-            Back
+            {t("editorTools.wizard.back")}
           </ActionButton>
           {step === "keyboard" ? (
             <ActionButton variant="primary" disabled={latency === null || working !== null || !parts.length} onClick={() => setStep("voices")}>
-              Next: choose voices
+              {t("editorTools.wizard.nextVoices")}
             </ActionButton>
           ) : null}
           {step === "voices" ? (
             <div className="flex gap-2">
               <ActionButton disabled={!included.length || latency === null} onClick={() => void recordAll()}>
-                Record all without stopping
+                {t("editorTools.wizard.recordAll")}
               </ActionButton>
               <ActionButton
                 variant="primary"
@@ -945,18 +924,18 @@ export function KeyboardWizard(props: KeyboardWizardProps) {
                   startStepwise();
                 }}
               >
-                Record one part at a time
+                {t("editorTools.wizard.recordStepwise")}
               </ActionButton>
             </div>
           ) : null}
           {step === "record" && !stepwise ? (
             <ActionButton variant="danger" onClick={stopAll}>
-              Stop
+              {t("editorTools.wizard.stop")}
             </ActionButton>
           ) : null}
           {step === "done" ? (
             <ActionButton variant="primary" onClick={props.onClose}>
-              Close and listen
+              {t("editorTools.wizard.closeListen")}
             </ActionButton>
           ) : null}
         </footer>

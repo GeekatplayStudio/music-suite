@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
 import { ActionButton, Slider } from "@/components/editor/controls";
+import { useI18n } from "@/lib/i18n";
 import { midiHub } from "@/lib/editor/midi";
 import type { Clip, Note } from "@/lib/editor/types";
 
@@ -24,6 +25,18 @@ export const DRUM_NAMES: Record<number, string> = {
   48: "Tom hi",
   49: "Cymbal"
 };
+/** The dictionary names (editorTools.pianoRoll.drums.*) of the same pitches. */
+const DRUM_IDS = {
+  36: "kick",
+  38: "snare",
+  39: "clap",
+  41: "tomLo",
+  42: "hat",
+  45: "tomMid",
+  46: "hatOpen",
+  48: "tomHi",
+  49: "cymbal"
+} as const;
 /** Computer keys laid out like a piano octave, starting on C. */
 const TYPING: Record<string, number> = { a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11, k: 12 };
 
@@ -54,8 +67,8 @@ type Drag =
   | { kind: "resize"; index: number; base: Note[] }
   | { kind: "marquee"; t: number; p: number };
 
-function pitchName(pitch: number, drums: boolean): string {
-  if (drums && DRUM_NAMES[pitch]) return DRUM_NAMES[pitch];
+function pitchName(pitch: number, drums: boolean, names: Record<number, string> = DRUM_NAMES): string {
+  if (drums && names[pitch]) return names[pitch];
   return `${NAMES[pitch % 12]}${Math.floor(pitch / 12) - 1}`;
 }
 
@@ -72,6 +85,10 @@ export function PianoRoll(props: PianoRollProps) {
   const dragRef = useRef<Drag | null>(null);
   const lengthRef = useRef(0);
   const notes = clip.notes ?? [];
+  const { t, tp } = useI18n();
+  const drumNames: Record<number, string> = Object.fromEntries(
+    Object.entries(DRUM_IDS).map(([pitch, id]) => [pitch, t(`editorTools.pianoRoll.drums.${id}`)])
+  );
 
   // The rows are fixed when the editor opens, so they never shift under the pointer while
   // notes are added; they only widen if a note ends up outside them.
@@ -96,9 +113,9 @@ export function PianoRoll(props: PianoRollProps) {
   const visible = width / pxPerSec;
   const viewStart = clip.offset + Math.min(scroll, Math.max(0, clip.duration - visible));
 
-  const view = useRef({ notes, low, high, rowH, pxPerSec, selected, clip, step, beatsPerBar, beatUnit, color, getPosition, viewStart, drums, marquee });
+  const view = useRef({ notes, low, high, rowH, pxPerSec, selected, clip, step, beatsPerBar, beatUnit, color, getPosition, viewStart, drums, marquee, drumNames });
   useEffect(() => {
-    view.current = { notes, low, high, rowH, pxPerSec, selected, clip, step, beatsPerBar, beatUnit, color, getPosition, viewStart, drums, marquee };
+    view.current = { notes, low, high, rowH, pxPerSec, selected, clip, step, beatsPerBar, beatUnit, color, getPosition, viewStart, drums, marquee, drumNames };
   });
 
   useEffect(() => {
@@ -135,7 +152,7 @@ export function PianoRoll(props: PianoRollProps) {
         if (labelled) {
           ctx.font = `${v.drums ? 10 : 9}px ui-monospace, SFMono-Regular, Menlo, monospace`;
           ctx.fillStyle = v.drums ? "#e2e8f0" : "#0f172a";
-          ctx.fillText(pitchName(pitch, v.drums), 4, y + v.rowH / 2 + 0.5);
+          ctx.fillText(pitchName(pitch, v.drums, v.drumNames), 4, y + v.rowH / 2 + 0.5);
         }
         if (v.drums || pitch % 12 === 0) {
           ctx.fillStyle = "rgba(148, 163, 184, 0.22)";
@@ -386,24 +403,28 @@ export function PianoRoll(props: PianoRollProps) {
     setSelected(new Set(added.map((_, index) => notes.length + index)));
   };
 
-  let status = drums
-    ? "Click a row to add a hit. Shift-drag to select several."
-    : "Click to add a note, drag to move, drag the right edge to resize. Shift-drag to select several; right-click deletes.";
-  if (chosen.length > 1) status = `${chosen.length} notes selected`;
-  else if (first) status = `${pitchName(first.p, drums)} · starts ${(first.t - clip.offset).toFixed(2)} s · ${first.d.toFixed(2)} s long`;
-  if (typing) status = "Note input is on: A W S E D F T G Y H U J K (or a MIDI keyboard) add notes at the playhead.";
+  let status = drums ? t("editorTools.pianoRoll.helpDrums") : t("editorTools.pianoRoll.help");
+  if (chosen.length > 1) status = tp("editorTools.pianoRoll.selected", chosen.length);
+  else if (first)
+    status = t("editorTools.pianoRoll.noteInfo", {
+      name: pitchName(first.p, drums, drumNames),
+      start: (first.t - clip.offset).toFixed(2),
+      length: first.d.toFixed(2)
+    });
+  if (typing) status = t("editorTools.pianoRoll.typing");
+  const title = drums ? t("editorTools.pianoRoll.drumGrid") : t("editorTools.pianoRoll.title");
 
   return (
-    <section className="shrink-0 border-t border-white/10 bg-slate-950" aria-label="Piano roll">
+    <section className="shrink-0 border-t border-white/10 bg-slate-950" aria-label={title}>
       <div className="flex h-9 items-center gap-2 px-3 text-[11px] text-slate-300">
-        <h3 className="display-font shrink-0 whitespace-nowrap font-semibold uppercase tracking-wider">{drums ? "Drum grid" : "Piano roll"}</h3>
+        <h3 className="display-font shrink-0 whitespace-nowrap font-semibold uppercase tracking-wider">{title}</h3>
         <span className="min-w-0 flex-1 truncate text-slate-400" aria-live="polite">
           {status}
         </span>
         {first ? (
           <div className="w-48 shrink-0">
             <Slider
-              label="Velocity"
+              label={t("editorTools.pianoRoll.velocity")}
               value={first.v}
               min={0.05}
               max={1}
@@ -416,37 +437,37 @@ export function PianoRoll(props: PianoRollProps) {
         ) : null}
         <ActionButton
           disabled={!chosen.length}
-          title="Copy the selected notes"
+          title={t("editorTools.pianoRoll.copyTitle")}
           onClick={() => {
             noteClipboard = chosen.map((index) => ({ ...notes[index] }));
           }}
         >
-          Copy
+          {t("editorTools.pianoRoll.copy")}
         </ActionButton>
-        <ActionButton title="Paste the copied notes at the playhead" onClick={paste}>
-          Paste
+        <ActionButton title={t("editorTools.pianoRoll.pasteTitle")} onClick={paste}>
+          {t("editorTools.pianoRoll.paste")}
         </ActionButton>
         <ActionButton variant="danger" disabled={!chosen.length} onClick={removeSelected}>
-          Delete
+          {t("editorTools.pianoRoll.delete")}
         </ActionButton>
         <ActionButton
           aria-pressed={typing}
           className={typing ? "bg-cyan-400 text-slate-950 hover:bg-cyan-300" : undefined}
-          title="Enter notes from the computer keyboard or a MIDI keyboard"
+          title={t("editorTools.pianoRoll.noteInputTitle")}
           onClick={() => setTyping((on) => !on)}
         >
-          Note input
+          {t("editorTools.pianoRoll.noteInput")}
         </ActionButton>
-        <ActionButton aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom((z) => Math.max(1, z / 2))}>
+        <ActionButton aria-label={t("editorTools.pianoRoll.zoomOut")} disabled={zoom <= 1} onClick={() => setZoom((z) => Math.max(1, z / 2))}>
           −
         </ActionButton>
-        <ActionButton aria-label="Zoom in" disabled={zoom >= 32} onClick={() => setZoom((z) => Math.min(32, z * 2))}>
+        <ActionButton aria-label={t("editorTools.pianoRoll.zoomIn")} disabled={zoom >= 32} onClick={() => setZoom((z) => Math.min(32, z * 2))}>
           +
         </ActionButton>
         {headerExtra}
         <button
           type="button"
-          aria-label="Close piano roll"
+          aria-label={t("editorTools.pianoRoll.close")}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
           onClick={onClose}
         >
@@ -459,7 +480,7 @@ export function PianoRoll(props: PianoRollProps) {
           className="block touch-none"
           style={{ width: width + KEYS, height: HEIGHT }}
           role="application"
-          aria-label={`${drums ? "Drum grid" : "Piano roll"} with ${notes.length} notes. Click to add a note; right-click a note to delete it.`}
+          aria-label={tp("editorTools.pianoRoll.canvas", notes.length, { title })}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}

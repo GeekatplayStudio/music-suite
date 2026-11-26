@@ -165,6 +165,9 @@ function parseList(lines: string[], start: number): { block: Block; next: number
 export function parseBlocks(source: string): Block[] {
   const lines = source.replace(/\r\n?/g, "\n").split("\n");
   const blocks: Block[] = [];
+  // A translated manual keeps the English anchors (the app links to them) with a line
+  // `<a id="english-anchor"></a>` just before the heading, which GitHub understands too.
+  let anchor: string | null = null;
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
@@ -172,14 +175,22 @@ export function parseBlocks(source: string): Block[] {
       i += 1;
       continue;
     }
+    const named = /^<a id="([\w-]+)"><\/a>\s*$/.exec(line.trim());
+    if (named) {
+      anchor = named[1];
+      i += 1;
+      continue;
+    }
     const heading = /^(#{1,4})\s+(.*?)\s*#*$/.exec(line);
     if (heading) {
       const c = parseInline(heading[2]);
       const text = plainText(c);
-      blocks.push({ t: "heading", level: heading[1].length, id: slugOf(text), c, text });
+      blocks.push({ t: "heading", level: heading[1].length, id: anchor ?? slugOf(text), c, text });
+      anchor = null;
       i += 1;
       continue;
     }
+    anchor = null;
     if (line.startsWith("```")) {
       const body: string[] = [];
       i += 1;

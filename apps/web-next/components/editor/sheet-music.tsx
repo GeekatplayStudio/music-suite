@@ -3,6 +3,7 @@
 import { FileDown, Loader2, Printer, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { useI18n } from "@/lib/i18n";
 import { toSheet } from "@/lib/editor/notation";
 import { type PaperSize, defaultPaper, exportPdf, printSheet } from "@/lib/editor/sheet-pages";
 import { type SheetLine, drawLines, layoutSheet, lineHeight, loadVex } from "@/lib/editor/sheet-render";
@@ -37,6 +38,7 @@ export function SheetMusic({
   /** Extra controls before the close button (the pop-out button). */
   headerExtra?: ReactNode;
 }) {
+  const { t, tp } = useI18n();
   const hostRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -77,13 +79,13 @@ export function SheetMusic({
         drawLines(vex, renderer.getContext(), sheet, lines, MARGIN, 20);
         setFailure(null);
       } catch (err) {
-        if (!cancelled) setFailure(err instanceof Error ? err.message : "The sheet music could not be drawn.");
+        if (!cancelled) setFailure(err instanceof Error ? err.message : t("editorTools.sheet.drawFailed"));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [sheet, width]);
+  }, [sheet, width, t]);
 
   /** A click on the paper jumps to the start of the bar under it. */
   const seekTo = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -113,13 +115,13 @@ export function SheetMusic({
     setWorking(kind);
     setFailure(null);
     const heading = {
-      title: clip.name || "Sheet music",
+      title: clip.name || t("editorTools.sheet.title"),
       subtitle: [`${Math.round(bpm)} BPM`, keyLabel, "Music Suite"].filter(Boolean).join("  ·  ")
     };
     try {
       await (kind === "pdf" ? exportPdf(sheet, heading, paper) : printSheet(sheet, heading, paper));
     } catch (err) {
-      setFailure(err instanceof Error ? err.message : "The pages could not be made.");
+      setFailure(err instanceof Error ? err.message : t("editorTools.sheet.pagesFailed"));
     }
     setWorking(null);
   };
@@ -127,16 +129,21 @@ export function SheetMusic({
     "inline-flex h-7 items-center gap-1.5 rounded-lg bg-slate-800 px-2 text-[11px] font-semibold text-slate-100 hover:bg-slate-700 " +
     "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:pointer-events-none disabled:opacity-40";
   return (
-    <section className="flex max-h-[55vh] shrink-0 flex-col border-t border-white/10 bg-slate-950" aria-label="Sheet music">
+    <section className="flex max-h-[55vh] shrink-0 flex-col border-t border-white/10 bg-slate-950" aria-label={t("editorTools.sheet.title")}>
       <header className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-400">
-        <h2 className="display-font text-xs font-semibold uppercase tracking-wider text-slate-200">Sheet music</h2>
+        <h2 className="display-font text-xs font-semibold uppercase tracking-wider text-slate-200">{t("editorTools.sheet.title")}</h2>
         <span className="min-w-0 flex-1 truncate">
-          {clip.name}: {count} note{count === 1 ? "" : "s"}, {sheet.measures.length} bar{sheet.measures.length === 1 ? "" : "s"} at {Math.round(bpm)} BPM.
-          Timing is rounded to sixteenths or triplets. Click a bar to move the playhead there; edit notes in the piano roll.
-          {sheet.hiddenBars ? ` Showing the first ${sheet.measures.length} bars of ${sheet.measures.length + sheet.hiddenBars}.` : ""}
+          {t("editorTools.sheet.summary", {
+            name: clip.name,
+            notes: tp("editorTools.sheet.notes", count),
+            bars: tp("editorTools.sheet.bars", sheet.measures.length),
+            bpm: Math.round(bpm)
+          })}{" "}
+          {t("editorTools.sheet.howTo")}
+          {sheet.hiddenBars ? ` ${t("editorTools.sheet.partial", { shown: sheet.measures.length, total: sheet.measures.length + sheet.hiddenBars })}` : ""}
         </span>
         <select
-          aria-label="Paper size"
+          aria-label={t("editorTools.sheet.paper")}
           value={paper}
           onChange={(event) => setPaper(event.target.value === "letter" ? "letter" : "a4")}
           className="h-7 rounded-lg border border-white/10 bg-slate-900 px-1.5 text-[11px] text-slate-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
@@ -144,16 +151,16 @@ export function SheetMusic({
           <option value="a4">A4</option>
           <option value="letter">US Letter</option>
         </select>
-        <button type="button" className={tool} disabled={working !== null} onClick={() => void produce("print")} title="Print this sheet music">
-          {working === "print" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Printer className="h-3.5 w-3.5" aria-hidden />} Print
+        <button type="button" className={tool} disabled={working !== null} onClick={() => void produce("print")} title={t("editorTools.sheet.printTitle")}>
+          {working === "print" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Printer className="h-3.5 w-3.5" aria-hidden />} {t("editorTools.sheet.print")}
         </button>
-        <button type="button" className={tool} disabled={working !== null} onClick={() => void produce("pdf")} title="Save this sheet music as a PDF file">
+        <button type="button" className={tool} disabled={working !== null} onClick={() => void produce("pdf")} title={t("editorTools.sheet.pdfTitle")}>
           {working === "pdf" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <FileDown className="h-3.5 w-3.5" aria-hidden />} PDF
         </button>
         {headerExtra}
         <button
           type="button"
-          aria-label="Close the sheet music"
+          aria-label={t("editorTools.sheet.close")}
           onClick={onClose}
           className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
         >
@@ -170,7 +177,7 @@ export function SheetMusic({
         <div
           ref={paperRef}
           role="img"
-          aria-label={`Sheet music of ${clip.name}: ${count} notes in ${sheet.measures.length} bars`}
+          aria-label={t("editorTools.sheet.paperLabel", { name: clip.name, notes: tp("editorTools.sheet.notes", count), bars: tp("editorTools.sheet.bars", sheet.measures.length) })}
           onClick={seekTo}
           className="min-h-40 cursor-pointer rounded-lg bg-[#f8f6f0] text-black"
         />

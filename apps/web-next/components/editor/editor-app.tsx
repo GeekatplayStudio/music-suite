@@ -172,39 +172,40 @@ function closeTakeNote(take: MidiTake, pitch: number, at: number, loopEnd: numbe
   take.furthest = Math.max(take.furthest, start.t + d);
 }
 
-const SHORTCUTS: [string, string][] = [
-  ["Space", "Play / pause"],
-  ["Home / End", "Jump to start / end"],
-  ["V · C · R", "Select · Razor · Range tool"],
-  ["S or Ctrl/Cmd+E", "Split at the playhead"],
-  ["Delete", "Delete clips or the highlighted range"],
-  ["Shift+Delete", "Ripple delete (close the gap)"],
-  ["Ctrl/Cmd+D", "Duplicate"],
-  ["Ctrl/Cmd+C · X · V", "Copy · cut · paste at the playhead"],
-  ["Ctrl/Cmd+A", "Select every clip"],
-  ["Ctrl/Cmd+Z · Shift+Z", "Undo · redo"],
-  ["← / →", "Nudge clips, or step the playhead"],
-  ["M · Shift+S", "Mute · solo the selected track"],
-  ["L", "Toggle loop (uses the range if one is set)"],
-  ["N", "Toggle snapping (hold Alt while dragging to bypass)"],
-  ["+ / − / F", "Zoom in · out · fit"],
-  ["Ctrl/Cmd+wheel", "Zoom at the pointer"],
-  ["Shift+wheel", "Scroll sideways"],
-  ["Shift+drag on ruler", "Draw a loop region"],
-  ["Double-click a clip", "Highlight its range"],
-  ["Shift+T", "Add a track"],
-  ["Alt+click a selected clip", "Pin a warp marker; drag its dashed line to where it should land"],
-  ["W", "Show or hide the spectral view of the selected clip"],
-  ["P", "Show or hide the piano roll for the selected MIDI clip"],
-  ["A", "Show volume automation · pan automation · none"],
-  ["Click / drag the automation line", "Add or move a point (double-click a point to remove it)"],
-  ["K", "Add a marker at the playhead"],
-  ["[ / ]", "Jump to the previous / next marker"],
-  ["Alt+click a marker", "Delete the marker"],
-  ["Shift+R", "Turn the highlighted range into a named section"],
-  ["Click a section on the ruler", "Highlight it, ready to loop, export, repeat or cut"],
-  ["?", "Show this list"]
-];
+/** The shortcuts list: each id has its keys (editor.shortcuts.keys) and what they do (editor.shortcuts.do). */
+const SHORTCUTS = [
+  "play",
+  "ends",
+  "tools",
+  "split",
+  "delete",
+  "ripple",
+  "duplicate",
+  "clipboard",
+  "selectAll",
+  "undo",
+  "nudge",
+  "muteSolo",
+  "loop",
+  "snap",
+  "zoom",
+  "wheelZoom",
+  "wheelScroll",
+  "rulerLoop",
+  "clipRange",
+  "addTrack",
+  "warp",
+  "spectral",
+  "piano",
+  "automation",
+  "autoPoint",
+  "marker",
+  "markerJump",
+  "markerDelete",
+  "section",
+  "sectionClick",
+  "help"
+] as const;
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
@@ -529,20 +530,21 @@ function withKeyboardMuted(state: ProjectState, choice: string | null): ProjectS
 
 type ExportKind = "project" | "chosen" | "wav24" | "wav32" | "tracks" | "track" | "trackmidi" | "range" | "mp3" | "flac" | "midi" | "mastering" | "studio";
 
-const EXPORT_ITEMS: { kind: ExportKind; label: string; needsRange?: boolean; needsNotes?: boolean; needsTrack?: boolean }[] = [
-  { kind: "project", label: "Whole project · one file to reopen later" },
-  { kind: "chosen", label: "Song from chosen tracks · WAV, FLAC or MP3…" },
-  { kind: "wav24", label: "Mixdown · WAV 24-bit" },
-  { kind: "wav32", label: "Mixdown · WAV 32-bit float" },
-  { kind: "flac", label: "Mixdown · FLAC" },
-  { kind: "mp3", label: "Mixdown · MP3 320 kbps" },
-  { kind: "range", label: "Highlighted range · WAV 24-bit", needsRange: true },
-  { kind: "tracks", label: "Each track · WAV 24-bit" },
-  { kind: "track", label: "Selected track · WAV 24-bit", needsTrack: true },
-  { kind: "trackmidi", label: "Selected track · MIDI file", needsTrack: true, needsNotes: true },
-  { kind: "midi", label: "Every instrument · MIDI file", needsNotes: true },
-  { kind: "mastering", label: "Send mix to the analyser and mastering →" },
-  { kind: "studio", label: "Start an AI song from the mix →" }
+/** The export menu; each kind's label is editor.export.items.<kind>. */
+const EXPORT_ITEMS: { kind: ExportKind; needsRange?: boolean; needsNotes?: boolean; needsTrack?: boolean }[] = [
+  { kind: "project" },
+  { kind: "chosen" },
+  { kind: "wav24" },
+  { kind: "wav32" },
+  { kind: "flac" },
+  { kind: "mp3" },
+  { kind: "range", needsRange: true },
+  { kind: "tracks" },
+  { kind: "track", needsTrack: true },
+  { kind: "trackmidi", needsTrack: true, needsNotes: true },
+  { kind: "midi", needsNotes: true },
+  { kind: "mastering" },
+  { kind: "studio" }
 ];
 
 export function EditorApp({
@@ -618,7 +620,7 @@ export function EditorApp({
   const [wamWindow, setWamWindow] = useState<string | null>(null);
   const [showPiano, setShowPiano] = useState(true);
   // Panels that can move to windows of their own (another monitor).
-  const { t } = useI18n();
+  const { t, tp } = useI18n();
   const lowerPop = useDetachable("lower", t("detach.titles.lower"), { width: 1200, height: 560 });
   const inspectorPop = useDetachable("inspector", t("detach.titles.inspector"), { width: 420, height: 900 });
   const keysPop = useDetachable("keys", t("detach.titles.keys"), { width: 1100, height: 280 });
@@ -689,11 +691,13 @@ export function EditorApp({
     () =>
       media.subscribe((loaded) => {
         if (loaded) setMediaVersion((v) => v + 1);
-        else setNotice("Some audio could not be loaded. Check that Music Suite is still running.");
+        else setNotice(t("editor.notice.audioMissing"));
       }),
-    [media]
+    [media, t]
   );
 
+  // Read when the project fails to open: the language is not a reason to load it again.
+  const loadFailed = useEffectEvent((err: unknown) => setLoadError(errorMessage(err, t("editor.load.failed"))));
   useEffect(() => {
     aliveRef.current = true;
     let cancelled = false;
@@ -722,7 +726,7 @@ export function EditorApp({
             .catch(() => undefined);
         }
       } catch (err) {
-        if (!cancelled) setLoadError(errorMessage(err, "The project could not be opened."));
+        if (!cancelled) loadFailed(err);
       }
     })();
     return () => {
@@ -763,12 +767,16 @@ export function EditorApp({
 
   /* ---------- In-browser plugins ---------- */
 
+  const wamFailed = useEffectEvent((plugin: string | undefined, err: unknown) =>
+    setNotice(t("editor.wam.failed", { plugin: plugin ?? t("editor.wam.thePlugin"), error: errorMessage(err, t("editor.notice.unknownError")) }))
+  );
+  const noControlsText = useEffectEvent(() => t("editor.wam.noControls"));
   const wamSignature = state.tracks.map((t) => `${t.id}=${t.wam?.url ?? ""}`).join("|");
   useEffect(() => {
     if (!ready) return;
     for (const track of stateRef.current.tracks) {
       engine.syncWam(track.id, track.wam?.url ?? null, track.wam?.state).catch((err: unknown) => {
-        setNotice(`${track.wam?.name ?? "The plugin"} could not be loaded: ${errorMessage(err, "unknown error")}`);
+        wamFailed(track.wam?.name, err);
       });
     }
   }, [engine, ready, wamSignature]);
@@ -795,7 +803,7 @@ export function EditorApp({
       const element = cancelled ? null : await engine.wamGui(wamWindow).catch(() => null);
       if (cancelled) return;
       if (element) host.replaceChildren(element);
-      else host.textContent = "This plugin has no controls of its own, or it is not loaded.";
+      else host.textContent = noControlsText();
     };
     void show();
     return () => {
@@ -1031,12 +1039,12 @@ export function EditorApp({
   const importFiles = async (files: File[], time: number, trackId: string | null) => {
     const wasEmpty = stateRef.current.clips.length === 0;
     for (const [index, file] of files.entries()) {
-      setWorking(`Importing ${file.name} (${index + 1} of ${files.length})…`);
+      setWorking(t("editor.working.importing", { file: file.name, index: index + 1, total: files.length }));
       if (/\.midi?$/i.test(file.name)) {
         // MIDI files are read here in the browser; there is no audio to upload.
         try {
           const midi = parseMidi(await file.arrayBuffer());
-          if (!midi.tracks.length) throw new Error("it contains no notes");
+          if (!midi.tracks.length) throw new Error(t("editor.notice.noNotesInFile"));
           let current = stateRef.current;
           const created: Clip[] = [];
           for (const part of midi.tracks) {
@@ -1055,7 +1063,7 @@ export function EditorApp({
           select(new Set([created[0].id]), created[0].trackId);
           await delay(0);
         } catch (err) {
-          setNotice(`${file.name}: ${errorMessage(err, "could not be read")}`);
+          setNotice(t("editor.notice.fileFailed", { file: file.name, error: errorMessage(err, t("editor.notice.unreadable")) }));
         }
         continue;
       }
@@ -1067,7 +1075,7 @@ export function EditorApp({
         // Let React apply the edit so the next file sees the new track.
         await delay(0);
       } catch (err) {
-        setNotice(`${file.name}: ${errorMessage(err, "import failed")}`);
+        setNotice(t("editor.notice.fileFailed", { file: file.name, error: errorMessage(err, t("editor.notice.importFailed")) }));
       }
     }
     setWorking(null);
@@ -1102,7 +1110,7 @@ export function EditorApp({
     if (!["spectral_repair", "warp", "match", "analyze", "separate", "to_midi", "song_to_midi", "structure", "generate", "generate_song"].includes(op)) {
       setRecentSteps((prev) => [...prev, { op, params: shared, label: verb }].slice(-6));
     }
-    for (const ids of groups) void runJob(op, shared, many ? `${verb} (${ids.length} clip${ids.length > 1 ? "s" : ""})` : title, ids);
+    for (const ids of groups) void runJob(op, shared, many ? tp("editor.jobs.clips", ids.length, { verb }) : title, ids);
   };
 
   /** Run a saved chain: each step works on the result of the one before. */
@@ -1110,7 +1118,7 @@ export function EditorApp({
     for (const ids of targetGroups(false)) {
       void (async () => {
         for (const [index, step] of steps.entries()) {
-          const ok = await runJob(step.op, step.params, `${step.label} (step ${index + 1} of ${steps.length})`, ids);
+          const ok = await runJob(step.op, step.params, t("editor.jobs.step", { label: step.label, index: index + 1, total: steps.length }), ids);
           if (!ok) return;
           // Let the edit land so the next step picks up the new audio.
           await delay(120);
@@ -1127,7 +1135,7 @@ export function EditorApp({
       // MIDI clips have no audio of their own: their jobs start from the notes.
       job = await editorApi.startJob(projectId, op, clip.notes ? null : clip.assetId, params);
     } catch (err) {
-      setNotice(errorMessage(err, "The job could not be started."));
+      setNotice(errorMessage(err, t("editor.notice.jobFailed")));
       return false;
     }
     const jobId = job.id;
@@ -1149,7 +1157,7 @@ export function EditorApp({
       } catch {
         failures += 1;
         if (failures > 8) {
-          publish({ ...job, status: "failed", error: "Lost contact with the Music Suite API." });
+          publish({ ...job, status: "failed", error: t("editor.jobs.lostContact") });
           return false;
         }
       }
@@ -1178,7 +1186,7 @@ export function EditorApp({
     try {
       job = await editorApi.startJob(projectId, "generate_song", null, params);
     } catch (err) {
-      setNotice(errorMessage(err, "The arrangement could not be started."));
+      setNotice(errorMessage(err, t("editor.notice.arrangementFailed")));
       return;
     }
     const jobId = job.id;
@@ -1198,7 +1206,7 @@ export function EditorApp({
       } catch {
         failures += 1;
         if (failures > 8) {
-          publish({ ...job, status: "failed", error: "Lost contact with the Music Suite API." });
+          publish({ ...job, status: "failed", error: t("editor.jobs.lostContact") });
           return;
         }
       }
@@ -1206,7 +1214,7 @@ export function EditorApp({
     if (!aliveRef.current || job.status !== "completed") return;
     const wasEmpty = stateRef.current.clips.length === 0;
     const next = applyArrangement(stateRef.current, job, at);
-    if (next === stateRef.current) setNotice("The arrangement came back without any notes.");
+    if (next === stateRef.current) setNotice(t("editor.notice.arrangementEmpty"));
     else {
       commit(next);
       if (wasEmpty) {
@@ -1225,14 +1233,14 @@ export function EditorApp({
     window.history.replaceState(null, "", `/editor?project=${projectId}`);
     const clip = stateRef.current.clips.find((c) => c.assetId === splitAssetId && !c.notes);
     if (!clip) {
-      setNotice("The song to split into stems is not on the timeline. Select it and use Separate stems.");
+      setNotice(t("editor.notice.splitMissing"));
       return;
     }
     const options = capabilities?.separation.stem_options ?? [2, 4];
     const fine = Boolean(capabilities?.separation.detail);
     // Without the AI separators a "full" split falls back to the most stems available.
     const params = splitParams(splitDepth === "full" && !fine ? "auto" : splitDepth, options);
-    void runJob("separate", params, `Separating ${clip.name}`, [clip.id]);
+    void runJob("separate", params, t("editor.jobs.separating", { clip: clip.name }), [clip.id]);
   });
   useEffect(() => {
     if (!ready || !splitAssetId || splitStartedRef.current) return;
@@ -1248,7 +1256,7 @@ export function EditorApp({
     if (!clip?.notes || !instrument) return;
     const notes = pluginNotes(clip);
     if (!notes.length) {
-      setNotice("This clip has no notes to play.");
+      setNotice(t("editor.notice.clipNoNotes"));
       return;
     }
     const params = {
@@ -1259,7 +1267,7 @@ export function EditorApp({
       seconds: clip.duration + PLUGIN_TAIL_SECONDS,
       name: clip.name.slice(0, 120) || "MIDI"
     };
-    void runJob("render_instrument", params, `Playing ${clip.name} through ${instrument.name}`, [clip.id]);
+    void runJob("render_instrument", params, t("editor.jobs.playingThrough", { clip: clip.name, plugin: instrument.name }), [clip.id]);
   };
 
   /** Open the plugin instrument's own window on this computer; its sound is kept when it closes. */
@@ -1269,7 +1277,7 @@ export function EditorApp({
     if (!clip || !instrument) return;
     // The clip's notes come along so they can be played live while the window is open.
     const params = { plugin_id: instrument.id, state: instrument.state ?? null, notes: pluginNotes(clip), seconds: clamp(clip.duration, 0.25, 600), live: true };
-    void runJob("plugin_window", params, `${instrument.name} window open: close it to keep the sound`, [clip.id]);
+    void runJob("plugin_window", params, t("editor.jobs.windowOpen", { plugin: instrument.name }), [clip.id]);
   };
 
   /** The running plugin session (window or listening) for a clip, if any. */
@@ -1281,7 +1289,7 @@ export function EditorApp({
     const running = pluginSession(clipId);
     if (running) {
       if (!loop) return;
-      void editorApi.previewInPluginWindow(projectId, running.job.id, true).catch((err: unknown) => setNotice(errorMessage(err, "Playing could not start.")));
+      void editorApi.previewInPluginWindow(projectId, running.job.id, true).catch((err: unknown) => setNotice(errorMessage(err, t("editor.notice.playFailed"))));
       return;
     }
     const clip = stateRef.current.clips.find((c) => c.id === clipId);
@@ -1296,7 +1304,7 @@ export function EditorApp({
       play: loop,
       live: true
     };
-    const title = loop ? `Playing ${clip.name} through ${instrument.name}` : `${instrument.name} is live: play your MIDI keyboard`;
+    const title = loop ? t("editor.jobs.playingThrough", { clip: clip.name, plugin: instrument.name }) : t("editor.jobs.live", { plugin: instrument.name });
     void runJob("plugin_window", params, title, [clip.id]);
   };
 
@@ -1322,7 +1330,7 @@ export function EditorApp({
       running.job.stage === "window"
         ? editorApi.previewInPluginWindow(projectId, running.job.id, false)
         : editorApi.closePluginWindow(projectId, running.job.id);
-    void call.catch((err: unknown) => setNotice(errorMessage(err, "Playing could not be stopped.")));
+    void call.catch((err: unknown) => setNotice(errorMessage(err, t("editor.notice.stopFailed"))));
   };
 
   /** Switch the track to a sound from the plugin's library, live if a session is running. */
@@ -1334,7 +1342,7 @@ export function EditorApp({
     try {
       await applyPluginSound(clipId, await editorApi.pluginSoundState(instrument.id, sound.id));
     } catch (err) {
-      setNotice(errorMessage(err, "That sound could not be loaded."));
+      setNotice(errorMessage(err, t("editor.notice.soundFailed")));
     }
   };
 
@@ -1351,7 +1359,7 @@ export function EditorApp({
       const running = pluginSession(clipId);
       if (running) await editorApi.loadInPluginWindow(projectId, running.job.id, built.state);
     } catch (err) {
-      setNotice(errorMessage(err, "That sound could not be loaded."));
+      setNotice(errorMessage(err, t("editor.notice.soundFailed")));
     }
   };
 
@@ -1367,7 +1375,7 @@ export function EditorApp({
     const clip = primaryClip;
     if (!clip || working) return;
     engine.pause();
-    setWorking("Rendering a plugin audition…");
+    setWorking(t("editor.working.audition"));
     try {
       const local = clamp(engine.position() - clip.start, 0, Math.max(0, clip.duration - 1));
       let job = await editorApi.startJob(projectId, "plugin", clip.assetId, {
@@ -1380,18 +1388,18 @@ export function EditorApp({
         await delay(400);
         job = await editorApi.getJob(projectId, job.id);
       }
-      if (job.status !== "completed" || !job.result_assets.length) throw new Error(job.error ?? "The audition failed.");
+      if (job.status !== "completed" || !job.result_assets.length) throw new Error(job.error ?? t("editor.notice.auditionFailed"));
       const assetId = job.result_assets[0].id;
       const player = new Audio(editorApi.assetAudioUrl(projectId, assetId));
       // The excerpt is only for listening, so it is removed once it has played.
       const discard = () => void editorApi.deleteAsset(projectId, assetId).catch(() => undefined);
       player.addEventListener("ended", discard, { once: true });
       player.addEventListener("error", discard, { once: true });
-      setWorking("Playing the audition…");
+      setWorking(t("editor.working.playingAudition"));
       await player.play();
       await delay(8200);
     } catch (err) {
-      setNotice(errorMessage(err, "The audition failed."));
+      setNotice(errorMessage(err, t("editor.notice.auditionFailed")));
     }
     setWorking(null);
   };
@@ -1460,7 +1468,7 @@ export function EditorApp({
     const loopEnd = current.loop.enabled && current.loop.end > current.loop.start ? current.loop.end : null;
     for (const pitch of [...take.held.keys()]) closeTakeNote(take, pitch, end, loopEnd);
     if (!take.notes.length) {
-      setNotice("No keys were played, so nothing was recorded.");
+      setNotice(t("editor.notice.nothingPlayed"));
       return;
     }
     let start = take.from;
@@ -1534,18 +1542,18 @@ export function EditorApp({
       const clipped = peak >= 0.995;
       setPassResult((prev) => ({ count: prev.count + 1, silent, clipped, volume: midiOutHub.volume }));
       if (clipped && !reamp.managed) {
-        setNotice(`${reamp.sourceName}: the keyboard came back too loud and the take is distorted. Record it again: the level is measured afresh, or turn the keyboard's volume down a little.`);
+        setNotice(t("editor.notice.tooLoud", { part: reamp.sourceName }));
       }
       if (silent) {
-        setNotice(`${reamp.sourceName}: the keyboard made no sound, so nothing was saved.`);
+        setNotice(t("editor.notice.silent", { part: reamp.sourceName }));
         return;
       }
     }
     if (!take) {
-      setNotice("Nothing was recorded.");
+      setNotice(t("editor.notice.nothingRecorded"));
       return;
     }
-    setWorking("Saving the recording…");
+    setWorking(t("editor.working.savingRecording"));
     try {
       const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
       const file = new File([encodeWav(take.buffer, 24)], `Recording ${stamp.replace(/[^0-9]+/g, " ").trim().replace(/ /g, "-")}.wav`, { type: "audio/wav" });
@@ -1584,7 +1592,7 @@ export function EditorApp({
           start = Math.max(punch.start, start);
           end = Math.min(punch.end, end);
           if (end - start < 0.05) {
-            setNotice("The recording stopped before the punch-in range began.");
+            setNotice(t("editor.notice.beforePunch"));
             setWorking(null);
             return;
           }
@@ -1617,7 +1625,7 @@ export function EditorApp({
       const last = created[created.length - 1];
       select(new Set([last.id]), last.trackId);
     } catch (err) {
-      setNotice(errorMessage(err, "The recording could not be saved."));
+      setNotice(errorMessage(err, t("editor.notice.recordingFailed")));
     }
     setWorking(null);
   };
@@ -1665,11 +1673,11 @@ export function EditorApp({
       .flatMap((track) => trackNotes(current, track.id));
     const notes = clearRepeats(shape ? shapeNotes(written, shape, everything) : written);
     if (!source || !notes.length) {
-      setNotice("That part has no notes to play out.");
+      setNotice(t("editor.notice.partNoNotes"));
       return;
     }
     if (!midiOutHub.ready()) {
-      setNotice("The keyboard's MIDI output is not connected.");
+      setNotice(t("editor.notice.midiOutMissing"));
       return;
     }
     const filed = takeKey ?? trackId;
@@ -1688,13 +1696,13 @@ export function EditorApp({
         await delay(120);
       } else {
         // The keyboard's volume is set from the part's loudest chord, so the take should not distort.
-        setNotice(`Setting the keyboard's level for ${source.name}…`);
+        setNotice(t("editor.notice.settingLevel", { part: source.name }));
         await autoLevel(engine, notes, { deviceId: deviceId || undefined });
       }
       await engine.startRecording(from, { deviceId: deviceId || undefined, latency });
     } catch (err) {
       passStartingRef.current = false;
-      setNotice(errorMessage(err, "The pass could not start."));
+      setNotice(errorMessage(err, t("editor.notice.passFailed")));
       return;
     }
     passStartingRef.current = false;
@@ -1703,7 +1711,7 @@ export function EditorApp({
     driver.start();
     setRecording(true);
     setReampRunning(true);
-    setNotice(`Playing ${source.name} out to the keyboard. It stops on its own at the end of the part.`);
+    setNotice(t("editor.notice.playingOut", { part: source.name }));
   };
 
   /** Wizard: hear a part's take, on its own or with the rest of the song, without changing the project. */
@@ -1743,7 +1751,7 @@ export function EditorApp({
     // Each style is its own part (held chords as three), so a one-note voice records each in turn.
     const lines = singAlongLines(parts, styles, current.bpm, current.beatsPerBar);
     if (!lines.length) {
-      setNotice("There are no notes to build a sing-along part from. Write the song's notes first.");
+      setNotice(t("editor.notice.noSingAlong"));
       return null;
     }
     for (const old of current.tracks.filter((track) => isOurs(track.name))) current = removeTrack(current, old.id);
@@ -1777,12 +1785,12 @@ export function EditorApp({
     if (!clip) return false;
     if (source === "song") {
       // Four stems: the same split the notes are written from, so stems and notes line up.
-      const split = await runJob("separate", { stems: 4 }, `Splitting ${clip.name} into stems`, [clipId]);
+      const split = await runJob("separate", { stems: 4 }, t("editor.jobs.splitting", { clip: clip.name }), [clipId]);
       if (!split) return false;
       await delay(120);
     }
     // One instrument on its own is written down as it stands; splitting it tears it apart.
-    return runJob("song_to_midi", { engine: "stems", source }, `Writing the notes of ${clip.name}`, [clipId]);
+    return runJob("song_to_midi", { engine: "stems", source }, t("editor.jobs.writingNotes", { clip: clip.name }), [clipId]);
   };
 
   /**
@@ -1842,7 +1850,7 @@ export function EditorApp({
       punchRef.current = punch;
       setRecording(true);
     } catch (err) {
-      setNotice(errorMessage(err, "Recording could not start."));
+      setNotice(errorMessage(err, t("editor.notice.recordFailed")));
     }
   };
 
@@ -1907,20 +1915,20 @@ export function EditorApp({
     try {
       if (kind === "project") {
         // What is on screen is saved first, so the file holds the project as it is now.
-        setWorking("Saving the project…");
+        setWorking(t("editor.working.savingProject"));
         await editorApi.saveState(projectId, stateRef.current);
         const link = document.createElement("a");
         link.href = editorApi.projectFileUrl(projectId);
         link.download = "";
         link.click();
         setWorking(null);
-        setNotice("The project file is downloading. Reopen it from the sessions page with “Open a project file”.");
+        setNotice(t("editor.notice.projectDownloading"));
         return;
       }
       if (kind === "trackmidi") {
         const part = chosen ? midiParts().find((entry) => entry.name === chosen.name) : null;
         if (!chosen || !part) {
-          setNotice("Select a track that has notes first.");
+          setNotice(t("editor.notice.selectNotesTrack"));
           return;
         }
         downloadBlob(
@@ -1930,13 +1938,13 @@ export function EditorApp({
         return;
       }
       if (kind === "track" && !chosen) {
-        setNotice("Select a track first.");
+        setNotice(t("editor.notice.selectTrack"));
         return;
       }
       if (kind === "midi") {
         const parts = midiParts();
         if (!parts.length) {
-          setNotice("This project has no MIDI clips to write.");
+          setNotice(t("editor.notice.noMidi"));
           return;
         }
         downloadBlob(
@@ -1952,32 +1960,32 @@ export function EditorApp({
       }
       await captureWamStates();
       if (kind === "track" && chosen) {
-        setWorking(`Rendering ${chosen.name}…`);
+        setWorking(t("editor.working.renderingTrack", { track: chosen.name }));
         const buffer = await engine.render({ trackId: chosen.id });
         downloadBlob(encodeWav(buffer, 24), `${safeName} - ${clean(chosen.name)}.wav`);
       } else if (kind === "tracks") {
         const used = state.tracks.filter((t) => state.clips.some((c) => c.trackId === t.id));
         for (const [index, track] of used.entries()) {
-          setWorking(`Rendering ${track.name} (${index + 1} of ${used.length})…`);
+          setWorking(t("editor.working.renderingEach", { track: track.name, index: index + 1, total: used.length }));
           const buffer = await engine.render({ trackId: track.id });
           downloadBlob(encodeWav(buffer, 24), `${safeName} - ${clean(track.name)}.wav`);
         }
       } else {
-        setWorking(kind === "range" ? "Rendering the highlighted range…" : "Rendering mixdown…");
+        setWorking(t(kind === "range" ? "editor.working.renderingRange" : "editor.working.renderingMix"));
         const buffer = await engine.render({ range: kind === "range" ? range : null });
         const wav = encodeWav(buffer, kind === "wav32" ? 32 : 24);
         if (kind === "mp3" || kind === "flac") {
-          setWorking(`Encoding ${kind.toUpperCase()}…`);
+          setWorking(t("editor.working.encoding", { format: kind.toUpperCase() }));
           downloadBlob(await editorApi.encode(wav, kind), `${safeName}.${kind}`);
         } else if (kind === "mastering") {
-          setWorking("Sending the mix to the analyser…");
+          setWorking(t("editor.working.toAnalyser"));
           const { run } = await uploadAudio(new File([wav], `${safeName} (editor mix).wav`, { type: "audio/wav" }));
           await analyzeRun(run.id, false);
           router.push(`/?run=${run.id}`);
           return;
         } else if (kind === "studio") {
           // The mix is kept in this session's clip list (not on the timeline) as the song to start from.
-          setWorking("Sending the mix to the AI Song Studio…");
+          setWorking(t("editor.working.toStudio"));
           const mix = await editorApi.uploadAsset(projectId, new File([wav], `${safeName} (mix).wav`, { type: "audio/wav" }));
           router.push(startSongUrl({ projectId, assetId: mix.id, name: `${name || "Mix"} (mix)` }));
           return;
@@ -1986,10 +1994,10 @@ export function EditorApp({
         }
       }
       if (engine.renderWarnings.length) {
-        setNotice(`Exported without these in-browser plugins, which could not run offline: ${engine.renderWarnings.join(", ")}.`);
+        setNotice(t("editor.notice.pluginsSkipped", { plugins: engine.renderWarnings.join(", ") }));
       }
     } catch (err) {
-      setNotice(errorMessage(err, "Export failed."));
+      setNotice(errorMessage(err, t("editor.notice.exportFailed")));
     }
     setWorking(null);
   };
@@ -2004,22 +2012,22 @@ export function EditorApp({
     const current = stateRef.current;
     try {
       await captureWamStates();
-      setWorking(`Rendering ${pick.ids.size} track${pick.ids.size === 1 ? "" : "s"} into one file…`);
+      setWorking(tp("editor.working.renderingChosen", pick.ids.size));
       // The mixer is told which tracks sound for this render only; the project is not changed.
       engine.setState({ ...current, tracks: current.tracks.map((t) => ({ ...t, solo: false, mute: !pick.ids.has(t.id) })) });
       const buffer = await engine.render();
       const wav = encodeWav(buffer, pick.format === "wav32" ? 32 : 24);
       if (pick.format === "mp3" || pick.format === "flac") {
-        setWorking(`Encoding ${pick.format.toUpperCase()}…`);
+        setWorking(t("editor.working.encoding", { format: pick.format.toUpperCase() }));
         downloadBlob(await editorApi.encode(wav, pick.format), `${safeName}.${pick.format}`);
       } else {
         downloadBlob(wav, `${safeName}.wav`);
       }
       if (engine.renderWarnings.length) {
-        setNotice(`Exported without these in-browser plugins, which could not run offline: ${engine.renderWarnings.join(", ")}.`);
+        setNotice(t("editor.notice.pluginsSkipped", { plugins: engine.renderWarnings.join(", ") }));
       }
     } catch (err) {
-      setNotice(errorMessage(err, "Export failed."));
+      setNotice(errorMessage(err, t("editor.notice.exportFailed")));
     }
     const latest = stateRef.current;
     engine.setState(withKeyboardMuted(latest, keysTrackId));
@@ -2039,7 +2047,7 @@ export function EditorApp({
 
   const addSection = () => {
     if (range && range.end - range.start > 0.05) commit(addRegion(state, range).state);
-    else setNotice("Highlight a stretch of time with the Range tool first, then add it as a section.");
+    else setNotice(t("editor.notice.sectionNeedsRange"));
   };
 
   const cycleAutomation = () => {
@@ -2219,39 +2227,40 @@ export function EditorApp({
   if (loadError) {
     return (
       <main className="flex h-screen flex-col items-center justify-center gap-4 bg-slate-950 p-6 text-center">
-        <p className="display-font text-lg font-semibold text-slate-100">This project could not be opened</p>
+        <p className="display-font text-lg font-semibold text-slate-100">{t("editor.load.title")}</p>
         <p className="max-w-md text-sm text-slate-400">{loadError}</p>
         <Link href="/editor" className="rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950">
-          Back to projects
+          {t("editor.load.back")}
         </Link>
       </main>
     );
   }
 
-  const saveLabel = saveError ? "Save failed — retrying on next edit" : state === savedState ? "Saved" : "Saving…";
+  const saveLabel = t(saveError ? "editor.save.failed" : state === savedState ? "editor.save.saved" : "editor.save.saving");
+  const laneLabel = (lane: AutomationView) => (lane === "off" ? t("editor.header.noLane") : t(`editor.lanes.${lane}`));
   const menuClip = menu?.clipId ? state.clips.find((c) => c.id === menu.clipId) : null;
   type MenuAction = "split" | "duplicate" | "reverse" | "mute" | "copy" | "delete" | "ripple" | "paste" | "seek" | "track" | "loop";
   const menuItems: { label: string; hint?: string; danger?: boolean; action: MenuAction }[] = menu
     ? menuClip
       ? [
-          { label: "Split here", hint: "S", action: "split" },
-          { label: "Duplicate", hint: "Ctrl/Cmd+D", action: "duplicate" },
-          { label: menuClip.reversed ? "Play forwards" : "Reverse", action: "reverse" },
-          { label: menuClip.muted ? "Unmute clip" : "Mute clip", action: "mute" },
-          { label: "Copy", hint: "Ctrl/Cmd+C", action: "copy" },
-          { label: "Delete", hint: "Del", danger: true, action: "delete" },
-          { label: "Ripple delete", hint: "Shift+Del", danger: true, action: "ripple" }
+          { label: t("editor.menu.split"), hint: "S", action: "split" },
+          { label: t("editor.menu.duplicate"), hint: "Ctrl/Cmd+D", action: "duplicate" },
+          { label: t(menuClip.reversed ? "editor.menu.forwards" : "editor.menu.reverse"), action: "reverse" },
+          { label: t(menuClip.muted ? "editor.menu.unmute" : "editor.menu.mute"), action: "mute" },
+          { label: t("editor.menu.copy"), hint: "Ctrl/Cmd+C", action: "copy" },
+          { label: t("editor.menu.delete"), hint: "Del", danger: true, action: "delete" },
+          { label: t("editor.menu.ripple"), hint: "Shift+Del", danger: true, action: "ripple" }
         ]
       : [
-          { label: "Paste here", hint: "Ctrl/Cmd+V", action: "paste" },
-          { label: "Move playhead here", action: "seek" },
-          { label: "Add track", hint: "Shift+T", action: "track" },
+          { label: t("editor.menu.paste"), hint: "Ctrl/Cmd+V", action: "paste" },
+          { label: t("editor.menu.seek"), action: "seek" },
+          { label: t("editor.menu.addTrack"), hint: "Shift+T", action: "track" },
           ...(range
             ? ([
-                { label: "Loop the highlighted range", hint: "L", action: "loop" },
-                { label: "Delete range", hint: "Del", danger: true, action: "delete" },
-                { label: "Ripple delete range", hint: "Shift+Del", danger: true, action: "ripple" }
-              ] as const)
+                { label: t("editor.menu.loopRange"), hint: "L", action: "loop" },
+                { label: t("editor.menu.deleteRange"), hint: "Del", danger: true, action: "delete" },
+                { label: t("editor.menu.rippleRange"), hint: "Shift+Del", danger: true, action: "ripple" }
+              ] satisfies { label: string; hint: string; danger?: boolean; action: MenuAction }[])
             : [])
         ]
     : [];
@@ -2278,8 +2287,8 @@ export function EditorApp({
       <header className="z-40 flex h-14 shrink-0 items-center gap-2 border-b border-white/10 bg-slate-950 px-3">
         <Link
           href="/editor"
-          aria-label="Back to projects"
-          title="Back to projects"
+          aria-label={t("editor.header.back")}
+          title={t("editor.header.back")}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -2288,7 +2297,7 @@ export function EditorApp({
           <input
             value={name}
             title={name}
-            aria-label="Project name"
+            aria-label={t("editor.header.projectName")}
             onChange={(event) => setName(event.target.value.slice(0, 120))}
             onBlur={() => {
               const trimmed = name.trim();
@@ -2301,36 +2310,36 @@ export function EditorApp({
           </span>
         </div>
 
-        <IconButton label="Generate a song with AI into this project" onClick={openSongStudio}>
+        <IconButton label={t("editor.header.songStudio")} onClick={openSongStudio}>
           <Sparkles className="h-4 w-4" />
         </IconButton>
         <div className="flex items-center gap-1.5 border-l border-white/10 pl-2">
-          <IconButton label="Return to start" shortcut="Home" onClick={() => { seek(0); setScrollSec(0); }}>
+          <IconButton label={t("editor.header.toStart")} shortcut="Home" onClick={() => { seek(0); setScrollSec(0); }}>
             <SkipBack className="h-4 w-4" />
           </IconButton>
           <IconButton
             size="lg"
-            label={playing ? "Pause" : "Play"}
+            label={t(playing ? "editor.header.pause" : "editor.header.play")}
             shortcut="Space"
             onClick={togglePlay}
             className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
           >
             {playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5 translate-x-px" />}
           </IconButton>
-          <IconButton label="Loop" shortcut="L" active={state.loop.enabled} onClick={toggleLoop}>
+          <IconButton label={t("editor.header.loop")} shortcut="L" active={state.loop.enabled} onClick={toggleLoop}>
             <Repeat className="h-4 w-4" />
           </IconButton>
           <IconButton
             label={
               recording
-                ? "Stop recording"
+                ? t("editor.record.stop")
                 : recordsNotes && midiTrack
-                  ? `Record the MIDI keyboard as notes on ${midiTrack.name}`
+                  ? t("editor.record.notes", { track: midiTrack.name })
                   : range
-                  ? "Record into the highlighted range (punch-in, 2 s pre-roll)"
+                  ? t("editor.record.punch")
                   : state.loop.enabled
-                    ? "Record takes: each pass of the loop becomes its own take"
-                    : "Record from the playhead onto the selected track"
+                    ? t("editor.record.takes")
+                    : t("editor.record.playhead")
             }
             active={recording}
             disabled={!ready || working !== null}
@@ -2348,10 +2357,10 @@ export function EditorApp({
           <ActionButton
             variant="primary"
             className="h-9"
-            title="Keyboard wizard: add a sing-along voice to a song, or replace its parts with keyboard voices, step by step"
+            title={t("editor.header.wizardTitle")}
             onClick={() => setShowWizard(true)}
           >
-            <WandSparkles className="h-4 w-4" /> Wizard
+            <WandSparkles className="h-4 w-4" /> {t("editor.header.wizard")}
           </ActionButton>
           <ReampPanel
             engine={engine}
@@ -2367,7 +2376,7 @@ export function EditorApp({
             onKeysVoices={setKeysVoices}
           />
           <IconButton
-            label={showKeys ? "Hide the piano" : "Show a piano to play the selected instrument track"}
+            label={t(showKeys ? "editor.header.hidePiano" : "editor.header.showPiano")}
             active={showKeys}
             onClick={() => {
               // Opening the piano gets the audio ready, so its first key sounds.
@@ -2383,14 +2392,14 @@ export function EditorApp({
           <button
             ref={timeRef}
             type="button"
-            title="Click to switch between time and bars"
-            aria-label="Playhead position. Click to switch between time and bars."
+            title={t("editor.header.clockTitle")}
+            aria-label={t("editor.header.clockLabel")}
             onClick={() => commit({ ...state, rulerMode: state.rulerMode === "time" ? "bars" : "time" })}
             className="h-8 w-32 rounded-lg bg-black/50 px-2 text-center font-mono text-lg tabular-nums text-cyan-200 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
           >
             0:00.000
           </button>
-          <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-800" role="meter" aria-label="Master level" aria-valuemin={0} aria-valuemax={1} aria-valuenow={0}>
+          <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-800" role="meter" aria-label={t("editor.header.masterLevel")} aria-valuemin={0} aria-valuemax={1} aria-valuenow={0}>
             <div ref={masterMeterRef} className="h-full origin-left bg-emerald-400" style={{ transform: "scaleX(0)" }} />
           </div>
         </div>
@@ -2402,33 +2411,33 @@ export function EditorApp({
           <span
             ref={statsRef}
             className="whitespace-pre font-mono tabular-nums text-slate-300"
-            title="Master loudness per EBU R 128 for this playback pass: Integrated, Short-term (3 s), Momentary (0.4 s), and the highest true peak in dBTP."
+            title={t("editor.header.loudnessTitle")}
           >
             {"I    — S    — M    — LUFS · TP    —"}
           </span>
         </div>
 
-        <div className="flex items-center gap-1 border-l border-white/10 pl-2" role="radiogroup" aria-label="Tool">
-          <IconButton label="Select tool" shortcut="V" active={tool === "select"} onClick={() => setTool("select")}>
+        <div className="flex items-center gap-1 border-l border-white/10 pl-2" role="radiogroup" aria-label={t("editor.header.tool")}>
+          <IconButton label={t("editor.header.selectTool")} shortcut="V" active={tool === "select"} onClick={() => setTool("select")}>
             <MousePointer2 className="h-4 w-4" />
           </IconButton>
-          <IconButton label="Razor tool" shortcut="C" active={tool === "razor"} onClick={() => setTool("razor")}>
+          <IconButton label={t("editor.header.razorTool")} shortcut="C" active={tool === "razor"} onClick={() => setTool("razor")}>
             <Scissors className="h-4 w-4" />
           </IconButton>
-          <IconButton label="Range tool" shortcut="R" active={tool === "range"} onClick={() => setTool("range")}>
+          <IconButton label={t("editor.header.rangeTool")} shortcut="R" active={tool === "range"} onClick={() => setTool("range")}>
             <MoveHorizontal className="h-4 w-4" />
           </IconButton>
         </div>
 
         <div className="flex items-center gap-1 border-l border-white/10 pl-2">
-          <IconButton label="Snapping" shortcut="N" active={state.snap} onClick={() => commit({ ...state, snap: !state.snap })}>
+          <IconButton label={t("editor.header.snapping")} shortcut="N" active={state.snap} onClick={() => commit({ ...state, snap: !state.snap })}>
             <Magnet className="h-4 w-4" />
           </IconButton>
           <IconButton
             label={
               state.automationView === "off"
-                ? "Automation: hidden"
-                : `Automation: ${state.automationView} (click the line to add points)`
+                ? t("editor.header.automationHidden")
+                : t("editor.header.automationShown", { lane: laneLabel(state.automationView) })
             }
             shortcut="A"
             active={state.automationView !== "off"}
@@ -2437,41 +2446,41 @@ export function EditorApp({
             <Spline className="h-4 w-4" />
           </IconButton>
           <select
-            aria-label="Automation lane"
-            title="Which automation lane to show on the tracks"
+            aria-label={t("editor.header.automationLane")}
+            title={t("editor.header.automationLaneTitle")}
             value={state.automationView}
             onChange={(event) => commit({ ...state, automationView: event.target.value as AutomationView })}
             className="hidden h-9 w-28 rounded-lg border border-white/10 bg-slate-900 px-1 text-[11px] text-slate-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300 2xl:block"
           >
-            <option value="off">No lane</option>
+            <option value="off">{t("editor.header.noLane")}</option>
             {LANES.map((lane) => (
               <option key={lane.id} value={lane.id}>
-                {lane.label}
+                {laneLabel(lane.id)}
               </option>
             ))}
           </select>
-          <IconButton label="Spectral view" shortcut="W" active={showSpectral} onClick={() => setShowSpectral((open) => !open)}>
+          <IconButton label={t("editor.header.spectral")} shortcut="W" active={showSpectral} onClick={() => setShowSpectral((open) => !open)}>
             <AudioLines className="h-4 w-4" />
           </IconButton>
-          <IconButton label="Add marker at playhead" shortcut="K" onClick={dropMarker}>
+          <IconButton label={t("editor.header.marker")} shortcut="K" onClick={dropMarker}>
             <Bookmark className="h-4 w-4" />
           </IconButton>
-          <IconButton label="Undo" shortcut="Ctrl/Cmd+Z" disabled={!history.past.length} onClick={() => dispatch({ type: "undo" })}>
+          <IconButton label={t("editor.header.undo")} shortcut="Ctrl/Cmd+Z" disabled={!history.past.length} onClick={() => dispatch({ type: "undo" })}>
             <Undo2 className="h-4 w-4" />
           </IconButton>
-          <IconButton label="Redo" shortcut="Ctrl/Cmd+Shift+Z" disabled={!history.future.length} onClick={() => dispatch({ type: "redo" })}>
+          <IconButton label={t("editor.header.redo")} shortcut="Ctrl/Cmd+Shift+Z" disabled={!history.future.length} onClick={() => dispatch({ type: "redo" })}>
             <Redo2 className="h-4 w-4" />
           </IconButton>
         </div>
 
         <div className="hidden items-center gap-1 border-l border-white/10 pl-2 md:flex">
-          <IconButton label="Zoom out" shortcut="−" onClick={() => zoomBy(1 / 1.4)}>
+          <IconButton label={t("editor.header.zoomOut")} shortcut="−" onClick={() => zoomBy(1 / 1.4)}>
             <ZoomOut className="h-4 w-4" />
           </IconButton>
-          <IconButton label="Zoom in" shortcut="+" onClick={() => zoomBy(1.4)}>
+          <IconButton label={t("editor.header.zoomIn")} shortcut="+" onClick={() => zoomBy(1.4)}>
             <ZoomIn className="h-4 w-4" />
           </IconButton>
-          <IconButton label="Zoom to fit" shortcut="F" onClick={zoomFit}>
+          <IconButton label={t("editor.header.zoomFit")} shortcut="F" onClick={zoomFit}>
             <Maximize2 className="h-4 w-4" />
           </IconButton>
         </div>
@@ -2490,7 +2499,7 @@ export function EditorApp({
             }}
           />
           <ActionButton className="h-9" onClick={() => fileInputRef.current?.click()} disabled={!ready || working !== null}>
-            <Upload className="h-4 w-4" /> Import
+            <Upload className="h-4 w-4" /> {t("editor.header.import")}
           </ActionButton>
           <div className="relative" onPointerDown={(event) => event.stopPropagation()}>
             <ActionButton
@@ -2501,7 +2510,7 @@ export function EditorApp({
               disabled={duration <= 0 || working !== null}
               onClick={() => setExportOpen((open) => !open)}
             >
-              <Download className="h-4 w-4" /> Export
+              <Download className="h-4 w-4" /> {t("editor.header.export")}
             </ActionButton>
             {exportOpen ? (
               <div role="menu" className="absolute right-0 top-11 z-50 w-72 rounded-xl border border-white/10 bg-slate-900 p-1 shadow-2xl">
@@ -2513,17 +2522,17 @@ export function EditorApp({
                     disabled={(item.needsRange && !range) || (item.needsNotes && !hasMidiClips) || (item.needsTrack && !exportTrack)}
                     title={
                       item.needsTrack && !exportTrack
-                        ? "Click a track or one of its clips first"
+                        ? t("editor.export.needsTrack")
                         : item.needsRange && !range
-                        ? "Highlight a range with the Range tool first"
+                        ? t("editor.export.needsRange")
                         : item.needsNotes && !hasMidiClips
-                          ? "This project has no MIDI clips to write"
+                          ? t("editor.export.needsNotes")
                           : undefined
                     }
                     className="flex h-9 w-full items-center rounded-lg px-3 text-left text-xs text-slate-100 hover:bg-slate-800 disabled:cursor-not-allowed disabled:text-slate-500 disabled:hover:bg-transparent"
                     onClick={() => void exportAudio(item.kind)}
                   >
-                    {item.needsTrack && exportTrack ? item.label.replace("Selected track", exportTrack.name) : item.label}
+                    {t(`editor.export.items.${item.kind}`, { track: exportTrack?.name ?? t("editor.export.selectedTrack") })}
                   </button>
                 ))}
               </div>
@@ -2535,10 +2544,10 @@ export function EditorApp({
             className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
           />
           <AppPrefs />
-          <IconButton label="Keyboard shortcuts" shortcut="?" onClick={() => setShowHelp(true)}>
+          <IconButton label={t("editor.header.shortcuts")} shortcut="?" onClick={() => setShowHelp(true)}>
             <Keyboard className="h-4 w-4" />
           </IconButton>
-          <HelpLink section="studio-editor" label="the Studio Editor manual" className="h-9 w-9 rounded-lg" />
+          <HelpLink section="studio-editor" label={t("editor.header.manual")} className="h-9 w-9 rounded-lg" />
         </div>
       </header>
 
@@ -2552,9 +2561,9 @@ export function EditorApp({
                   style={{ height: RULER_HEIGHT }}
                 >
                   <span className="display-font text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    Tracks
+                    {t("editor.tracks.heading")}
                   </span>
-                  <IconButton size="sm" label="Add track" shortcut="Shift+T" onClick={addEmptyTrack}>
+                  <IconButton size="sm" label={t("editor.tracks.add")} shortcut="Shift+T" onClick={addEmptyTrack}>
                     <Plus className="h-3.5 w-3.5" />
                   </IconButton>
                 </div>
@@ -2615,12 +2624,12 @@ export function EditorApp({
           {ready && !state.tracks.length ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center" style={{ left: HEADER_WIDTH, top: RULER_HEIGHT }}>
               <div className="pointer-events-auto max-w-sm rounded-2xl border border-dashed border-white/20 bg-slate-950/80 p-6 text-center">
-                <p className="display-font text-base font-semibold text-slate-100">Drop audio here to begin</p>
+                <p className="display-font text-base font-semibold text-slate-100">{t("editor.empty.title")}</p>
                 <p className="mt-1 text-xs leading-relaxed text-slate-400">
-                  Each file becomes a track. Load one song and split it into stems, or load several and mix them.
+                  {t("editor.empty.body")}
                 </p>
                 <ActionButton variant="primary" className="mt-4 h-10 px-5 text-sm" onClick={() => fileInputRef.current?.click()}>
-                  <Upload className="h-4 w-4" /> Import audio
+                  <Upload className="h-4 w-4" /> {t("editor.empty.import")}
                 </ActionButton>
               </div>
             </div>
@@ -2631,7 +2640,7 @@ export function EditorApp({
             <div
               ref={hscrollRef}
               className="h-3.5 min-w-0 flex-1 overflow-x-scroll overflow-y-hidden"
-              aria-label="Timeline horizontal scroll"
+              aria-label={t("editor.tracks.hscroll")}
               onScroll={(event) => {
                 const next = event.currentTarget.scrollLeft / pxPerSec;
                 if (Math.abs(next - scrollSec) * pxPerSec > 1) setScrollSec(next);
@@ -2699,16 +2708,16 @@ export function EditorApp({
 
           {showKeys && keysPop.detached ? <DetachedPlaceholder state={keysPop} label={t("detach.titles.keys")} /> : null}
           {showKeys ? keysPop.render(
-            <section className="shrink-0 border-t border-white/10 bg-slate-950/80 px-2 pb-2 pt-1.5" aria-label="Piano">
+            <section className="shrink-0 border-t border-white/10 bg-slate-950/80 px-2 pb-2 pt-1.5" aria-label={t("editor.keys.label")}>
               <div className="mb-1 flex items-center gap-2 text-[11px] text-slate-400">
                 <span className="min-w-0 flex-1 truncate">
                   {midiTrack ? (
                     <>
-                      Piano plays <strong className="text-slate-200">{midiTrack.name}</strong>
-                      {recordsNotes ? ". Press record to capture what you play as notes." : hasNotes(midiTrack.id) ? "." : ": add an instrument (MIDI) track to record notes."}
+                      {t("editor.keys.plays")} <strong className="text-slate-200">{midiTrack.name}</strong>
+                      {recordsNotes ? t("editor.keys.canRecord") : hasNotes(midiTrack.id) ? "." : t("editor.keys.needsNotes")}
                     </>
                   ) : (
-                    "Add an instrument (MIDI) track to play it here."
+                    t("editor.keys.noTrack")
                   )}
                 </span>
                 <DetachButton state={keysPop} label={t("detach.panels.keys")} />
@@ -2717,7 +2726,7 @@ export function EditorApp({
                   onClick={() => setShowKeys(false)}
                   className="rounded px-1.5 py-0.5 text-slate-300 hover:bg-slate-800 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
                 >
-                  Hide
+                  {t("editor.keys.hide")}
                 </button>
               </div>
               <Piano
@@ -2736,22 +2745,22 @@ export function EditorApp({
               <>
                 <span className="min-w-0 truncate text-amber-200">{notice}</span>
                 <button type="button" className="shrink-0 underline hover:text-slate-100" onClick={() => setNotice(null)}>
-                  Dismiss
+                  {t("editor.footer.dismiss")}
                 </button>
               </>
             ) : (
               <span className="min-w-0 truncate">
                 {state.automationView !== "off" && tool === "select"
-                  ? `Automation (${LANES.find((lane) => lane.id === state.automationView)?.label ?? ""}): click the yellow line to add a point, drag to shape it, double-click a point to remove it. Press A to switch or hide.`
+                  ? t("editor.footer.automation", { lane: laneLabel(state.automationView) })
                   : tool === "razor"
-                  ? "Razor: click a clip to split it."
+                  ? t("editor.footer.razor")
                   : tool === "range"
-                    ? "Range: drag to highlight time, then Delete, Shift+Delete to close the gap, or L to loop it."
-                    : "Drag clips to move, edges to trim, corner handles to fade. Right-click for more."}
+                    ? t("editor.footer.range")
+                    : t("editor.footer.select")}
               </span>
             )}
             <span className="ml-auto shrink-0 font-mono tabular-nums">
-              {state.tracks.length} tracks · {state.clips.length} clips · {formatTime(duration)}
+              {tp("editor.footer.tracks", state.tracks.length)} · {tp("editor.footer.clips", state.clips.length)} · {formatTime(duration)}
             </span>
           </footer>
         </div>
@@ -2782,7 +2791,7 @@ export function EditorApp({
           onPickPluginSound={(clipId, sound) => void pickPluginSound(clipId, sound)}
           onImportPluginSound={(clipId, sound) => void applyPluginSound(clipId, sound)}
           onClosePluginWindow={(jobId) =>
-            void editorApi.closePluginWindow(projectId, jobId).catch((err: unknown) => setNotice(errorMessage(err, "The window could not be closed.")))
+            void editorApi.closePluginWindow(projectId, jobId).catch((err: unknown) => setNotice(errorMessage(err, t("editor.notice.windowCloseFailed"))))
           }
           onRefreshPlugins={refreshPlugins}
           generation={generation}
@@ -2869,7 +2878,7 @@ export function EditorApp({
         >
           {menuItems.map((item) => (
             <button
-              key={item.label}
+              key={item.action}
               type="button"
               role="menuitem"
               className={cn(
@@ -2889,15 +2898,15 @@ export function EditorApp({
         <div
           className="fixed bottom-10 left-4 z-40 max-h-[70vh] max-w-[min(90vw,900px)] overflow-auto rounded-2xl border border-white/15 bg-slate-900 shadow-2xl"
           role="dialog"
-          aria-label="Plugin controls"
+          aria-label={t("editor.wam.dialog")}
         >
           <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-white/10 bg-slate-900 px-3 py-2">
             <p className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-100">
-              {state.tracks.find((t) => t.id === wamWindow)?.wam?.name ?? "Plugin"}
+              {state.tracks.find((t) => t.id === wamWindow)?.wam?.name ?? t("editor.wam.plugin")}
               <span className="font-normal text-slate-400"> · {state.tracks.find((t) => t.id === wamWindow)?.name}</span>
             </p>
-            <ActionButton onClick={() => void captureWamStates()} title="Store the plugin's current settings in the session">
-              Save settings
+            <ActionButton onClick={() => void captureWamStates()} title={t("editor.wam.saveTitle")}>
+              {t("editor.wam.save")}
             </ActionButton>
             <ActionButton
               onClick={() => {
@@ -2905,7 +2914,7 @@ export function EditorApp({
                 setWamWindow(null);
               }}
             >
-              Close
+              {t("editor.wam.close")}
             </ActionButton>
           </div>
           {/* The plugin draws its own interface here; it is third-party content. */}
@@ -2914,11 +2923,11 @@ export function EditorApp({
       ) : null}
 
       {mixPick ? (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label="Export a song from chosen tracks">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-label={t("editor.mix.dialog")}>
           <div className="flex max-h-full w-full max-w-md flex-col rounded-2xl border border-white/10 bg-slate-900 text-sm text-slate-200 shadow-2xl">
             <div className="border-b border-white/10 px-5 py-3">
-              <h2 className="display-font text-sm font-semibold uppercase tracking-wider">Song from chosen tracks</h2>
-              <p className="mt-1 text-[12px] text-slate-400">The ticked tracks are mixed into one file. Tracks that are muted now start unticked.</p>
+              <h2 className="display-font text-sm font-semibold uppercase tracking-wider">{t("editor.mix.title")}</h2>
+              <p className="mt-1 text-[12px] text-slate-400">{t("editor.mix.intro")}</p>
             </div>
             <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-5 py-3">
               {state.tracks
@@ -2938,7 +2947,7 @@ export function EditorApp({
                         }}
                       />
                       {track.name}
-                      {track.mute ? <span className="text-[11px] text-slate-500">muted</span> : null}
+                      {track.mute ? <span className="text-[11px] text-slate-500">{t("editor.mix.muted")}</span> : null}
                     </label>
                   </li>
                 ))}
@@ -2946,19 +2955,19 @@ export function EditorApp({
             <div className="flex items-center justify-between gap-2 border-t border-white/10 px-5 py-3">
               <select
                 className={cn(fieldClass, "w-44")}
-                aria-label="File format"
+                aria-label={t("editor.mix.format")}
                 value={mixPick.format}
                 onChange={(event) => setMixPick({ ...mixPick, format: event.target.value as "wav24" | "wav32" | "flac" | "mp3" })}
               >
                 <option value="wav24">WAV 24-bit</option>
-                <option value="wav32">WAV 32-bit float</option>
+                <option value="wav32">{t("editor.mix.wav32")}</option>
                 <option value="flac">FLAC</option>
                 <option value="mp3">MP3 320 kbps</option>
               </select>
               <div className="flex gap-2">
-                <ActionButton onClick={() => setMixPick(null)}>Cancel</ActionButton>
+                <ActionButton onClick={() => setMixPick(null)}>{t("editor.mix.cancel")}</ActionButton>
                 <ActionButton variant="primary" disabled={!mixPick.ids.size} onClick={() => void exportChosen()}>
-                  Export {mixPick.ids.size} track{mixPick.ids.size === 1 ? "" : "s"}
+                  {tp("editor.mix.exportTracks", mixPick.ids.size)}
                 </ActionButton>
               </div>
             </div>
@@ -2970,19 +2979,19 @@ export function EditorApp({
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
           role="dialog"
           aria-modal="true"
-          aria-label="Keyboard shortcuts"
+          aria-label={t("editor.header.shortcuts")}
           onClick={() => setShowHelp(false)}
         >
           <div className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-white/10 bg-slate-900 p-5" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <h2 className="display-font text-base font-semibold text-slate-100">Keyboard shortcuts</h2>
-              <ActionButton onClick={() => setShowHelp(false)}>Close</ActionButton>
+              <h2 className="display-font text-base font-semibold text-slate-100">{t("editor.header.shortcuts")}</h2>
+              <ActionButton onClick={() => setShowHelp(false)}>{t("editor.help.close")}</ActionButton>
             </div>
             <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-              {SHORTCUTS.map(([keys, description]) => (
-                <div key={keys} className="contents">
-                  <dt className="font-mono text-cyan-200">{keys}</dt>
-                  <dd className="text-slate-300">{description}</dd>
+              {SHORTCUTS.map((id) => (
+                <div key={id} className="contents">
+                  <dt className="font-mono text-cyan-200">{t(`editor.shortcuts.keys.${id}`)}</dt>
+                  <dd className="text-slate-300">{t(`editor.shortcuts.do.${id}`)}</dd>
                 </div>
               ))}
             </dl>

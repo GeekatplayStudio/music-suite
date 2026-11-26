@@ -2,6 +2,7 @@
 
 import { ActionButton, fieldClass } from "@/components/editor/controls";
 import { TONE_BANKS, type Tone, midiOutHub } from "@/lib/editor/midi-out";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 interface VoicePickerProps {
@@ -30,6 +31,7 @@ export function auditionKeyboard(drums = false): void {
  * what is heard.
  */
 export function VoicePicker({ tone, onChange, allowNone = false, drums = false, label }: VoicePickerProps) {
+  const { t } = useI18n();
   const bank = tone ? (TONE_BANKS.find((entry) => entry.msb === tone.msb && entry.lsb === tone.lsb) ?? null) : null;
   const connected = midiOutHub.ready();
 
@@ -51,7 +53,7 @@ export function VoicePicker({ tone, onChange, allowNone = false, drums = false, 
     <div className="flex flex-wrap items-center gap-2">
       <select
         className={cn(fieldClass, "w-44")}
-        aria-label={`Sound bank for ${label}`}
+        aria-label={t("inspector.voicePicker.bank", { label })}
         value={tone ? `${tone.msb}/${tone.lsb}` : ""}
         onChange={(event) => {
           if (!event.target.value) return onChange(null);
@@ -59,7 +61,7 @@ export function VoicePicker({ tone, onChange, allowNone = false, drums = false, 
           choose({ msb, lsb, program: 1 });
         }}
       >
-        {allowNone || !tone ? <option value="">{allowNone ? "Keyboard's current sound" : "Choose a bank…"}</option> : null}
+        {allowNone || !tone ? <option value="">{allowNone ? t("inspector.voicePicker.current") : t("inspector.voicePicker.chooseBank")}</option> : null}
         {TONE_BANKS.map((entry) => (
           <option key={entry.label} value={`${entry.msb}/${entry.lsb}`}>
             {entry.label}
@@ -67,17 +69,17 @@ export function VoicePicker({ tone, onChange, allowNone = false, drums = false, 
         ))}
         {tone && !bank ? (
           <option value={`${tone.msb}/${tone.lsb}`}>
-            From the keyboard ({tone.msb}/{tone.lsb})
+            {t("inspector.voicePicker.fromKeyboard", { msb: tone.msb, lsb: tone.lsb })}
           </option>
         ) : null}
       </select>
-      <ActionButton aria-label="Previous sound" disabled={!connected} onClick={() => step(-1)}>
+      <ActionButton aria-label={t("inspector.voicePicker.previous")} disabled={!connected} onClick={() => step(-1)}>
         ◀
       </ActionButton>
       <input
         type="number"
         className={cn(fieldClass, "w-16 text-center font-mono tabular-nums")}
-        aria-label={`Sound number for ${label}`}
+        aria-label={t("inspector.voicePicker.number", { label })}
         min={1}
         max={bank?.programs ?? 128}
         disabled={!tone}
@@ -88,7 +90,7 @@ export function VoicePicker({ tone, onChange, allowNone = false, drums = false, 
           choose({ ...tone, program: typed });
         }}
       />
-      <ActionButton aria-label="Next sound" disabled={!connected} onClick={() => step(1)}>
+      <ActionButton aria-label={t("inspector.voicePicker.next")} disabled={!connected} onClick={() => step(1)}>
         ▶
       </ActionButton>
       <ActionButton
@@ -100,7 +102,7 @@ export function VoicePicker({ tone, onChange, allowNone = false, drums = false, 
           } else auditionKeyboard(drums);
         }}
       >
-        Listen
+        {t("inspector.voicePicker.listen")}
       </ActionButton>
     </div>
   );

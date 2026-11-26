@@ -4,6 +4,7 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 import { HelpLink } from "@/components/help-link";
+import { useI18n } from "@/lib/i18n";
 
 interface SliderProps {
   label: string;
@@ -31,6 +32,7 @@ export function Slider({
   compact,
   disabled
 }: SliderProps) {
+  const { t } = useI18n();
   return (
     <label className={cn("flex items-center gap-2 text-[11px] text-slate-300", compact ? "h-6" : "h-7")}>
       <span className={cn("shrink-0 text-slate-400", compact ? "w-7" : "w-16")}>{label}</span>
@@ -42,7 +44,7 @@ export function Slider({
         value={value}
         disabled={disabled}
         aria-label={label}
-        title={`${label}: ${format(value)} (double-click to reset)`}
+        title={t("editor.controls.sliderTitle", { label, value: format(value) })}
         onChange={(event) => onChange(Number(event.target.value))}
         onDoubleClick={() => onChange(defaultValue)}
         className="h-6 min-w-0 flex-1 cursor-pointer accent-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
@@ -109,8 +111,12 @@ const SECTION_HELP: [RegExp, string][] = [
   [/^(Phase scope|Sections|Markers|Media)/, "sections-markers-and-media"]
 ];
 
-export function PanelSection({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
-  const help = SECTION_HELP.find(([pattern]) => pattern.test(title))?.[1];
+/**
+ * An inspector section. `help` names its section of the manual; without it the English title
+ * is matched against SECTION_HELP, which only works while the interface is in English.
+ */
+export function PanelSection({ title, hint, help: helpId, children }: { title: string; hint?: string; help?: string; children: ReactNode }) {
+  const help = helpId ?? SECTION_HELP.find(([pattern]) => pattern.test(title))?.[1];
   return (
     <section className="border-b border-white/10 px-4 py-3">
       <div className="flex items-center justify-between gap-2">

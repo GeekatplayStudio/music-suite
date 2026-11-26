@@ -12,6 +12,7 @@ import { AiEditSection } from "@/components/generation/ai-edit-section";
 import { FACTORY_PRESETS, loadUserPresets, normalizePatch, type Patch } from "@/lib/editor/synth";
 import { generationApi, type ProviderInfo } from "@/lib/generation/api";
 import { editorApi } from "@/lib/editor/api";
+import { type I18n, type MessageKey, useI18n } from "@/lib/i18n";
 import type { Favourite, ProcessStep } from "@/lib/editor/favourites";
 import { type WamCatalogueEntry, isAllowedWamUrl, loadWamCatalogue, wamConsent } from "@/lib/editor/wam";
 import {
@@ -120,11 +121,27 @@ interface InspectorProps {
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const KEYS = NOTES.flatMap((note) => [`${note} major`, `${note} minor`]);
 
-const CURVES: [FadeCurve, string][] = [
-  ["linear", "Linear"],
-  ["equal", "Equal power"],
-  ["scurve", "S-curve"]
-];
+const CURVES: FadeCurve[] = ["linear", "equal", "scurve"];
+
+type Translate = I18n["t"];
+
+/** A key as stored ("C major") in the interface language. */
+function keyText(t: Translate, label: string): string {
+  const match = /^([A-G]#?) (major|minor)$/.exec(label);
+  return match ? t(match[2] === "major" ? "inspector.major" : "inspector.minor", { note: match[1] }) : label;
+}
+
+/** Seconds with the interface's unit. */
+function secs(t: Translate, value: number, digits = 2): string {
+  return t("inspector.seconds", { v: value.toFixed(digits) });
+}
+
+/** A voice preset's name, falling back to its English label for presets added later. */
+function presetLabel(t: Translate, preset: { id: string; label: string }): string {
+  const key = `inspector.voice.presets.${preset.id}` as MessageKey;
+  const text = t(key);
+  return text === key ? preset.label : text;
+}
 
 function Toggle({ label, checked, onChange, hint }: { label: string; checked: boolean; onChange: (value: boolean) => void; hint?: string }) {
   return (
@@ -182,10 +199,11 @@ function NumberField({
 }
 
 function JobList({ jobs, onDismiss, projectId }: { jobs: JobEntry[]; onDismiss: (id: string) => void; projectId: string }) {
+  const { t } = useI18n();
   if (!jobs.length) return null;
   return (
     <section className="border-b border-white/10 px-4 py-3" aria-live="polite">
-      <h3 className="display-font text-xs font-semibold uppercase tracking-wider text-slate-300">Processing</h3>
+      <h3 className="display-font text-xs font-semibold uppercase tracking-wider text-slate-300">{t("inspector.jobs.title")}</h3>
       <ul className="mt-2 space-y-2">
         {jobs.map(({ job, title }) => {
           const failed = job.status === "failed";
@@ -198,7 +216,7 @@ function JobList({ jobs, onDismiss, projectId }: { jobs: JobEntry[]; onDismiss: 
                 {failed || done ? (
                   <button
                     type="button"
-                    aria-label="Dismiss"
+                    aria-label={t("inspector.jobs.dismiss")}
                     className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-white/10 hover:text-slate-100"
                     onClick={() => onDismiss(job.id)}
                   >
@@ -209,7 +227,7 @@ function JobList({ jobs, onDismiss, projectId }: { jobs: JobEntry[]; onDismiss: 
                 )}
               </div>
               {failed ? (
-                <p className="mt-1 text-rose-300">{job.error || "Processing failed."}</p>
+                <p className="mt-1 text-rose-300">{job.error || t("inspector.jobs.failed")}</p>
               ) : (
                 <>
                   <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-800">
@@ -218,13 +236,13 @@ function JobList({ jobs, onDismiss, projectId }: { jobs: JobEntry[]; onDismiss: 
                       style={{ width: `${done ? 100 : Math.max(4, job.progress)}%` }}
                     />
                   </div>
-                  <p className="mt-1 truncate text-slate-400">{done ? "Done" : job.detail || job.stage}</p>
+                  <p className="mt-1 truncate text-slate-400">{done ? t("inspector.jobs.done") : job.detail || job.stage}</p>
                 </>
               )}
               {!failed && !done && ["generate_song", "separate"].includes(job.op) && <button
                 className="mt-2 rounded bg-slate-800 px-2 py-1 text-cyan-200" type="button"
                 onClick={() => void generationApi.cancelJob(projectId, job.id).catch(() => undefined)}>
-                Stop processing
+                {t("inspector.jobs.stop")}
               </button>}
             </li>
           );
@@ -236,6 +254,7 @@ function JobList({ jobs, onDismiss, projectId }: { jobs: JobEntry[]; onDismiss: 
 
 export function Inspector(props: InspectorProps) {
   const { state, clip, track, capabilities } = props;
+  const { t, tp } = useI18n();
   const [splitModel, setSplitModel] = useState("standard");
   const [soundPrompt, setSoundPrompt] = useState("");
   const [stems, setStems] = useState(4);
@@ -282,7 +301,7 @@ export function Inspector(props: InspectorProps) {
       })
       .catch((err: unknown) => {
         if (pluginRequest.current !== request) return;
-        setPluginDetail({ status: "error", message: err instanceof Error ? err.message : "The plugin could not be loaded." });
+        setPluginDetail({ status: "error", message: err instanceof Error ? err.message : t("inspector.plugins.loadFailed") });
       });
   };
   const [openBusId, setOpenBusId] = useState<string | null>(null);
@@ -327,7 +346,7 @@ export function Inspector(props: InspectorProps) {
     for (const other of state.clips) {
       if (seen.has(other.assetId)) continue;
       seen.add(other.assetId);
-      const trackName = state.tracks.find((t) => t.id === other.trackId)?.name ?? "Track";
+      const trackName = state.tracks.find((item) => item.id === other.trackId)?.name ?? t("inspector.track");
       list.push({ id: other.assetId, label: `${trackName}: ${other.name}` });
     }
     return list;
@@ -341,24 +360,25 @@ export function Inspector(props: InspectorProps) {
   return (
     <aside
       className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-white/10 bg-slate-950/80"
-      aria-label="Inspector"
+      aria-label={t("inspector.label")}
     >
       <JobList jobs={props.jobs} onDismiss={props.onDismissJob} projectId={props.projectId} />
 
       {clip ? (
         <>
           <PanelSection
-            title={props.selectionCount > 1 ? `Clip (${props.selectionCount} selected)` : "Clip"}
-            hint={`${formatTime(clip.start)} → ${formatTime(clip.start + clip.duration)} · ${clip.duration.toFixed(2)} s`}
+            title={props.selectionCount > 1 ? t("inspector.clip.titleMany", { n: props.selectionCount }) : t("inspector.clip.title")}
+            help="clip"
+            hint={`${formatTime(clip.start)} → ${formatTime(clip.start + clip.duration)} · ${secs(t, clip.duration)}`}
           >
             <input
               className={fieldClass}
               value={clip.name}
-              aria-label="Clip name"
+              aria-label={t("inspector.clip.name")}
               onChange={(event) => props.onPatchClip({ name: event.target.value.slice(0, 80) }, "clip-name")}
             />
             <Slider
-              label="Gain"
+              label={t("inspector.clip.gain")}
               value={clip.gainDb}
               min={-24}
               max={24}
@@ -368,30 +388,30 @@ export function Inspector(props: InspectorProps) {
               onChange={(gainDb) => props.onPatchClip({ gainDb }, "clip-gain")}
             />
             <Slider
-              label="Fade in"
+              label={t("inspector.clip.fadeIn")}
               value={clip.fadeIn}
               min={0}
               max={Math.max(0.01, Math.min(10, clip.duration - clip.fadeOut))}
               step={0.01}
               defaultValue={0}
-              format={(v) => `${v.toFixed(2)} s`}
+              format={(v) => secs(t, v)}
               onChange={(fadeIn) => props.onPatchClip({ fadeIn }, "clip-fadein")}
             />
             <Slider
-              label="Fade out"
+              label={t("inspector.clip.fadeOut")}
               value={clip.fadeOut}
               min={0}
               max={Math.max(0.01, Math.min(10, clip.duration - clip.fadeIn))}
               step={0.01}
               defaultValue={0}
-              format={(v) => `${v.toFixed(2)} s`}
+              format={(v) => secs(t, v)}
               onChange={(fadeOut) => props.onPatchClip({ fadeOut }, "clip-fadeout")}
             />
             <div className="grid grid-cols-2 gap-2">
               {(
                 [
-                  ["Fade-in shape", "fadeInCurve", clip.fadeInCurve],
-                  ["Fade-out shape", "fadeOutCurve", clip.fadeOutCurve]
+                  [t("inspector.clip.fadeInShape"), "fadeInCurve", clip.fadeInCurve],
+                  [t("inspector.clip.fadeOutShape"), "fadeOutCurve", clip.fadeOutCurve]
                 ] as const
               ).map(([label, field, value]) => (
                 <label key={field} className="text-[11px] text-slate-400">
@@ -402,9 +422,9 @@ export function Inspector(props: InspectorProps) {
                     aria-label={label}
                     onChange={(event) => props.onPatchClip({ [field]: event.target.value as FadeCurve }, "")}
                   >
-                    {CURVES.map(([curve, name]) => (
+                    {CURVES.map((curve) => (
                       <option key={curve} value={curve}>
-                        {name}
+                        {t(`inspector.clip.curves.${curve}`)}
                       </option>
                     ))}
                   </select>
@@ -413,40 +433,41 @@ export function Inspector(props: InspectorProps) {
             </div>
             <div className="grid grid-cols-2 gap-2">
               <ActionButton aria-pressed={clip.reversed} onClick={() => props.onPatchClip({ reversed: !clip.reversed }, "")}>
-                {clip.reversed ? "Reversed ✓" : "Reverse"}
+                {clip.reversed ? t("inspector.clip.reversed") : t("inspector.clip.reverse")}
               </ActionButton>
               <ActionButton aria-pressed={clip.muted} onClick={() => props.onPatchClip({ muted: !clip.muted }, "")}>
-                {clip.muted ? "Muted ✓" : "Mute clip"}
+                {clip.muted ? t("inspector.clip.muted") : t("inspector.clip.mute")}
               </ActionButton>
-              <ActionButton onClick={props.onSplit} title="Split at playhead (S)">
-                Split
+              <ActionButton onClick={props.onSplit} title={t("inspector.clip.splitTitle")}>
+                {t("inspector.clip.split")}
               </ActionButton>
-              <ActionButton onClick={props.onDuplicate} title="Duplicate (Ctrl/Cmd+D)">
-                Duplicate
+              <ActionButton onClick={props.onDuplicate} title={t("inspector.clip.duplicateTitle")}>
+                {t("inspector.clip.duplicate")}
               </ActionButton>
             </div>
-            <ActionButton variant="danger" className="w-full" onClick={props.onDelete} title="Delete (Del)">
-              Delete clip
+            <ActionButton variant="danger" className="w-full" onClick={props.onDelete} title={t("inspector.clip.deleteTitle")}>
+              {t("inspector.clip.delete")}
             </ActionButton>
           </PanelSection>
 
           {clip.notes ? (
             <>
               <PanelSection
-                title="MIDI clip"
-                hint={`${clip.notes.length} notes. This clip plays the track's instrument; edit the notes in the piano roll.`}
+                title={t("inspector.midi.title")}
+                help="midi-clip"
+                hint={tp("inspector.midi.hint", clip.notes.length)}
               >
                 <ActionButton variant="primary" className="w-full" onClick={props.onOpenPianoRoll} title="P">
-                  Open the piano roll
+                  {t("inspector.midi.openPianoRoll")}
                 </ActionButton>
-                <ActionButton className="w-full" onClick={props.onOpenSheet} title="Read this clip as written music on a piano's two staves">
-                  Show as sheet music
+                <ActionButton className="w-full" onClick={props.onOpenSheet} title={t("inspector.midi.sheetTitle")}>
+                  {t("inspector.midi.sheet")}
                 </ActionButton>
                 <div className="grid grid-cols-4 gap-1.5">
                   {[-12, -1, 1, 12].map((shift) => (
                     <ActionButton
                       key={shift}
-                      title={`Transpose every note by ${shift} semitone${Math.abs(shift) === 1 ? "" : "s"}`}
+                      title={tp(shift > 0 ? "inspector.midi.transposeUp" : "inspector.midi.transposeDown", Math.abs(shift))}
                       onClick={() =>
                         props.onPatchClip(
                           { notes: (clip.notes ?? []).map((note) => ({ ...note, p: Math.min(127, Math.max(0, note.p + shift)) })) },
@@ -460,36 +481,36 @@ export function Inspector(props: InspectorProps) {
                 </div>
                 <ActionButton
                   className="w-full"
-                  title="Move every note start onto the nearest sixteenth of the project tempo"
+                  title={t("inspector.midi.quantiseTitle")}
                   onClick={() => {
                     const step = 60 / state.bpm / 4;
                     props.onPatchClip({ notes: (clip.notes ?? []).map((note) => ({ ...note, t: Math.round(note.t / step) * step })) }, "");
                   }}
                 >
-                  Quantise notes to 1/16
+                  {t("inspector.midi.quantise")}
                 </ActionButton>
                 <ActionButton className="w-full" disabled={!clip.notes.length} onClick={props.onExportMidi}>
-                  Export as a .mid file
+                  {t("inspector.midi.export")}
                 </ActionButton>
               </PanelSection>
               {track ? (
-                <PanelSection title="Instrument" hint="Built in. It feeds the track's EQ, effects and sends like any audio.">
+                <PanelSection title={t("inspector.instrument.title")} help="instrument-types" hint={t("inspector.instrument.hint")}>
                   <label className="flex items-center gap-2 text-[11px] text-slate-400">
-                    <span className="w-16 shrink-0">Type</span>
+                    <span className="w-16 shrink-0">{t("inspector.instrument.type")}</span>
                     <select
                       className={fieldClass}
                       value={track.synth.kind}
-                      aria-label="Instrument type"
+                      aria-label={t("inspector.instrument.typeLabel")}
                       onChange={(event) => props.onPatchTrack({ synth: { ...track.synth, kind: event.target.value as typeof track.synth.kind } }, "")}
                     >
-                      <option value="synth">Synth (pitched notes)</option>
-                      <option value="drums">Drum kit (kick 36, snare 38, hat 42…)</option>
+                      <option value="synth">{t("inspector.instrument.synth")}</option>
+                      <option value="drums">{t("inspector.instrument.drums")}</option>
                     </select>
                   </label>
                   <GmInstrumentSection synth={track.synth} onSet={(synth) => props.onPatchTrack({ synth }, "")} />
                   {track.synth.kind === "drums" ? (
                     <p className="text-[11px] text-slate-400">
-                      Each row of the grid is a drum: kick, snare, clap, hats, toms and cymbal. Note length is ignored.
+                      {t("inspector.instrument.drumsHelp")}
                     </p>
                   ) : null}
                   {track.synth.kind === "synth" ? (
@@ -526,44 +547,46 @@ export function Inspector(props: InspectorProps) {
           ) : (
             <>
           <PanelSection
-            title="Extract original stems"
+            title={t("inspector.stems.title")}
+            help="separate-stems"
             hint={
               capabilities
-                ? `Engine: ${capabilities.separation.engine}${
-                    accelerator === "cuda" ? " on the GPU" : accelerator === "mps" ? " on the Apple GPU" : ""
-                  }. Each stem lands on its own track, aligned with this clip; the original is muted, not removed.`
+                ? t("inspector.stems.hint", {
+                    engine: capabilities.separation.engine,
+                    where: accelerator === "cuda" ? t("inspector.stems.onGpu") : accelerator === "mps" ? t("inspector.stems.onAppleGpu") : ""
+                  })
                 : undefined
             }
           >
-            <select className={fieldClass} aria-label="Extraction model" value={splitModel}
+            <select className={fieldClass} aria-label={t("inspector.stems.model")} value={splitModel}
               onChange={(event) => setSplitModel(event.target.value)}>
-              <option value="standard">Standard split (2, 4 or 6 stems)</option>
-              <option value="mega53">MVSep Mega 53 instrument tracks</option>
-              <option value="sam-audio">Meta SAM Audio prompted extraction</option>
+              <option value="standard">{t("inspector.stems.standard")}</option>
+              <option value="mega53">{t("inspector.stems.mega53")}</option>
+              <option value="sam-audio">{t("inspector.stems.sam")}</option>
             </select>
             {splitModel !== "standard" ? <>
-              {splitModel === "sam-audio" && <input className={fieldClass} aria-label="Sound description"
-                placeholder="e.g. electric guitar" maxLength={160} value={soundPrompt}
+              {splitModel === "sam-audio" && <input className={fieldClass} aria-label={t("inspector.stems.soundLabel")}
+                placeholder={t("inspector.stems.soundPlaceholder")} maxLength={160} value={soundPrompt}
                 onChange={(event) => setSoundPrompt(event.target.value)} />}
-              <a href="/models" className="text-xs text-cyan-300">Install the selected model in Models &amp; engines</a>
+              <a href="/models" className="text-xs text-cyan-300">{t("inspector.stems.install")}</a>
               <ActionButton variant="primary" className="w-full"
                 disabled={busy || (splitModel === "sam-audio" && !soundPrompt.trim())}
                 onClick={() => props.onRunJob("separate", splitModel === "mega53"
                   ? { model: splitModel } : { model: splitModel, prompt: soundPrompt.trim() },
-                  `Extracting stems from ${clip.name}`)}>
-                {splitModel === "mega53" ? "Extract instrument tracks" : "Extract sound and remainder"}
+                  t("inspector.stems.jobExtract", { name: clip.name }))}>
+                {splitModel === "mega53" ? t("inspector.stems.extractTracks") : t("inspector.stems.extractSound")}
               </ActionButton>
             </> : <>
             <div className="flex gap-2">
               <select
                 className={fieldClass}
                 value={stemChoice}
-                aria-label="Number of stems"
+                aria-label={t("inspector.stems.count")}
                 onChange={(event) => setStems(Number(event.target.value))}
               >
                 {stemOptions.map((count) => (
                   <option key={count} value={count}>
-                    {count === 2 ? "2 stems: vocals + instrumental" : count === 4 ? "4 stems: vocals, drums, bass, other" : "6 stems: + guitar, piano"}
+                    {count === 2 ? t("inspector.stems.two") : count === 4 ? t("inspector.stems.four") : t("inspector.stems.six")}
                   </option>
                 ))}
               </select>
@@ -576,7 +599,7 @@ export function Inspector(props: InspectorProps) {
                 disabled={!fineSplit || stemChoice === 2}
                 onChange={(event) => setDrumKit(event.target.checked)}
               />
-              <span>Split the drums into kick, snare, toms, hi-hat, ride and crash</span>
+              <span>{t("inspector.stems.drumKit")}</span>
             </label>
             <label className={`flex items-start gap-2 text-[11px] ${fineSplit ? "text-slate-300" : "text-slate-500"}`}>
               <input
@@ -586,15 +609,15 @@ export function Inspector(props: InspectorProps) {
                 disabled={!fineSplit}
                 onChange={(event) => setLeadBacking(event.target.checked)}
               />
-              <span>Split the vocals into lead and backing</span>
+              <span>{t("inspector.stems.leadBacking")}</span>
             </label>
             {!fineSplit ? (
               <p className="text-[11px] leading-snug text-slate-400">
-                6 stems, drum kit pieces and lead/backing vocals need AI stem separation.{" "}
+                {t("inspector.stems.needsPack")}{" "}
                 <a href="/models" target="_blank" rel="noreferrer" className="font-semibold text-cyan-300 underline-offset-2 hover:underline">
-                  Install it from Models &amp; engines
+                  {t("inspector.stems.installIt")}
                 </a>
-                , then reload this page.
+                {t("inspector.stems.thenReload")}
               </p>
             ) : null}
             <ActionButton
@@ -605,43 +628,40 @@ export function Inspector(props: InspectorProps) {
                 props.onRunJob(
                   "separate",
                   { stems: stemChoice, drum_kit: drumsOn, lead_backing: leadOn },
-                  `Separating ${clip.name} into ${stemTotal} stems`
+                  tp("inspector.stems.jobSeparate", stemTotal, { name: clip.name })
                 )
               }
             >
-              Separate into {stemTotal} stems
+              {tp("inspector.stems.separate", stemTotal)}
             </ActionButton>
             </>}
             {fineSplit && clipLabel === "drums" ? (
               <ActionButton
                 className="w-full"
                 disabled={busy}
-                onClick={() => props.onRunJob("separate", { part: "drums" }, `Splitting ${clip.name} into kit pieces`)}
+                onClick={() => props.onRunJob("separate", { part: "drums" }, t("inspector.stems.jobKit", { name: clip.name }))}
               >
-                Split this drum stem into kit pieces
+                {t("inspector.stems.kit")}
               </ActionButton>
             ) : null}
             {fineSplit && clipLabel === "vocals" ? (
               <ActionButton
                 className="w-full"
                 disabled={busy}
-                onClick={() => props.onRunJob("separate", { part: "vocals" }, `Splitting ${clip.name} into lead and backing`)}
+                onClick={() => props.onRunJob("separate", { part: "vocals" }, t("inspector.stems.jobLead", { name: clip.name }))}
               >
-                Split this vocal stem into lead and backing
+                {t("inspector.stems.lead")}
               </ActionButton>
             ) : null}
           </PanelSection>
 
           <PanelSection
-            title="Repair"
-            hint={
-              noisePrint
-                ? "The highlighted range will be used as the noise print."
-                : "Tip: with the Range tool, highlight a passage of pure noise inside this clip to use it as a noise print."
-            }
+            title={t("inspector.repair.title")}
+            help="repair"
+            hint={noisePrint ? t("inspector.repair.hintRange") : t("inspector.repair.hintTip")}
           >
             <Slider
-              label="Strength"
+              label={t("inspector.repair.strength")}
               value={strength}
               min={0.1}
               max={1}
@@ -657,52 +677,60 @@ export function Inspector(props: InspectorProps) {
                 props.onRunJob(
                   "denoise",
                   { strength, mode: "auto", noise_start: noisePrint?.start ?? null, noise_end: noisePrint?.end ?? null },
-                  `Reducing noise in ${clip.name}`
+                  t("inspector.repair.jobDenoise", { name: clip.name })
                 )
               }
             >
-              Reduce noise
+              {t("inspector.repair.denoise")}
             </ActionButton>
-            <NumberField label="Loudness" value={targetLufs} min={-30} max={-6} step={0.5} suffix="LUFS" onChange={setTargetLufs} />
+            <NumberField label={t("inspector.repair.loudness")} value={targetLufs} min={-30} max={-6} step={0.5} suffix="LUFS" onChange={setTargetLufs} />
             <ActionButton
               className="w-full"
               disabled={busy}
               onClick={() =>
-                props.onRunJob("normalize", { target_lufs: targetLufs, true_peak_dbfs: -1 }, `Normalising ${clip.name}`)
+                props.onRunJob("normalize", { target_lufs: targetLufs, true_peak_dbfs: -1 }, t("inspector.repair.jobNormalise", { name: clip.name }))
               }
             >
-              Normalise loudness
+              {t("inspector.repair.normalise")}
             </ActionButton>
           </PanelSection>
 
           {clip.takeGroup ? (
             <PanelSection
-              title="Takes"
-              hint="Each pass of the loop is a take on its own lane. Choose which one is heard, for the whole passage or only inside a highlighted range."
+              title={t("inspector.takes.title")}
+              help="takes"
+              hint={t("inspector.takes.hint")}
             >
               <p className="rounded-lg bg-slate-900 px-2 py-1.5 text-[11px] text-slate-300">
-                {state.clips.filter((c) => c.takeGroup === clip.takeGroup && !c.muted).length} of{" "}
-                {state.clips.filter((c) => c.takeGroup === clip.takeGroup).length} pieces audible. This piece is{" "}
-                <strong className={clip.muted ? "text-slate-400" : "text-emerald-300"}>{clip.muted ? "silent" : "audible"}</strong>.
+                {t("inspector.takes.summary", {
+                  audible: state.clips.filter((c) => c.takeGroup === clip.takeGroup && !c.muted).length,
+                  total: state.clips.filter((c) => c.takeGroup === clip.takeGroup).length
+                })}{" "}
+                {t("inspector.takes.pieceState").split("{state}")[0]}
+                <strong className={clip.muted ? "text-slate-400" : "text-emerald-300"}>
+                  {clip.muted ? t("inspector.takes.silent") : t("inspector.takes.audible")}
+                </strong>
+                {t("inspector.takes.pieceState").split("{state}")[1]}
               </p>
               <ActionButton variant="primary" className="w-full" onClick={() => props.onComp(clip.id, false)}>
-                Use this take
+                {t("inspector.takes.useTake")}
               </ActionButton>
               <ActionButton
                 className="w-full"
                 disabled={!props.range}
-                title={props.range ? undefined : "Highlight a range with the Range tool first"}
+                title={props.range ? undefined : t("inspector.takes.rangeFirst")}
                 onClick={() => props.onComp(clip.id, true)}
               >
-                Use this take in the highlighted range
+                {t("inspector.takes.useInRange")}
               </ActionButton>
             </PanelSection>
           ) : null}
 
           {props.selectionCount === 1 && !clip.reversed ? (
             <PanelSection
-              title="Warp"
-              hint="Pin a moment, then say where it should land. Applying renders the clip with each stretch between markers adjusted; pitch is kept."
+              title={t("inspector.warp.title")}
+              help="warp"
+              hint={t("inspector.warp.hint")}
             >
               <ActionButton
                 className="w-full"
@@ -713,7 +741,7 @@ export function Inspector(props: InspectorProps) {
                   props.onPatchClip({ warp: next }, "");
                 }}
               >
-                Add marker at the playhead
+                {t("inspector.warp.addMarker")}
               </ActionButton>
               {(clip.warp ?? []).map((marker, index) => {
                 const setMarker = (t: number | null) =>
@@ -723,12 +751,12 @@ export function Inspector(props: InspectorProps) {
                   );
                 return (
                   <div key={`${marker.s}-${index}`} className="flex items-center gap-1.5 text-[11px] text-slate-300">
-                    <span className="w-14 shrink-0 font-mono tabular-nums text-orange-300">{marker.s.toFixed(2)} s</span>
+                    <span className="w-14 shrink-0 font-mono tabular-nums text-orange-300">{secs(t, marker.s)}</span>
                     <span aria-hidden>→</span>
                     <input
                       type="number"
                       className={fieldClass}
-                      aria-label={`Target time for the marker at ${marker.s.toFixed(2)} seconds`}
+                      aria-label={t("inspector.warp.targetLabel", { s: marker.s.toFixed(2) })}
                       step={0.01}
                       min={0}
                       value={Number(marker.t.toFixed(3))}
@@ -738,14 +766,14 @@ export function Inspector(props: InspectorProps) {
                       }}
                     />
                     <ActionButton
-                      title="Move this moment to the playhead"
+                      title={t("inspector.warp.hereTitle")}
                       onClick={() => setMarker(Math.max(0.05, props.getPosition() - clip.start))}
                     >
-                      Here
+                      {t("inspector.warp.here")}
                     </ActionButton>
                     <button
                       type="button"
-                      aria-label="Remove marker"
+                      aria-label={t("inspector.warp.removeMarker")}
                       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-rose-300"
                       onClick={() => setMarker(null)}
                     >
@@ -762,18 +790,18 @@ export function Inspector(props: InspectorProps) {
                   const markers = (clip.warp ?? []).map((m) => [clip.offset + m.s, clip.offset + m.t]);
                   // Audio before the clip's own start must stay where it is.
                   if (clip.offset >= 0.1) markers.unshift([clip.offset, clip.offset]);
-                  props.onRunJob("warp", { markers }, `Warping ${clip.name}`);
+                  props.onRunJob("warp", { markers }, t("inspector.warp.jobWarp", { name: clip.name }));
                 }}
               >
-                Apply warp
+                {t("inspector.warp.apply")}
               </ActionButton>
               <ActionButton
                 className="w-full"
                 disabled={busy}
-                title="Detect the played beats and move each onto the project tempo grid"
-                onClick={() => props.onRunJob("quantize", { bpm: state.bpm }, `Quantising ${clip.name}`)}
+                title={t("inspector.warp.quantiseTitle")}
+                onClick={() => props.onRunJob("quantize", { bpm: state.bpm }, t("inspector.warp.jobQuantise", { name: clip.name }))}
               >
-                Quantise beats to {state.bpm} BPM
+                {t("inspector.warp.quantise", { bpm: state.bpm })}
               </ActionButton>
               {props.range && props.range.end - props.range.start > 0.1 ? (
                 <ActionButton
@@ -781,35 +809,36 @@ export function Inspector(props: InspectorProps) {
                   disabled={busy || clip.duration / (props.range.end - props.range.start) < 0.25 || clip.duration / (props.range.end - props.range.start) > 4}
                   onClick={() => {
                     const length = (props.range?.end ?? 0) - (props.range?.start ?? 0);
-                    props.onRunJob("stretch", { rate: clip.duration / length }, `Fitting ${clip.name} to ${length.toFixed(2)} s`);
+                    props.onRunJob("stretch", { rate: clip.duration / length }, t("inspector.warp.jobFit", { name: clip.name, length: secs(t, length) }));
                   }}
                 >
-                  Stretch to the length of the highlighted range
+                  {t("inspector.warp.stretchToRange")}
                 </ActionButton>
               ) : null}
             </PanelSection>
           ) : null}
 
           <PanelSection
-            title="Restore"
-            hint="Each tool renders a new take and keeps the original. For one-off sounds, open the spectral view (W) and draw a box around them."
+            title={t("inspector.restore.title")}
+            help="restore"
+            hint={t("inspector.restore.hint")}
           >
             <div className="grid grid-cols-2 gap-2">
-              <ActionButton disabled={busy} title="Remove clicks, pops and crackle" onClick={() => props.onRunJob("declick", { sensitivity: restoreAmount }, `Removing clicks from ${clip.name}`)}>
+              <ActionButton disabled={busy} title={t("inspector.restore.declickTitle")} onClick={() => props.onRunJob("declick", { sensitivity: restoreAmount }, t("inspector.restore.jobDeclick", { name: clip.name }))}>
                 DeClick
               </ActionButton>
-              <ActionButton disabled={busy} title="Remove 50/60 Hz mains hum and its harmonics (detected automatically)" onClick={() => props.onRunJob("dehum", {}, `Removing hum from ${clip.name}`)}>
+              <ActionButton disabled={busy} title={t("inspector.restore.dehumTitle")} onClick={() => props.onRunJob("dehum", {}, t("inspector.restore.jobDehum", { name: clip.name }))}>
                 DeHum
               </ActionButton>
-              <ActionButton disabled={busy} title="Rebuild peaks flattened by clipping" onClick={() => props.onRunJob("declip", {}, `Repairing clipping in ${clip.name}`)}>
+              <ActionButton disabled={busy} title={t("inspector.restore.declipTitle")} onClick={() => props.onRunJob("declip", {}, t("inspector.restore.jobDeclip", { name: clip.name }))}>
                 DeClip
               </ActionButton>
-              <ActionButton disabled={busy} title="Reduce room reverberation" onClick={() => props.onRunJob("dereverb", { strength: restoreAmount }, `Reducing reverb in ${clip.name}`)}>
+              <ActionButton disabled={busy} title={t("inspector.restore.dereverbTitle")} onClick={() => props.onRunJob("dereverb", { strength: restoreAmount }, t("inspector.restore.jobDereverb", { name: clip.name }))}>
                 DeReverb
               </ActionButton>
             </div>
             <Slider
-              label="Amount"
+              label={t("inspector.restore.amount")}
               value={restoreAmount}
               min={0.1}
               max={1}
@@ -818,37 +847,38 @@ export function Inspector(props: InspectorProps) {
               format={(v) => `${Math.round(v * 100)}%`}
               onChange={setRestoreAmount}
             />
-            <p className="text-[11px] text-slate-400">Amount sets DeClick sensitivity and DeReverb strength.</p>
+            <p className="text-[11px] text-slate-400">{t("inspector.restore.amountHint")}</p>
             {props.selectionCount > 1 ? (
               <p className="rounded-lg bg-slate-900 px-2 py-1.5 text-[11px] text-cyan-200">
-                Batch: every processing button here runs on all {props.selectionCount} selected clips.
+                {t("inspector.restore.batch", { n: props.selectionCount })}
               </p>
             ) : null}
           </PanelSection>
 
           <PanelSection
-            title="Pitch and time"
-            hint={capabilities ? `Engine: ${capabilities.stretch.engine}. Renders a new take; the original is kept.` : undefined}
+            title={t("inspector.pitch.title")}
+            help="pitch-and-time"
+            hint={capabilities ? t("inspector.pitch.hint", { engine: capabilities.stretch.engine }) : undefined}
           >
             <Slider
-              label="Pitch"
+              label={t("inspector.pitch.pitch")}
               value={semitones}
               min={-12}
               max={12}
               step={1}
               defaultValue={0}
-              format={(v) => `${v > 0 ? "+" : ""}${v} st`}
+              format={(v) => t("inspector.semitones", { v: `${v > 0 ? "+" : ""}${v}` })}
               onChange={setSemitones}
             />
             <ActionButton
               className="w-full"
               disabled={busy || semitones === 0}
-              onClick={() => props.onRunJob("pitch", { semitones }, `Shifting ${clip.name} by ${semitones} st`)}
+              onClick={() => props.onRunJob("pitch", { semitones }, t("inspector.pitch.jobPitch", { name: clip.name, st: t("inspector.semitones", { v: semitones }) }))}
             >
-              Apply pitch shift
+              {t("inspector.pitch.applyPitch")}
             </ActionButton>
             <Slider
-              label="Speed"
+              label={t("inspector.pitch.speed")}
               value={speed}
               min={50}
               max={200}
@@ -860,45 +890,48 @@ export function Inspector(props: InspectorProps) {
             <ActionButton
               className="w-full"
               disabled={busy || speed === 100}
-              onClick={() => props.onRunJob("stretch", { rate: speed / 100 }, `Stretching ${clip.name} to ${speed}%`)}
+              onClick={() => props.onRunJob("stretch", { rate: speed / 100 }, t("inspector.pitch.jobStretch", { name: clip.name, speed }))}
             >
-              Apply time stretch
+              {t("inspector.pitch.applyStretch")}
             </ActionButton>
           </PanelSection>
 
           <PanelSection
-            title="AI match"
-            hint="Fits this clip to the target's tempo and key, then lines its first downbeat up with the bar grid."
+            title={t("inspector.match.title")}
+            help="ai-match"
+            hint={t("inspector.match.hint")}
           >
             <p className="rounded-lg bg-slate-900 px-2 py-1.5 text-[11px] text-slate-300">
               {meta
-                ? `Detected: ${meta.bpm ? `${meta.bpm.toFixed(1)} BPM` : "tempo unknown"} · ${meta.keyLabel ?? "key unknown"}${
-                    meta.lufs !== null ? ` · ${meta.lufs.toFixed(1)} LUFS` : ""
-                  }`
-                : "Not analysed yet."}
+                ? t("inspector.match.detected", {
+                    tempo: meta.bpm ? `${meta.bpm.toFixed(1)} BPM` : t("inspector.match.tempoUnknown"),
+                    key: meta.keyLabel ? keyText(t, meta.keyLabel) : t("inspector.match.keyUnknown"),
+                    lufs: meta.lufs !== null ? ` · ${meta.lufs.toFixed(1)} LUFS` : ""
+                  })
+                : t("inspector.match.notAnalysed")}
             </p>
             <div className="grid grid-cols-2 gap-2">
-              <ActionButton disabled={busy} onClick={() => props.onRunJob("analyze", {}, `Analysing ${clip.name}`)}>
-                {meta ? "Re-analyse" : "Detect tempo & key"}
+              <ActionButton disabled={busy} onClick={() => props.onRunJob("analyze", {}, t("inspector.match.jobAnalyse", { name: clip.name }))}>
+                {meta ? t("inspector.match.reanalyse") : t("inspector.match.detect")}
               </ActionButton>
               <ActionButton
                 disabled={!meta || (!meta.bpm && !meta.keyLabel)}
                 onClick={() => meta && props.onUseAsProject(meta)}
-                title="Use this clip's tempo and key for the project"
+                title={t("inspector.match.setProjectTitle")}
               >
-                Set as project
+                {t("inspector.match.setProject")}
               </ActionButton>
             </div>
             <label className="flex items-center gap-2 text-[11px] text-slate-400">
-              <span className="w-16 shrink-0">Match to</span>
+              <span className="w-16 shrink-0">{t("inspector.match.matchTo")}</span>
               <select
                 className={fieldClass}
                 value={matchTarget}
-                aria-label="Match target"
+                aria-label={t("inspector.match.target")}
                 onChange={(event) => setMatchTarget(event.target.value)}
               >
                 <option value="project">
-                  Project ({state.bpm} BPM{state.keyLabel ? `, ${state.keyLabel}` : ""})
+                  {t("inspector.match.project", { bpm: state.bpm, key: state.keyLabel ? `, ${keyText(t, state.keyLabel)}` : "" })}
                 </option>
                 {otherAssets.map((item) => (
                   <option key={item.id} value={item.id}>
@@ -910,9 +943,9 @@ export function Inspector(props: InspectorProps) {
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-300">
               {(
                 [
-                  ["Tempo", matchTempo, setMatchTempo],
-                  ["Key", matchKey, setMatchKey],
-                  ["Loudness", matchLoudness, setMatchLoudness]
+                  [t("inspector.match.tempo"), matchTempo, setMatchTempo],
+                  [t("inspector.match.key"), matchKey, setMatchKey],
+                  [t("inspector.match.loudness"), matchLoudness, setMatchLoudness]
                 ] as const
               ).map(([label, value, setter]) => (
                 <label key={label} className="flex h-6 cursor-pointer items-center gap-1.5">
@@ -942,26 +975,27 @@ export function Inspector(props: InspectorProps) {
                     match_key: matchKey,
                     match_loudness_lufs: matchLoudness ? targetLufs : null
                   },
-                  `Matching ${clip.name}`
+                  t("inspector.match.jobMatch", { name: clip.name })
                 );
               }}
             >
-              Match clip
+              {t("inspector.match.run")}
             </ActionButton>
           </PanelSection>
 
           {capabilities?.plugins.available && props.plugins.length ? (
             <PanelSection
-              title="Plugins"
-              hint={`Renders this clip through a ${capabilities.plugins.formats.join(" / ").toUpperCase()} plugin. Choose one to load its controls.`}
+              title={t("inspector.plugins.title")}
+              help="plugins"
+              hint={t("inspector.plugins.hint", { formats: capabilities.plugins.formats.join(" / ").toUpperCase() })}
             >
               <select
                 className={fieldClass}
                 value={pluginId}
-                aria-label="Plugin"
+                aria-label={t("inspector.plugins.label")}
                 onChange={(event) => choosePlugin(event.target.value)}
               >
-                <option value="">Choose a plugin…</option>
+                <option value="">{t("inspector.plugins.choose")}</option>
                 {props.plugins.map((plugin) => (
                   <option key={plugin.id} value={plugin.id}>
                     {plugin.name} ({plugin.format.toUpperCase()})
@@ -969,7 +1003,7 @@ export function Inspector(props: InspectorProps) {
                 ))}
               </select>
               {pluginDetail.status === "loading" ? (
-                <p className="text-[11px] text-slate-400" aria-live="polite">Loading the plugin controls…</p>
+                <p className="text-[11px] text-slate-400" aria-live="polite">{t("inspector.plugins.loading")}</p>
               ) : null}
               {pluginDetail.status === "error" ? (
                 <p className="text-[11px] text-rose-300" role="alert">{pluginDetail.message}</p>
@@ -991,59 +1025,59 @@ export function Inspector(props: InspectorProps) {
                       />
                     ))}
                     {pluginDetail.parameters.length > 64 ? (
-                      <p className="text-[11px] text-slate-400">Showing the first 64 of {pluginDetail.parameters.length} controls.</p>
+                      <p className="text-[11px] text-slate-400">{t("inspector.plugins.showing", { n: pluginDetail.parameters.length })}</p>
                     ) : null}
                   </div>
                 ) : (
-                  <p className="text-[11px] text-slate-400">This plugin exposes no adjustable controls.</p>
+                  <p className="text-[11px] text-slate-400">{t("inspector.plugins.none")}</p>
                 )
               ) : null}
               <ActionButton
                 className="w-full"
                 disabled={!pluginId || pluginDetail.status !== "ready"}
-                title="Renders 8 seconds from the playhead through the plugin and plays them. Nothing in the session changes."
+                title={t("inspector.plugins.auditionTitle")}
                 onClick={() => props.onAudition(pluginId, pluginValues)}
               >
-                Audition 8 s from the playhead
+                {t("inspector.plugins.audition")}
               </ActionButton>
               <ActionButton
                 className="w-full"
                 disabled={busy || !pluginId || pluginDetail.status === "loading" || pluginDetail.status === "error"}
                 onClick={() => {
                   const plugin = props.plugins.find((item) => item.id === pluginId);
-                  props.onRunJob("plugin", { plugin_id: pluginId, parameters: pluginValues }, `Applying ${plugin?.name ?? "plugin"}`);
+                  props.onRunJob("plugin", { plugin_id: pluginId, parameters: pluginValues }, t("inspector.plugins.jobApply", { name: plugin?.name ?? t("inspector.plugin") }));
                 }}
               >
-                Render through plugin
+                {t("inspector.plugins.render")}
               </ActionButton>
             </PanelSection>
           ) : null}
-          <PanelSection title="Compose" hint="Turn what is in the audio into things you can edit.">
+          <PanelSection title={t("inspector.compose.title")} help="compose" hint={t("inspector.compose.hint")}>
             <ActionButton
               className="w-full"
               disabled={busy}
               title={
                 capabilities?.transcription?.engine === "basic-pitch"
-                  ? "Transcribes chords and melodies"
-                  : "Transcribes one note at a time: best on vocals, bass and lead lines"
+                  ? t("inspector.compose.toMidiChords")
+                  : t("inspector.compose.toMidiMono")
               }
-              onClick={() => props.onRunJob("to_midi", {}, `Transcribing ${clip.name}`)}
+              onClick={() => props.onRunJob("to_midi", {}, t("inspector.compose.jobToMidi", { name: clip.name }))}
             >
-              Convert to MIDI notes
+              {t("inspector.compose.toMidi")}
             </ActionButton>
             {capabilities?.song_to_midi?.whole_mix === "ready" ? (
               <label className="flex items-center gap-2 text-[11px] text-slate-400">
-                <span className="w-16 shrink-0">Method</span>
+                <span className="w-16 shrink-0">{t("inspector.compose.method")}</span>
                 <select
                   className={fieldClass}
                   value={midiEngine}
-                  aria-label="Song to MIDI method"
+                  aria-label={t("inspector.compose.methodLabel")}
                   disabled={busy}
                   onChange={(event) => setMidiEngine(event.target.value as typeof midiEngine)}
                 >
-                  <option value="auto">Best available (stems, every note checked against the audio)</option>
-                  <option value="muscriptor">MuScriptor: one model hears the whole mix</option>
-                  <option value="stems">Stems: split first, then a model per instrument</option>
+                  <option value="auto">{t("inspector.compose.auto")}</option>
+                  <option value="muscriptor">{t("inspector.compose.muscriptor")}</option>
+                  <option value="stems">{t("inspector.compose.stemsMethod")}</option>
                 </select>
               </label>
             ) : null}
@@ -1053,31 +1087,34 @@ export function Inspector(props: InspectorProps) {
               disabled={busy}
               title={
                 capabilities?.song_to_midi
-                  ? `Stems method: ${capabilities.song_to_midi.stems}; piano ${capabilities.song_to_midi.piano}; other instruments, bass and vocals ${capabilities.song_to_midi.poly}; drums ${capabilities.song_to_midi.drums}.`
-                  : "Writes the notes of every instrument in the song onto its own track"
+                  ? t("inspector.compose.wholeTitle", {
+                      stems: capabilities.song_to_midi.stems,
+                      piano: capabilities.song_to_midi.piano,
+                      poly: capabilities.song_to_midi.poly,
+                      drums: capabilities.song_to_midi.drums
+                    })
+                  : t("inspector.compose.wholeTitleDefault")
               }
               onClick={() =>
-                props.onRunJob("song_to_midi", { engine: midiEngine }, `Writing the notes of ${clip.name}`)
+                props.onRunJob("song_to_midi", { engine: midiEngine }, t("inspector.compose.jobWhole", { name: clip.name }))
               }
             >
-              Whole song to MIDI (every instrument)
+              {t("inspector.compose.whole")}
             </ActionButton>
             <p className="text-[11px] leading-snug text-slate-400">
               {capabilities?.song_to_midi?.whole_mix === "ready"
-                ? "MuScriptor names up to 35 instruments and gives each its own track. Its model is for non-commercial use only; choose Stems for work you sell. "
-                : "Splits the song into its instruments and writes each one's notes on its own track: piano, guitar, bass, vocals, drums and the rest. "}
-              Close on clear parts, approximate on dense ones: check it by ear.
-              {capabilities?.song_to_midi?.whole_mix === "needs-access"
-                ? " MuScriptor is installed but this computer is not signed in to Hugging Face: see Models & engines."
-                : ""}
+                ? t("inspector.compose.muscriptorNote")
+                : t("inspector.compose.stemsNote")}
+              {t("inspector.compose.checkByEar")}
+              {capabilities?.song_to_midi?.whole_mix === "needs-access" ? t("inspector.compose.needsAccess") : ""}
             </p>
             <ActionButton
               className="w-full"
               disabled={busy}
-              title="Finds where the song changes and labels repeated parts alike"
-              onClick={() => props.onRunJob("structure", {}, `Finding sections in ${clip.name}`)}
+              title={t("inspector.compose.sectionsTitle")}
+              onClick={() => props.onRunJob("structure", {}, t("inspector.compose.jobSections", { name: clip.name }))}
             >
-              Detect song sections
+              {t("inspector.compose.sections")}
             </ActionButton>
           </PanelSection>
 
@@ -1095,24 +1132,25 @@ export function Inspector(props: InspectorProps) {
           />
 
           <PanelSection
-            title="Generate a part"
-            hint="Describe a new part to go with this clip. It is generated on this machine by ComfyUI (MusicGen) at the project tempo and lands on a new track."
+            title={t("inspector.generate.title")}
+            help="generate-a-part"
+            hint={t("inspector.generate.hint")}
           >
             {props.generation?.available && props.generation.node_installed ? (
               <>
                 <textarea
                   className={`${fieldClass} h-16 resize-none py-1.5`}
-                  placeholder="e.g. warm upright bass, walking line, jazz trio"
-                  aria-label="Describe the part to generate"
+                  placeholder={t("inspector.generate.placeholder")}
+                  aria-label={t("inspector.generate.label")}
                   maxLength={300}
                   value={genPrompt}
                   onChange={(event) => setGenPrompt(event.target.value)}
                 />
-                <Slider label="Length" value={genSeconds} min={4} max={60} step={1} defaultValue={15} format={(v) => `${v} s`} onChange={setGenSeconds} />
+                <Slider label={t("inspector.generate.length")} value={genSeconds} min={4} max={60} step={1} defaultValue={15} format={(v) => t("inspector.seconds", { v })} onChange={setGenSeconds} />
                 {props.generation.models.length ? (
                   <select
                     className={fieldClass}
-                    aria-label="Generation model"
+                    aria-label={t("inspector.generate.model")}
                     value={genModel || props.generation.models[0]}
                     onChange={(event) => setGenModel(event.target.value)}
                   >
@@ -1132,30 +1170,31 @@ export function Inspector(props: InspectorProps) {
                     props.onRunJob(
                       "generate",
                       { prompt: context, seconds: genSeconds, bpm: Math.round(Math.min(200, Math.max(60, state.bpm))), model: genModel || props.generation?.models[0] || "facebook/musicgen-stereo-medium" },
-                      `Generating “${genPrompt.trim().slice(0, 30)}”`
+                      t("inspector.generate.jobGenerate", { prompt: genPrompt.trim().slice(0, 30) })
                     );
                   }}
                 >
-                  Generate
+                  {t("inspector.generate.run")}
                 </ActionButton>
               </>
             ) : (
               <>
                 <p className="rounded-lg bg-slate-900 px-2 py-1.5 text-[11px] text-slate-300">
                   {props.generation?.available
-                    ? "ComfyUI is running, but the Sonic Holodeck nodes are not installed in it. Run the installer with your ComfyUI path."
-                    : "ComfyUI is not running. Start it (with the Sonic Holodeck nodes installed) on this machine, then check again."}
+                    ? t("inspector.generate.noNodes")
+                    : t("inspector.generate.notRunning")}
                 </p>
                 <ActionButton className="w-full" onClick={props.onCheckGeneration}>
-                  Check again
+                  {t("inspector.generate.checkAgain")}
                 </ActionButton>
               </>
             )}
           </PanelSection>
 
           <PanelSection
-            title="Favourites"
-            hint="Save the processing you just ran as a one-click chain. Favourites are kept in this browser and work in every session."
+            title={t("inspector.favourites.title")}
+            help="favourites"
+            hint={t("inspector.favourites.hint")}
           >
             {props.favourites.map((favourite) => (
               <div key={favourite.id} className="flex items-center gap-1.5">
@@ -1166,12 +1205,12 @@ export function Inspector(props: InspectorProps) {
                   onClick={() => props.onRunFavourite(favourite.id)}
                 >
                   <span className="truncate">
-                    ★ {favourite.name} <span className="font-normal text-slate-400">· {favourite.steps.length} step{favourite.steps.length > 1 ? "s" : ""}</span>
+                    ★ {favourite.name} <span className="font-normal text-slate-400">· {tp("inspector.favourites.steps", favourite.steps.length)}</span>
                   </span>
                 </ActionButton>
                 <button
                   type="button"
-                  aria-label={`Remove favourite ${favourite.name}`}
+                  aria-label={t("inspector.favourites.remove", { name: favourite.name })}
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-rose-300"
                   onClick={() => props.onRemoveFavourite(favourite.id)}
                 >
@@ -1182,26 +1221,26 @@ export function Inspector(props: InspectorProps) {
             {props.recentSteps.length ? (
               <>
                 <p className="text-[11px] text-slate-400">
-                  Just run: {props.recentSteps.slice(-3).map((step) => step.label).join(" → ")}
+                  {t("inspector.favourites.justRun", { steps: props.recentSteps.slice(-3).map((step) => step.label).join(" → ") })}
                 </p>
                 <div className="flex items-center gap-1.5">
                   <select
                     className={`${fieldClass} w-24 shrink-0`}
                     style={{ width: "6rem" }}
-                    aria-label="How many of the last steps to save"
+                    aria-label={t("inspector.favourites.countLabel")}
                     value={Math.min(favouriteCount, props.recentSteps.length)}
                     onChange={(event) => setFavouriteCount(Number(event.target.value))}
                   >
                     {[1, 2, 3].filter((n) => n <= props.recentSteps.length).map((n) => (
                       <option key={n} value={n}>
-                        Last {n}
+                        {t("inspector.favourites.last", { n })}
                       </option>
                     ))}
                   </select>
                   <input
                     className={fieldClass}
-                    placeholder="Name"
-                    aria-label="Favourite name"
+                    placeholder={t("inspector.favourites.name")}
+                    aria-label={t("inspector.favourites.nameLabel")}
                     maxLength={40}
                     value={favouriteName}
                     onChange={(event) => setFavouriteName(event.target.value)}
@@ -1213,21 +1252,21 @@ export function Inspector(props: InspectorProps) {
                       setFavouriteName("");
                     }}
                   >
-                    Save
+                    {t("inspector.favourites.save")}
                   </ActionButton>
                 </div>
               </>
             ) : (
-              <p className="text-[11px] text-slate-400">Run a tool above, then save it here.</p>
+              <p className="text-[11px] text-slate-400">{t("inspector.favourites.empty")}</p>
             )}
           </PanelSection>
             </>
           )}
         </>
       ) : (
-        <PanelSection title="Project" hint="Select a clip to edit it. These settings apply to the whole session.">
+        <PanelSection title={t("inspector.project.title")} help="project" hint={t("inspector.project.hint")}>
           <NumberField
-            label="Tempo"
+            label={t("inspector.project.tempo")}
             value={state.bpm}
             min={40}
             max={240}
@@ -1236,7 +1275,7 @@ export function Inspector(props: InspectorProps) {
             onChange={(bpm) => props.onPatchState({ bpm }, "bpm")}
           />
           <NumberField
-            label="Beats / bar"
+            label={t("inspector.project.beatsPerBar")}
             value={state.beatsPerBar}
             min={2}
             max={12}
@@ -1244,36 +1283,36 @@ export function Inspector(props: InspectorProps) {
             onChange={(beatsPerBar) => props.onPatchState({ beatsPerBar: Math.round(beatsPerBar) }, "beats")}
           />
           <label className="flex items-center gap-2 text-[11px] text-slate-400">
-            <span className="w-16 shrink-0">Beat is</span>
+            <span className="w-16 shrink-0">{t("inspector.project.beatIs")}</span>
             <select
               className={fieldClass}
               value={state.beatUnit ?? 4}
-              aria-label="Beat unit of the time signature"
-              title="6 beats of an eighth note is 6/8. The tempo always counts quarter notes."
+              aria-label={t("inspector.project.beatUnitLabel")}
+              title={t("inspector.project.beatUnitTitle")}
               onChange={(event) => props.onPatchState({ beatUnit: event.target.value === "8" ? 8 : 4 }, "")}
             >
-              <option value={4}>a quarter note: {state.beatsPerBar}/4</option>
-              <option value={8}>an eighth note: {state.beatsPerBar}/8</option>
+              <option value={4}>{t("inspector.project.quarter", { sig: `${state.beatsPerBar}/4` })}</option>
+              <option value={8}>{t("inspector.project.eighth", { sig: `${state.beatsPerBar}/8` })}</option>
             </select>
           </label>
           <label className="flex items-center gap-2 text-[11px] text-slate-400">
-            <span className="w-16 shrink-0">Key</span>
+            <span className="w-16 shrink-0">{t("inspector.project.key")}</span>
             <select
               className={fieldClass}
               value={state.keyLabel ?? ""}
-              aria-label="Project key"
+              aria-label={t("inspector.project.keyLabel")}
               onChange={(event) => props.onPatchState({ keyLabel: event.target.value || null }, "")}
             >
-              <option value="">Not set</option>
+              <option value="">{t("inspector.project.notSet")}</option>
               {KEYS.map((key) => (
                 <option key={key} value={key}>
-                  {key}
+                  {keyText(t, key)}
                 </option>
               ))}
             </select>
           </label>
           <Slider
-            label="Master"
+            label={t("inspector.project.master")}
             value={state.masterDb}
             min={-60}
             max={6}
@@ -1283,14 +1322,14 @@ export function Inspector(props: InspectorProps) {
             onChange={(masterDb) => props.onPatchState({ masterDb }, "master")}
           />
           <Toggle
-            label="True-peak limiter on the master"
-            hint="Looks 5 ms ahead and holds inter-sample peaks under the ceiling."
+            label={t("inspector.project.limiter")}
+            hint={t("inspector.project.limiterHint")}
             checked={state.limiter}
             onChange={(limiter) => props.onPatchState({ limiter }, "")}
           />
           {state.limiter ? (
             <Slider
-              label="Ceiling"
+              label={t("inspector.project.ceiling")}
               value={state.limiterCeiling}
               min={-6}
               max={-0.1}
@@ -1301,13 +1340,13 @@ export function Inspector(props: InspectorProps) {
             />
           ) : null}
           <Toggle
-            label="Crossfade overlapping clips"
-            hint="Where two clips overlap on a track, they blend with equal-power fades."
+            label={t("inspector.project.crossfade")}
+            hint={t("inspector.project.crossfadeHint")}
             checked={state.autoCrossfade}
             onChange={(autoCrossfade) => props.onPatchState({ autoCrossfade }, "")}
           />
-          <ActionButton className="w-full" onClick={props.onAddMidiTrack} title="Adds a track with a four-bar MIDI clip at the playhead and opens the piano roll">
-            Add an instrument (MIDI) track
+          <ActionButton className="w-full" onClick={props.onAddMidiTrack} title={t("inspector.project.addMidiTitle")}>
+            {t("inspector.project.addMidi")}
           </ActionButton>
         </PanelSection>
       )}
@@ -1324,19 +1363,20 @@ export function Inspector(props: InspectorProps) {
       ) : null}
       {!clip ? (
         <PanelSection
-          title="Create a song"
-          hint="Write a style and lyrics and generate a whole song with vocals, on this computer or with an online service you have set up. Each version lands on its own track in this project."
+          title={t("inspector.createSong.title")}
+          help="ai-song-studio"
+          hint={t("inspector.createSong.hint")}
         >
           <ActionButton variant="primary" className="w-full" onClick={props.onOpenSongStudio}>
-            Open AI Song Studio
+            {t("inspector.createSong.open")}
           </ActionButton>
         </PanelSection>
       ) : null}
 
       {track ? (
-        <PanelSection title={`Track: ${track.name}`} hint="Equaliser and stereo image, applied live.">
+        <PanelSection title={t("inspector.trackPanel.title", { name: track.name })} help="track-effects-and-buses" hint={t("inspector.trackPanel.hint")}>
           <Slider
-            label="Low"
+            label={t("inspector.trackPanel.low")}
             value={track.eqLow}
             min={-12}
             max={12}
@@ -1346,7 +1386,7 @@ export function Inspector(props: InspectorProps) {
             onChange={(eqLow) => props.onPatchTrack({ eqLow }, "eq-low")}
           />
           <Slider
-            label="Mid"
+            label={t("inspector.trackPanel.mid")}
             value={track.eqMid}
             min={-12}
             max={12}
@@ -1356,7 +1396,7 @@ export function Inspector(props: InspectorProps) {
             onChange={(eqMid) => props.onPatchTrack({ eqMid }, "eq-mid")}
           />
           <Slider
-            label="High"
+            label={t("inspector.trackPanel.high")}
             value={track.eqHigh}
             min={-12}
             max={12}
@@ -1366,13 +1406,13 @@ export function Inspector(props: InspectorProps) {
             onChange={(eqHigh) => props.onPatchTrack({ eqHigh }, "eq-high")}
           />
           <Slider
-            label="Width"
+            label={t("inspector.trackPanel.width")}
             value={track.width}
             min={0}
             max={2}
             step={0.05}
             defaultValue={1}
-            format={(v) => (v === 0 ? "Mono" : `${Math.round(v * 100)}%`)}
+            format={(v) => (v === 0 ? t("inspector.trackPanel.mono") : `${Math.round(v * 100)}%`)}
             onChange={(width) => props.onPatchTrack({ width }, "width")}
           />
           <EqDisplay
@@ -1387,30 +1427,30 @@ export function Inspector(props: InspectorProps) {
             aria-expanded={eqDetail}
             onClick={() => setEqDetail((open) => !open)}
           >
-            {eqDetail ? "Hide EQ frequencies" : "Set EQ frequencies and width (Q)…"}
+            {eqDetail ? t("inspector.trackPanel.eqHide") : t("inspector.trackPanel.eqShow")}
           </button>
           {eqDetail ? (
             <div className="space-y-1 border-l-2 border-cyan-400/40 pl-2">
-              <FreqSlider label="Low at" value={track.eqLowFreq} min={30} max={600} fallback={EQ_DEFAULTS.eqLowFreq} onChange={(eqLowFreq) => props.onPatchTrack({ eqLowFreq }, "eq-lf")} />
-              <FreqSlider label="Mid at" value={track.eqMidFreq} min={150} max={8000} fallback={EQ_DEFAULTS.eqMidFreq} onChange={(eqMidFreq) => props.onPatchTrack({ eqMidFreq }, "eq-mf")} />
-              <Slider label="Mid Q" value={track.eqMidQ} min={0.2} max={8} step={0.1} defaultValue={EQ_DEFAULTS.eqMidQ} format={(v) => v.toFixed(1)} onChange={(eqMidQ) => props.onPatchTrack({ eqMidQ }, "eq-mq")} />
-              <FreqSlider label="High at" value={track.eqHighFreq} min={1500} max={16000} fallback={EQ_DEFAULTS.eqHighFreq} onChange={(eqHighFreq) => props.onPatchTrack({ eqHighFreq }, "eq-hf")} />
+              <FreqSlider label={t("inspector.trackPanel.lowAt")} value={track.eqLowFreq} min={30} max={600} fallback={EQ_DEFAULTS.eqLowFreq} onChange={(eqLowFreq) => props.onPatchTrack({ eqLowFreq }, "eq-lf")} />
+              <FreqSlider label={t("inspector.trackPanel.midAt")} value={track.eqMidFreq} min={150} max={8000} fallback={EQ_DEFAULTS.eqMidFreq} onChange={(eqMidFreq) => props.onPatchTrack({ eqMidFreq }, "eq-mf")} />
+              <Slider label={t("inspector.trackPanel.midQ")} value={track.eqMidQ} min={0.2} max={8} step={0.1} defaultValue={EQ_DEFAULTS.eqMidQ} format={(v) => v.toFixed(1)} onChange={(eqMidQ) => props.onPatchTrack({ eqMidQ }, "eq-mq")} />
+              <FreqSlider label={t("inspector.trackPanel.highAt")} value={track.eqHighFreq} min={1500} max={16000} fallback={EQ_DEFAULTS.eqHighFreq} onChange={(eqHighFreq) => props.onPatchTrack({ eqHighFreq }, "eq-hf")} />
             </div>
           ) : null}
           {state.buses.length ? (
             <>
               <label className="flex items-center gap-2 text-[11px] text-slate-400">
-                <span className="w-16 shrink-0">Output</span>
+                <span className="w-16 shrink-0">{t("inspector.trackPanel.output")}</span>
                 <select
                   className={fieldClass}
                   value={state.buses.some((b) => b.id === track.output) ? track.output : "master"}
-                  aria-label="Track output"
+                  aria-label={t("inspector.trackPanel.outputLabel")}
                   onChange={(event) => props.onPatchTrack({ output: event.target.value }, "")}
                 >
-                  <option value="master">Master</option>
+                  <option value="master">{t("inspector.trackPanel.master")}</option>
                   {state.buses.map((bus) => (
                     <option key={bus.id} value={bus.id}>
-                      {bus.name} bus
+                      {t("inspector.trackPanel.bus", { name: bus.name })}
                     </option>
                   ))}
                 </select>
@@ -1425,8 +1465,8 @@ export function Inspector(props: InspectorProps) {
                       <input
                         type="checkbox"
                         className="h-4 w-4 shrink-0 accent-cyan-400"
-                        aria-label={`Send to ${bus.name}`}
-                        title={`Send to ${bus.name}`}
+                        aria-label={t("inspector.trackPanel.sendTo", { name: bus.name })}
+                        title={t("inspector.trackPanel.sendTo", { name: bus.name })}
                         checked={sending}
                         onChange={(event) => {
                           const sends = { ...track.sends };
@@ -1455,18 +1495,18 @@ export function Inspector(props: InspectorProps) {
           ) : null}
           {automationPoints ? (
             <div className="flex items-center gap-2 text-[11px] text-slate-400">
-              <span className="min-w-0 flex-1">Automation: {automationPoints} points on this track</span>
-              <ActionButton onClick={() => props.onPatchTrack({ volumeAuto: [], panAuto: [], auto: {} }, "")}>Clear</ActionButton>
+              <span className="min-w-0 flex-1">{tp("inspector.trackPanel.automation", automationPoints)}</span>
+              <ActionButton onClick={() => props.onPatchTrack({ volumeAuto: [], panAuto: [], auto: {} }, "")}>{t("inspector.trackPanel.clear")}</ActionButton>
             </div>
           ) : null}
           <div className="flex items-center gap-2 text-[11px] text-slate-400">
-            <span className="w-16 shrink-0">Colour</span>
+            <span className="w-16 shrink-0">{t("inspector.trackPanel.colour")}</span>
             <div className="flex flex-wrap gap-1.5">
               {TRACK_COLORS.map((color) => (
                 <button
                   key={color}
                   type="button"
-                  aria-label={`Track colour ${color}`}
+                  aria-label={t("inspector.trackPanel.colourLabel", { color })}
                   aria-pressed={track.color === color}
                   onClick={() => props.onPatchTrack({ color }, "")}
                   className="h-6 w-6 rounded-full ring-offset-2 ring-offset-slate-950 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300 aria-pressed:ring-2 aria-pressed:ring-white"
@@ -1490,17 +1530,17 @@ export function Inspector(props: InspectorProps) {
       ) : null}
 
       {!clip ? (
-        <PanelSection title="Phase scope" hint="A vertical shape is mono-safe; a wide or horizontal one will thin out in mono.">
+        <PanelSection title={t("inspector.phase.title")} help="sections-markers-and-media" hint={t("inspector.phase.hint")}>
           <PhaseScope getScope={props.getScope} />
         </PanelSection>
       ) : null}
 
       {!clip ? (
-        <PanelSection title="Buses" hint="Send several tracks to a shared reverb or delay, or group them under one fader.">
+        <PanelSection title={t("inspector.buses.title")} help="track-effects-and-buses" hint={t("inspector.buses.hint")}>
           <div className="grid grid-cols-3 gap-1.5">
-            <ActionButton onClick={() => props.onAddBus("reverb")}>+ Reverb</ActionButton>
-            <ActionButton onClick={() => props.onAddBus("delay")}>+ Delay</ActionButton>
-            <ActionButton onClick={() => props.onAddBus("group")}>+ Group</ActionButton>
+            <ActionButton onClick={() => props.onAddBus("reverb")}>{t("inspector.buses.reverb")}</ActionButton>
+            <ActionButton onClick={() => props.onAddBus("delay")}>{t("inspector.buses.delay")}</ActionButton>
+            <ActionButton onClick={() => props.onAddBus("group")}>{t("inspector.buses.group")}</ActionButton>
           </div>
           {state.buses.map((bus) => (
             <div key={bus.id} className="space-y-1 rounded-lg bg-slate-900 p-2">
@@ -1508,12 +1548,12 @@ export function Inspector(props: InspectorProps) {
                 <input
                   className={fieldClass}
                   value={bus.name}
-                  aria-label="Bus name"
+                  aria-label={t("inspector.buses.name")}
                   onChange={(event) => props.onPatchBus(bus.id, { name: event.target.value.slice(0, 30) }, "bus-name")}
                 />
                 <button
                   type="button"
-                  aria-label={`Mute ${bus.name} bus`}
+                  aria-label={t("inspector.buses.mute", { name: bus.name })}
                   aria-pressed={bus.mute}
                   onClick={() => props.onPatchBus(bus.id, { mute: !bus.mute }, "")}
                   className={`h-8 w-8 shrink-0 rounded-lg text-[11px] font-bold ${bus.mute ? "bg-amber-400 text-slate-950" : "bg-slate-700 text-slate-200 hover:bg-slate-600"}`}
@@ -1522,22 +1562,22 @@ export function Inspector(props: InspectorProps) {
                 </button>
                 <button
                   type="button"
-                  aria-label={`Delete ${bus.name} bus`}
+                  aria-label={t("inspector.buses.delete", { name: bus.name })}
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-rose-300"
                   onClick={() => props.onRemoveBus(bus.id)}
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <Slider label="Level" value={bus.volumeDb} min={-60} max={6} step={0.5} defaultValue={0} format={formatDb} onChange={(volumeDb) => props.onPatchBus(bus.id, { volumeDb }, "bus-vol")} />
-              <LevelBar label={`${bus.name} bus level`} getLevel={() => props.getBusLevel(bus.id)} />
+              <Slider label={t("inspector.buses.level")} value={bus.volumeDb} min={-60} max={6} step={0.5} defaultValue={0} format={formatDb} onChange={(volumeDb) => props.onPatchBus(bus.id, { volumeDb }, "bus-vol")} />
+              <LevelBar label={t("inspector.buses.levelLabel", { name: bus.name })} getLevel={() => props.getBusLevel(bus.id)} />
               <button
                 type="button"
                 className="h-6 text-left text-[11px] text-cyan-300 underline-offset-2 hover:underline"
                 aria-expanded={openBusId === bus.id}
                 onClick={() => setOpenBusId(openBusId === bus.id ? null : bus.id)}
               >
-                {openBusId === bus.id ? "Hide effects" : "Edit effects…"}
+                {openBusId === bus.id ? t("inspector.buses.hideFx") : t("inspector.buses.showFx")}
               </button>
               {openBusId === bus.id ? (
                 <EffectRack bare fx={bus.fx} onChange={(fx, key) => props.onPatchBus(bus.id, { fx }, key)} />
@@ -1545,15 +1585,15 @@ export function Inspector(props: InspectorProps) {
             </div>
           ))}
           {state.buses.length ? (
-            <p className="text-[11px] text-slate-400">Select a track to route it to a bus or set its send levels.</p>
+            <p className="text-[11px] text-slate-400">{t("inspector.buses.routeHint")}</p>
           ) : null}
         </PanelSection>
       ) : null}
 
       {!clip ? (
-        <PanelSection title="Sections" hint="Name parts of the song, then repeat or cut them as a block.">
+        <PanelSection title={t("inspector.sections.title")} help="sections-markers-and-media" hint={t("inspector.sections.hint")}>
           <ActionButton className="w-full" disabled={!props.range} onClick={props.onAddSection} title="Shift+R">
-            {props.range ? "Add section from highlighted range" : "Highlight a range to add a section"}
+            {props.range ? t("inspector.sections.add") : t("inspector.sections.highlightFirst")}
           </ActionButton>
           {state.regions.map((region) => (
             <div key={region.id} className="space-y-1 rounded-lg bg-slate-900 p-2">
@@ -1562,13 +1602,13 @@ export function Inspector(props: InspectorProps) {
                 <input
                   className={fieldClass}
                   value={region.name}
-                  aria-label="Section name"
+                  aria-label={t("inspector.sections.name")}
                   onChange={(event) => props.onRegion("rename", region.id, event.target.value.slice(0, 40))}
                 />
                 <button
                   type="button"
-                  aria-label={`Remove the ${region.name} label`}
-                  title="Remove the label (keeps the audio)"
+                  aria-label={t("inspector.sections.removeLabel", { name: region.name })}
+                  title={t("inspector.sections.removeTitle")}
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-rose-300"
                   onClick={() => props.onRegion("remove", region.id)}
                 >
@@ -1579,12 +1619,12 @@ export function Inspector(props: InspectorProps) {
                 {formatTime(region.start).slice(0, -2)} → {formatTime(region.end).slice(0, -2)}
               </p>
               <div className="grid grid-cols-3 gap-1.5">
-                <ActionButton onClick={() => props.onRegion("select", region.id)}>Select</ActionButton>
-                <ActionButton onClick={() => props.onRegion("repeat", region.id)} title="Insert a copy straight after, moving later audio along">
-                  Repeat
+                <ActionButton onClick={() => props.onRegion("select", region.id)}>{t("inspector.sections.select")}</ActionButton>
+                <ActionButton onClick={() => props.onRegion("repeat", region.id)} title={t("inspector.sections.repeatTitle")}>
+                  {t("inspector.sections.repeat")}
                 </ActionButton>
-                <ActionButton variant="danger" onClick={() => props.onRegion("cut", region.id)} title="Remove this section and close the gap">
-                  Cut out
+                <ActionButton variant="danger" onClick={() => props.onRegion("cut", region.id)} title={t("inspector.sections.cutTitle")}>
+                  {t("inspector.sections.cut")}
                 </ActionButton>
               </div>
             </div>
@@ -1593,14 +1633,14 @@ export function Inspector(props: InspectorProps) {
       ) : null}
 
       {!clip && state.markers.length ? (
-        <PanelSection title="Markers" hint="Press K to add one at the playhead. Drag them on the ruler.">
+        <PanelSection title={t("inspector.markers.title")} help="sections-markers-and-media" hint={t("inspector.markers.hint")}>
           <ul className="space-y-1">
             {state.markers.map((marker) => (
               <li key={marker.id} className="flex items-center gap-1.5">
                 <button
                   type="button"
                   className="h-8 w-16 shrink-0 rounded-lg bg-slate-900 font-mono text-[11px] tabular-nums text-orange-300 hover:bg-slate-800 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
-                  title="Jump to this marker"
+                  title={t("inspector.markers.jump")}
                   onClick={() => props.onSeek(marker.time)}
                 >
                   {formatTime(marker.time).slice(0, -2)}
@@ -1608,12 +1648,12 @@ export function Inspector(props: InspectorProps) {
                 <input
                   className={fieldClass}
                   value={marker.name}
-                  aria-label="Marker name"
+                  aria-label={t("inspector.markers.name")}
                   onChange={(event) => props.onRenameMarker(marker.id, event.target.value.slice(0, 40))}
                 />
                 <button
                   type="button"
-                  aria-label={`Delete ${marker.name}`}
+                  aria-label={t("inspector.markers.delete", { name: marker.name })}
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-rose-300 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
                   onClick={() => props.onRemoveMarker(marker.id)}
                 >
@@ -1626,7 +1666,7 @@ export function Inspector(props: InspectorProps) {
       ) : null}
 
       {!clip ? (
-        <PanelSection title="Media" hint="Every file and rendered take in this project. Click one to place it on a new track.">
+        <PanelSection title={t("inspector.media.title")} help="sections-markers-and-media" hint={t("inspector.media.hint")}>
           {unusedAssets.length ? (
             <ul className="max-h-64 space-y-1 overflow-y-auto">
               {unusedAssets.map((asset) => (
@@ -1635,7 +1675,7 @@ export function Inspector(props: InspectorProps) {
                     type="button"
                     className="flex h-8 w-full items-center gap-2 rounded-lg bg-slate-900 px-2 text-left text-[11px] text-slate-200 hover:bg-slate-800 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
                     onClick={() => props.onAddAsset(asset)}
-                    title="Add to a new track at the playhead"
+                    title={t("inspector.media.addTitle")}
                   >
                     <span className="min-w-0 flex-1 truncate">{asset.name}</span>
                     <span className="shrink-0 font-mono tabular-nums text-slate-400">{formatTime(asset.duration_seconds)}</span>
@@ -1644,7 +1684,7 @@ export function Inspector(props: InspectorProps) {
               ))}
             </ul>
           ) : (
-            <p className="text-[11px] text-slate-400">No audio yet. Use Import, or drop files onto the timeline.</p>
+            <p className="text-[11px] text-slate-400">{t("inspector.media.empty")}</p>
           )}
         </PanelSection>
       ) : null}
@@ -1653,70 +1693,63 @@ export function Inspector(props: InspectorProps) {
 }
 
 function EffectRack({ fx, onChange, bare }: { fx: TrackFx; onChange: (fx: TrackFx, key: string) => void; bare?: boolean }) {
+  const { t } = useI18n();
   const set = <K extends keyof TrackFx>(unit: K, patch: Partial<TrackFx[K]>, key: string) =>
     onChange({ ...fx, [unit]: { ...fx[unit], ...patch } }, key);
   const units = (
     <>
-      <Toggle label="Gate" checked={fx.gate.on} onChange={(on) => set("gate", { on }, "")} />
+      <Toggle label={t("inspector.fx.gate")} checked={fx.gate.on} onChange={(on) => set("gate", { on }, "")} />
       {fx.gate.on ? (
         <div className="space-y-1 border-l-2 border-cyan-400/40 pl-2">
-          <Slider label="Threshold" value={fx.gate.threshold} min={-80} max={0} step={1} defaultValue={-45} format={(v) => `${v} dB`} onChange={(threshold) => set("gate", { threshold }, "fx-gt")} />
-          <Slider label="Attack" value={fx.gate.attack} min={0.001} max={0.1} step={0.001} defaultValue={0.002} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(attack) => set("gate", { attack }, "fx-ga")} />
-          <Slider label="Hold" value={fx.gate.hold} min={0} max={0.5} step={0.01} defaultValue={0.06} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(hold) => set("gate", { hold }, "fx-gh")} />
-          <Slider label="Release" value={fx.gate.release} min={0.01} max={1} step={0.01} defaultValue={0.15} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(release) => set("gate", { release }, "fx-gr")} />
+          <Slider label={t("inspector.fx.threshold")} value={fx.gate.threshold} min={-80} max={0} step={1} defaultValue={-45} format={(v) => `${v} dB`} onChange={(threshold) => set("gate", { threshold }, "fx-gt")} />
+          <Slider label={t("inspector.fx.attack")} value={fx.gate.attack} min={0.001} max={0.1} step={0.001} defaultValue={0.002} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(attack) => set("gate", { attack }, "fx-ga")} />
+          <Slider label={t("inspector.fx.hold")} value={fx.gate.hold} min={0} max={0.5} step={0.01} defaultValue={0.06} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(hold) => set("gate", { hold }, "fx-gh")} />
+          <Slider label={t("inspector.fx.release")} value={fx.gate.release} min={0.01} max={1} step={0.01} defaultValue={0.15} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(release) => set("gate", { release }, "fx-gr")} />
         </div>
       ) : null}
-      <Toggle label="Voice (vocoder, chipmunk, robot…)" checked={fx.voice.on} onChange={(on) => set("voice", { on }, "")} />
+      <Toggle label={t("inspector.fx.voice")} checked={fx.voice.on} onChange={(on) => set("voice", { on }, "")} />
       {fx.voice.on ? <VoiceUnit voice={fx.voice} onChange={(patch, key) => set("voice", patch, key)} /> : null}
-      <Toggle label="Distortion" checked={fx.dist.on} onChange={(on) => set("dist", { on }, "")} />
+      <Toggle label={t("inspector.fx.distortion")} checked={fx.dist.on} onChange={(on) => set("dist", { on }, "")} />
       {fx.dist.on ? (
         <div className="space-y-1 border-l-2 border-cyan-400/40 pl-2">
-          <Slider label="Drive" value={fx.dist.drive} min={0} max={1} step={0.01} defaultValue={0.4} format={(v) => `${Math.round(v * 100)}%`} onChange={(drive) => set("dist", { drive }, "fx-dd")} />
-          <Slider label="Mix" value={fx.dist.mix} min={0} max={1} step={0.01} defaultValue={1} format={(v) => `${Math.round(v * 100)}%`} onChange={(mix) => set("dist", { mix }, "fx-dx")} />
+          <Slider label={t("inspector.fx.drive")} value={fx.dist.drive} min={0} max={1} step={0.01} defaultValue={0.4} format={(v) => `${Math.round(v * 100)}%`} onChange={(drive) => set("dist", { drive }, "fx-dd")} />
+          <Slider label={t("inspector.fx.mix")} value={fx.dist.mix} min={0} max={1} step={0.01} defaultValue={1} format={(v) => `${Math.round(v * 100)}%`} onChange={(mix) => set("dist", { mix }, "fx-dx")} />
         </div>
       ) : null}
-      <Toggle label="Compressor" checked={fx.comp.on} onChange={(on) => set("comp", { on }, "")} />
+      <Toggle label={t("inspector.fx.compressor")} checked={fx.comp.on} onChange={(on) => set("comp", { on }, "")} />
       {fx.comp.on ? (
         <div className="space-y-1 border-l-2 border-cyan-400/40 pl-2">
-          <Slider label="Threshold" value={fx.comp.threshold} min={-60} max={0} step={1} defaultValue={-18} format={(v) => `${v} dB`} onChange={(threshold) => set("comp", { threshold }, "fx-ct")} />
-          <Slider label="Ratio" value={fx.comp.ratio} min={1} max={20} step={0.5} defaultValue={3} format={(v) => `${v.toFixed(1)}:1`} onChange={(ratio) => set("comp", { ratio }, "fx-cr")} />
-          <Slider label="Attack" value={fx.comp.attack} min={0.001} max={0.2} step={0.001} defaultValue={0.01} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(attack) => set("comp", { attack }, "fx-ca")} />
-          <Slider label="Release" value={fx.comp.release} min={0.02} max={1} step={0.01} defaultValue={0.2} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(release) => set("comp", { release }, "fx-cl")} />
-          <Slider label="Make-up" value={fx.comp.makeup} min={0} max={18} step={0.5} defaultValue={0} format={formatDb} onChange={(makeup) => set("comp", { makeup }, "fx-cm")} />
+          <Slider label={t("inspector.fx.threshold")} value={fx.comp.threshold} min={-60} max={0} step={1} defaultValue={-18} format={(v) => `${v} dB`} onChange={(threshold) => set("comp", { threshold }, "fx-ct")} />
+          <Slider label={t("inspector.fx.ratio")} value={fx.comp.ratio} min={1} max={20} step={0.5} defaultValue={3} format={(v) => `${v.toFixed(1)}:1`} onChange={(ratio) => set("comp", { ratio }, "fx-cr")} />
+          <Slider label={t("inspector.fx.attack")} value={fx.comp.attack} min={0.001} max={0.2} step={0.001} defaultValue={0.01} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(attack) => set("comp", { attack }, "fx-ca")} />
+          <Slider label={t("inspector.fx.release")} value={fx.comp.release} min={0.02} max={1} step={0.01} defaultValue={0.2} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(release) => set("comp", { release }, "fx-cl")} />
+          <Slider label={t("inspector.fx.makeup")} value={fx.comp.makeup} min={0} max={18} step={0.5} defaultValue={0} format={formatDb} onChange={(makeup) => set("comp", { makeup }, "fx-cm")} />
         </div>
       ) : null}
-      <Toggle label="Delay" checked={fx.delay.on} onChange={(on) => set("delay", { on }, "")} />
+      <Toggle label={t("inspector.fx.delay")} checked={fx.delay.on} onChange={(on) => set("delay", { on }, "")} />
       {fx.delay.on ? (
         <div className="space-y-1 border-l-2 border-cyan-400/40 pl-2">
-          <Slider label="Time" value={fx.delay.time} min={0.02} max={1.5} step={0.005} defaultValue={0.375} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(time) => set("delay", { time }, "fx-dt")} />
-          <Slider label="Feedback" value={fx.delay.feedback} min={0} max={0.9} step={0.01} defaultValue={0.35} format={(v) => `${Math.round(v * 100)}%`} onChange={(feedback) => set("delay", { feedback }, "fx-df")} />
-          <Slider label="Mix" value={fx.delay.mix} min={0} max={1} step={0.01} defaultValue={0.25} format={(v) => `${Math.round(v * 100)}%`} onChange={(mix) => set("delay", { mix }, "fx-dm")} />
+          <Slider label={t("inspector.fx.time")} value={fx.delay.time} min={0.02} max={1.5} step={0.005} defaultValue={0.375} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(time) => set("delay", { time }, "fx-dt")} />
+          <Slider label={t("inspector.fx.feedback")} value={fx.delay.feedback} min={0} max={0.9} step={0.01} defaultValue={0.35} format={(v) => `${Math.round(v * 100)}%`} onChange={(feedback) => set("delay", { feedback }, "fx-df")} />
+          <Slider label={t("inspector.fx.mix")} value={fx.delay.mix} min={0} max={1} step={0.01} defaultValue={0.25} format={(v) => `${Math.round(v * 100)}%`} onChange={(mix) => set("delay", { mix }, "fx-dm")} />
         </div>
       ) : null}
-      <Toggle label="Reverb" checked={fx.reverb.on} onChange={(on) => set("reverb", { on }, "")} />
+      <Toggle label={t("inspector.fx.reverb")} checked={fx.reverb.on} onChange={(on) => set("reverb", { on }, "")} />
       {fx.reverb.on ? (
         <div className="space-y-1 border-l-2 border-cyan-400/40 pl-2">
-          <Slider label="Size" value={fx.reverb.size} min={0.3} max={6} step={0.1} defaultValue={1.8} format={(v) => `${v.toFixed(1)} s`} onChange={(size) => set("reverb", { size }, "fx-rs")} />
-          <Slider label="Mix" value={fx.reverb.mix} min={0} max={1} step={0.01} defaultValue={0.2} format={(v) => `${Math.round(v * 100)}%`} onChange={(mix) => set("reverb", { mix }, "fx-rm")} />
+          <Slider label={t("inspector.fx.size")} value={fx.reverb.size} min={0.3} max={6} step={0.1} defaultValue={1.8} format={(v) => secs(t, v, 1)} onChange={(size) => set("reverb", { size }, "fx-rs")} />
+          <Slider label={t("inspector.fx.mix")} value={fx.reverb.mix} min={0} max={1} step={0.01} defaultValue={0.2} format={(v) => `${Math.round(v * 100)}%`} onChange={(mix) => set("reverb", { mix }, "fx-rm")} />
         </div>
       ) : null}
     </>
   );
   if (bare) return <div className="space-y-2">{units}</div>;
   return (
-    <PanelSection title="Effects" hint="Applied live and in exports, in this order: EQ, gate, voice, distortion, compressor, then delay and reverb.">
+    <PanelSection title={t("inspector.fx.title")} help="track-effects-and-buses" hint={t("inspector.fx.hint")}>
       {units}
     </PanelSection>
   );
 }
-
-const VOICE_MODE_LABELS: Record<VoiceMode, string> = {
-  vocoder: "Vocoder (robot singer)",
-  pitch: "Pitch shift (chipmunk / monster)",
-  robot: "Robot (ring modulator)",
-  synth: "Synth voice (follows your pitch)",
-  distort: "Vox distortion (megaphone)"
-};
 
 function noteName(note: number): string {
   const n = Math.round(note);
@@ -1724,32 +1757,33 @@ function noteName(note: number): string {
 }
 
 function VoiceUnit({ voice, onChange }: { voice: VoiceFx; onChange: (patch: Partial<VoiceFx>, key: string) => void }) {
+  const { t } = useI18n();
   const carrierMode = voice.mode === "vocoder" || voice.mode === "synth";
-  const semis = (v: number) => `${v > 0 ? "+" : ""}${Math.round(v)} st`;
+  const semis = (v: number) => t("inspector.semitones", { v: `${v > 0 ? "+" : ""}${Math.round(v)}` });
   return (
     <div className="space-y-1.5 border-l-2 border-cyan-400/40 pl-2">
       <select
         className={fieldClass}
-        aria-label="Voice preset"
+        aria-label={t("inspector.voice.preset")}
         value=""
         onChange={(event) => {
           const preset = VOICE_PRESETS.find((p) => p.id === event.target.value);
           if (preset) onChange(preset.voice, "");
         }}
       >
-        <option value="">Load a preset…</option>
+        <option value="">{t("inspector.voice.loadPreset")}</option>
         {VOICE_PRESETS.map((preset) => (
           <option key={preset.id} value={preset.id}>
-            {preset.label}
+            {presetLabel(t, preset)}
           </option>
         ))}
       </select>
       <label className="flex items-center gap-2 text-[11px] text-slate-400">
-        <span className="w-16 shrink-0">Type</span>
-        <select className={fieldClass} aria-label="Voice effect type" value={voice.mode} onChange={(event) => onChange({ mode: event.target.value as VoiceMode }, "")}>
+        <span className="w-16 shrink-0">{t("inspector.voice.type")}</span>
+        <select className={fieldClass} aria-label={t("inspector.voice.typeLabel")} value={voice.mode} onChange={(event) => onChange({ mode: event.target.value as VoiceMode }, "")}>
           {VOICE_MODES.map((mode) => (
             <option key={mode} value={mode}>
-              {VOICE_MODE_LABELS[mode]}
+              {t(`inspector.voice.modes.${mode}`)}
             </option>
           ))}
         </select>
@@ -1757,46 +1791,46 @@ function VoiceUnit({ voice, onChange }: { voice: VoiceFx; onChange: (patch: Part
       {carrierMode ? (
         <>
           <label className="flex items-center gap-2 text-[11px] text-slate-400">
-            <span className="w-16 shrink-0">Notes</span>
+            <span className="w-16 shrink-0">{t("inspector.voice.notes")}</span>
             <select
               className={fieldClass}
-              aria-label="Where the robot voice's notes come from"
+              aria-label={t("inspector.voice.notesLabel")}
               value={voice.carrier}
               onChange={(event) => onChange({ carrier: event.target.value as VoiceFx["carrier"] }, "")}
             >
-              <option value="follow">Follow the singing, snapped to semitones</option>
-              <option value="note">Hold one note (monotone)</option>
+              <option value="follow">{t("inspector.voice.follow")}</option>
+              <option value="note">{t("inspector.voice.hold")}</option>
             </select>
           </label>
           {voice.carrier === "follow" ? (
-            <Slider label="Transpose" value={voice.semitones} min={-24} max={24} step={1} defaultValue={0} format={semis} onChange={(semitones) => onChange({ semitones }, "vx-st")} />
+            <Slider label={t("inspector.voice.transpose")} value={voice.semitones} min={-24} max={24} step={1} defaultValue={0} format={semis} onChange={(semitones) => onChange({ semitones }, "vx-st")} />
           ) : (
-            <Slider label="Note" value={voice.note} min={24} max={84} step={1} defaultValue={48} format={noteName} onChange={(note) => onChange({ note }, "vx-n")} />
+            <Slider label={t("inspector.voice.note")} value={voice.note} min={24} max={84} step={1} defaultValue={48} format={noteName} onChange={(note) => onChange({ note }, "vx-n")} />
           )}
           <label className="flex items-center gap-2 text-[11px] text-slate-400">
-            <span className="w-16 shrink-0">Wave</span>
-            <select className={fieldClass} aria-label="Robot voice wave" value={voice.wave} onChange={(event) => onChange({ wave: event.target.value as VoiceFx["wave"] }, "")}>
-              <option value="saw">Saw (bright, classic)</option>
-              <option value="square">Square (hollow, 8-bit)</option>
+            <span className="w-16 shrink-0">{t("inspector.voice.wave")}</span>
+            <select className={fieldClass} aria-label={t("inspector.voice.waveLabel")} value={voice.wave} onChange={(event) => onChange({ wave: event.target.value as VoiceFx["wave"] }, "")}>
+              <option value="saw">{t("inspector.voice.saw")}</option>
+              <option value="square">{t("inspector.voice.square")}</option>
             </select>
           </label>
           <p className="text-[11px] leading-snug text-slate-400">
-            Hold keys on a MIDI keyboard while this track plays to choose the notes yourself, chords included. Exports use the setting above.
+            {t("inspector.voice.keysHint")}
           </p>
         </>
       ) : null}
       {voice.mode === "pitch" ? (
-        <Slider label="Shift" value={voice.semitones} min={-24} max={24} step={1} defaultValue={12} format={semis} onChange={(semitones) => onChange({ semitones }, "vx-st")} />
+        <Slider label={t("inspector.voice.shift")} value={voice.semitones} min={-24} max={24} step={1} defaultValue={12} format={semis} onChange={(semitones) => onChange({ semitones }, "vx-st")} />
       ) : null}
       {voice.mode === "robot" ? (
-        <Slider label="Rate" value={voice.rate} min={5} max={400} step={1} defaultValue={50} format={(v) => `${Math.round(v)} Hz`} onChange={(rate) => onChange({ rate }, "vx-r")} />
+        <Slider label={t("inspector.voice.rate")} value={voice.rate} min={5} max={400} step={1} defaultValue={50} format={(v) => `${Math.round(v)} Hz`} onChange={(rate) => onChange({ rate }, "vx-r")} />
       ) : null}
       {voice.mode === "distort" ? (
-        <Slider label="Drive" value={voice.drive} min={0} max={1} step={0.01} defaultValue={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(drive) => onChange({ drive }, "vx-d")} />
+        <Slider label={t("inspector.fx.drive")} value={voice.drive} min={0} max={1} step={0.01} defaultValue={0.6} format={(v) => `${Math.round(v * 100)}%`} onChange={(drive) => onChange({ drive }, "vx-d")} />
       ) : null}
-      <Slider label="Mix" value={voice.mix} min={0} max={1} step={0.01} defaultValue={1} format={(v) => `${Math.round(v * 100)}%`} onChange={(mix) => onChange({ mix }, "vx-m")} />
+      <Slider label={t("inspector.fx.mix")} value={voice.mix} min={0} max={1} step={0.01} defaultValue={1} format={(v) => `${Math.round(v * 100)}%`} onChange={(mix) => onChange({ mix }, "vx-m")} />
       {voice.mode === "vocoder" || voice.mode === "synth" ? (
-        <p className="text-[11px] leading-snug text-slate-400">Works best on a solo voice; on a full mix it follows whichever note is loudest.</p>
+        <p className="text-[11px] leading-snug text-slate-400">{t("inspector.voice.soloHint")}</p>
       ) : null}
     </div>
   );
@@ -1813,17 +1847,18 @@ function InstrumentControls({
   onPatch: (patch: Patch, key: string) => void;
   onPreview: (pitch: number) => void;
 }) {
+  const { t } = useI18n();
   const [editing, setEditing] = useState(false);
   const patch = track.synth.patch;
   const presets = [...FACTORY_PRESETS, ...(editing ? [] : loadUserPresetsSafe())];
   return (
     <>
       <label className="flex items-center gap-2 text-[11px] text-slate-400">
-        <span className="w-16 shrink-0">Sound</span>
+        <span className="w-16 shrink-0">{t("inspector.instrument.sound")}</span>
         <select
           className={fieldClass}
           value={presets.some((p) => p.name === patch.name) ? patch.name : ""}
-          aria-label="Sound preset"
+          aria-label={t("inspector.instrument.soundPreset")}
           onChange={(event) => {
             const found = presets.find((p) => p.name === event.target.value);
             if (found) {
@@ -1832,7 +1867,7 @@ function InstrumentControls({
             }
           }}
         >
-          {presets.some((p) => p.name === patch.name) ? null : <option value="">{patch.name} (edited)</option>}
+          {presets.some((p) => p.name === patch.name) ? null : <option value="">{t("inspector.instrument.edited", { name: patch.name })}</option>}
           {presets.map((p, i) => (
             <option key={`${i}-${p.name}`} value={p.name}>
               {p.name}
@@ -1841,17 +1876,17 @@ function InstrumentControls({
         </select>
       </label>
       <FreqSlider
-        label="Brightness"
+        label={t("inspector.instrument.brightness")}
         value={patch.filter.cutoff}
         min={60}
         max={18000}
         fallback={3200}
         onChange={(cutoff) => onPatch({ ...patch, filter: { ...patch.filter, cutoff } }, "cut")}
       />
-      <Slider label="Attack" value={patch.ampEnv.attack} min={0.001} max={2} step={0.001} defaultValue={0.01} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(attack) => onPatch({ ...patch, ampEnv: { ...patch.ampEnv, attack } }, "a")} />
-      <Slider label="Release" value={patch.ampEnv.release} min={0.005} max={4} step={0.005} defaultValue={0.2} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(release) => onPatch({ ...patch, ampEnv: { ...patch.ampEnv, release } }, "r")} />
+      <Slider label={t("inspector.fx.attack")} value={patch.ampEnv.attack} min={0.001} max={2} step={0.001} defaultValue={0.01} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(attack) => onPatch({ ...patch, ampEnv: { ...patch.ampEnv, attack } }, "a")} />
+      <Slider label={t("inspector.fx.release")} value={patch.ampEnv.release} min={0.005} max={4} step={0.005} defaultValue={0.2} format={(v) => `${Math.round(v * 1000)} ms`} onChange={(release) => onPatch({ ...patch, ampEnv: { ...patch.ampEnv, release } }, "r")} />
       <ActionButton variant="primary" className="w-full" onClick={() => setEditing(true)}>
-        Edit sound: oscillators, filter, LFOs, modulation…
+        {t("inspector.instrument.editSound")}
       </ActionButton>
       {editing ? (
         <SynthEditor
@@ -1904,6 +1939,7 @@ function FreqSlider({
 
 /** Goniometer: mid on the vertical axis, side on the horizontal, plus a correlation bar. */
 function PhaseScope({ getScope }: { getScope: () => { left: Float32Array; right: Float32Array } | null }) {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1976,20 +2012,20 @@ function PhaseScope({ getScope }: { getScope: () => { left: Float32Array; right:
         className="rounded-lg bg-slate-950"
         style={{ width: 132, height: 146 }}
         role="img"
-        aria-label="Stereo phase scope and correlation meter"
+        aria-label={t("inspector.phase.label")}
       />
       <dl className="space-y-1 text-[10px] text-slate-400">
         <div>
-          <dt className="font-semibold text-slate-300">Bar</dt>
-          <dd>−1 · 0 · +1 correlation</dd>
+          <dt className="font-semibold text-slate-300">{t("inspector.phase.bar")}</dt>
+          <dd>{t("inspector.phase.barText")}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-emerald-300">Green</dt>
-          <dd>in phase</dd>
+          <dt className="font-semibold text-emerald-300">{t("inspector.phase.green")}</dt>
+          <dd>{t("inspector.phase.inPhase")}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-rose-300">Red</dt>
-          <dd>out of phase</dd>
+          <dt className="font-semibold text-rose-300">{t("inspector.phase.red")}</dt>
+          <dd>{t("inspector.phase.outOfPhase")}</dd>
         </div>
       </dl>
     </div>
@@ -2043,6 +2079,7 @@ function EqDisplay({
   getSpectrum: (trackId: string) => Float32Array | null;
   getResponse: (trackId: string, freqs: Float32Array<ArrayBuffer>) => Float32Array | null;
 }) {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const source = useRef({ getSpectrum, getResponse });
   useEffect(() => {
@@ -2058,6 +2095,7 @@ function EqDisplay({
     let frame = 0;
     let tick = 0;
     let response: Float32Array | null = null;
+    const pressPlay = t("inspector.eq.pressPlay");
     const xOf = (hz: number) => (Math.log10(hz / 20) / 3) * EQ_W;
     const draw = () => {
       // The curve is re-read a few times a second so slider moves show promptly.
@@ -2098,7 +2136,7 @@ function EqDisplay({
         ctx.fillStyle = "#94a3b8";
         ctx.font = "11px ui-sans-serif, system-ui, sans-serif";
         ctx.textBaseline = "middle";
-        ctx.fillText("Press play to see the spectrum and EQ curve", 10, EQ_H / 2 - 12);
+        ctx.fillText(pressPlay, 10, EQ_H / 2 - 12);
       }
       ctx.fillStyle = "#94a3b8";
       ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -2110,14 +2148,14 @@ function EqDisplay({
     };
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
-  }, [trackId, signature]);
+  }, [trackId, signature, t]);
   return (
     <canvas
       ref={canvasRef}
       className="block w-full rounded-lg"
       style={{ aspectRatio: `${EQ_W} / ${EQ_H}` }}
       role="img"
-      aria-label="Track spectrum with the equaliser curve. The centre line is 0 dB; the curve spans plus and minus 15 dB."
+      aria-label={t("inspector.eq.label")}
     />
   );
 }
@@ -2132,6 +2170,7 @@ function WamSection({
   onLoad: (wam: Track["wam"]) => void;
   onOpen: () => void;
 }) {
+  const { t } = useI18n();
   const allowed = useSyncExternalStore(wamConsent.subscribe, wamConsent.getSnapshot, wamConsent.getServerSnapshot);
   const [catalogue, setCatalogue] = useState<WamCatalogueEntry[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -2143,22 +2182,20 @@ function WamSection({
     let cancelled = false;
     loadWamCatalogue()
       .then((items) => !cancelled && setCatalogue(items.filter((item) => !item.instrument)))
-      .catch((err: unknown) => !cancelled && setFailure(err instanceof Error ? err.message : "The plugin catalogue could not be loaded."));
+      .catch((err: unknown) => !cancelled && setFailure(err instanceof Error ? err.message : t("inspector.wam.catalogueFailed")));
     return () => {
       cancelled = true;
     };
-  }, [allowed]);
+  }, [allowed, t]);
 
   if (!allowed) {
     return (
-      <PanelSection title="In-browser plugin" hint="Web Audio Modules: effects that run live in the browser, loaded from the internet.">
+      <PanelSection title={t("inspector.wam.title")} help="track-effects-and-buses" hint={t("inspector.wam.hintOff")}>
         <p className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-100">
-          This is the one part of Music Suite that reaches the internet. A plugin is someone else&apos;s code: it is downloaded
-          when you load it and runs inside this page, where it can read this session. Your audio is still processed on this
-          machine. Only load plugins you trust.
+          {t("inspector.wam.warning")}
         </p>
         <ActionButton className="w-full" onClick={() => wamConsent.set(true)}>
-          Allow internet plugins in this browser
+          {t("inspector.wam.allow")}
         </ActionButton>
       </PanelSection>
     );
@@ -2167,28 +2204,29 @@ function WamSection({
   const picked = catalogue?.find((item) => item.url === choice);
   return (
     <PanelSection
-      title="In-browser plugin"
-      hint="Runs live after this track's effects and is included in exports when the plugin supports it."
+      title={t("inspector.wam.title")}
+      help="track-effects-and-buses"
+      hint={t("inspector.wam.hintOn")}
     >
       {current ? (
         <>
           <p className="truncate rounded-lg bg-slate-900 px-2 py-1.5 text-[11px] text-slate-200" title={current.url}>
-            Loaded: <strong>{current.name}</strong>
+            {t("inspector.wam.loaded")} <strong>{current.name}</strong>
           </p>
           <div className="grid grid-cols-2 gap-2">
             <ActionButton variant="primary" onClick={onOpen}>
-              Open controls
+              {t("inspector.wam.open")}
             </ActionButton>
             <ActionButton variant="danger" onClick={() => onLoad(undefined)}>
-              Remove
+              {t("inspector.wam.remove")}
             </ActionButton>
           </div>
         </>
       ) : (
         <>
           {failure ? <p className="text-[11px] text-rose-300" role="alert">{failure}</p> : null}
-          <select className={fieldClass} aria-label="Community plugin" value={choice} onChange={(event) => setChoice(event.target.value)}>
-            <option value="">{catalogue ? "Choose a community plugin…" : failure ? "Catalogue unavailable" : "Loading the catalogue…"}</option>
+          <select className={fieldClass} aria-label={t("inspector.wam.label")} value={choice} onChange={(event) => setChoice(event.target.value)}>
+            <option value="">{catalogue ? t("inspector.wam.choose") : failure ? t("inspector.wam.unavailable") : t("inspector.wam.loading")}</option>
             {(catalogue ?? []).map((item) => (
               <option key={item.url} value={item.url}>
                 {item.name}
@@ -2198,12 +2236,12 @@ function WamSection({
           </select>
           {picked?.description ? <p className="text-[11px] text-slate-400">{picked.description}</p> : null}
           <ActionButton className="w-full" disabled={!picked} onClick={() => picked && onLoad({ url: picked.url, name: picked.name })}>
-            Load plugin
+            {t("inspector.wam.load")}
           </ActionButton>
           <input
             className={fieldClass}
-            placeholder="…or paste a plugin address (https://…/index.js)"
-            aria-label="Plugin address"
+            placeholder={t("inspector.wam.paste")}
+            aria-label={t("inspector.wam.address")}
             value={custom}
             onChange={(event) => setCustom(event.target.value.trim())}
           />
@@ -2211,9 +2249,9 @@ function WamSection({
             <ActionButton
               className="w-full"
               disabled={!isAllowedWamUrl(custom)}
-              onClick={() => onLoad({ url: custom, name: new URL(custom).pathname.split("/").filter(Boolean).slice(-2, -1)[0] ?? "Plugin" })}
+              onClick={() => onLoad({ url: custom, name: new URL(custom).pathname.split("/").filter(Boolean).slice(-2, -1)[0] ?? t("inspector.wam.plugin") })}
             >
-              {isAllowedWamUrl(custom) ? "Load from this address" : "The address must start with https://"}
+              {isAllowedWamUrl(custom) ? t("inspector.wam.fromAddress") : t("inspector.wam.httpsOnly")}
             </ActionButton>
           ) : null}
         </>
@@ -2223,7 +2261,7 @@ function WamSection({
         className="h-6 text-left text-[11px] text-slate-400 underline-offset-2 hover:text-slate-200 hover:underline"
         onClick={() => wamConsent.set(false)}
       >
-        Switch internet plugins off again
+        {t("inspector.wam.off")}
       </button>
     </PanelSection>
   );

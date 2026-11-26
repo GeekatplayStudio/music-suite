@@ -7,6 +7,7 @@ import { ActionButton, PanelSection, fieldClass } from "@/components/editor/cont
 import { editorApi } from "@/lib/editor/api";
 import { SOUND_FILE_EXTENSION, exportSound, loadFavourites, readSoundFile, toggleFavourite } from "@/lib/editor/sound-file";
 import type { InstrumentOffer, PluginInfo, PluginSound, Track } from "@/lib/editor/types";
+import { useI18n } from "@/lib/i18n";
 
 type Check = { status: "idle" } | { status: "checking" } | { status: "error"; message: string };
 
@@ -61,6 +62,7 @@ export function PluginInstrumentSection({
   onRender: () => void;
   onRefreshPlugins: () => void;
 }) {
+  const { t } = useI18n();
   const [check, setCheck] = useState<Check>({ status: "idle" });
   const [windowPlaying, setWindowPlaying] = useState(false);
   // A new window starts silent.
@@ -93,7 +95,7 @@ export function PluginInstrumentSection({
       })
       .catch((err: unknown) => {
         if (request.current !== ticket) return;
-        setCheck({ status: "error", message: err instanceof Error ? err.message : "The plugin could not be loaded." });
+        setCheck({ status: "error", message: err instanceof Error ? err.message : t("synth.plugin.loadFailed") });
         // A plugin found to be an effect now carries that flag, so it drops out of this list.
         onRefreshPlugins();
       });
@@ -101,28 +103,26 @@ export function PluginInstrumentSection({
 
   if (!available) {
     return (
-      <PanelSection title="Plugin instrument" hint="Plays this clip through a VST3 or Audio Unit instrument such as Surge XT.">
-        <p className="text-[11px] text-slate-400">
-          Plugin hosting is not installed. Run the installer again with the editor extras to use instruments such as Surge XT.
-        </p>
+      <PanelSection title={t("synth.plugin.title")} hint={t("synth.plugin.hintShort")}>
+        <p className="text-[11px] text-slate-400">{t("synth.plugin.notInstalled")}</p>
       </PanelSection>
     );
   }
 
   return (
     <PanelSection
-      title="Plugin instrument"
-      hint="Plays this clip's notes through an installed VST3 or Audio Unit instrument, in a separate process, and puts the sound on a new audio track."
+      title={t("synth.plugin.title")}
+      hint={t("synth.plugin.hint")}
     >
       <select
         className={fieldClass}
-        aria-label="Plugin instrument"
+        aria-label={t("synth.plugin.title")}
         value={current?.id ?? ""}
         disabled={check.status === "checking" || session !== "none"}
         onChange={(event) => choose(event.target.value)}
       >
-        <option value="">{candidates.length ? "None: the built-in synth plays" : "No plugins found"}</option>
-        {current && !candidates.some((plugin) => plugin.id === current.id) ? <option value={current.id}>{current.name} (not found)</option> : null}
+        <option value="">{candidates.length ? t("synth.plugin.none") : t("synth.plugin.noneFound")}</option>
+        {current && !candidates.some((plugin) => plugin.id === current.id) ? <option value={current.id}>{t("synth.plugin.notFound", { name: current.name })}</option> : null}
         {candidates.map((plugin) => (
           <option key={plugin.id} value={plugin.id}>
             {plugin.name} ({plugin.format.toUpperCase()})
@@ -131,7 +131,7 @@ export function PluginInstrumentSection({
       </select>
       {check.status === "checking" ? (
         <p className="flex items-center gap-1.5 text-[11px] text-slate-400">
-          <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> Loading the plugin to check it is an instrument…
+          <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> {t("synth.plugin.checking")}
         </p>
       ) : null}
       {check.status === "error" ? (
@@ -144,61 +144,61 @@ export function PluginInstrumentSection({
           <SoundBrowser key={current.id} pluginId={current.id} current={current.soundName} onPick={onPickSound} />
           <PluginSoundFiles
             plugin={current.name}
-            sound={current.state ? { name: current.soundName ?? `${current.name} sound`, state: current.state } : null}
+            sound={current.state ? { name: current.soundName ?? t("synth.plugin.soundOf", { name: current.name }), state: current.state } : null}
             onImport={onImportSound}
           />
           <div className="grid grid-cols-2 gap-2">
             <ActionButton
               disabled={!hasNotes || playing}
-              title={hasNotes ? "Loops this clip through the plugin on this computer's speakers" : "Add notes to the clip first"}
+              title={hasNotes ? t("synth.plugin.playTitle") : t("synth.plugin.addNotesFirst")}
               onClick={() => {
                 if (loopable) setWindowPlaying(true);
                 onPlay();
               }}
             >
-              <Play className="h-3.5 w-3.5" aria-hidden /> Play
+              <Play className="h-3.5 w-3.5" aria-hidden /> {t("synth.plugin.play")}
             </ActionButton>
             <ActionButton
               disabled={!playing && session !== "live"}
-              title={session === "live" ? "Turns the plugin off" : "Stops playing"}
+              title={session === "live" ? t("synth.plugin.stopOff") : t("synth.plugin.stopPlaying")}
               onClick={() => {
                 setWindowPlaying(false);
                 onStop();
               }}
             >
-              <Square className="h-3.5 w-3.5" aria-hidden /> Stop
+              <Square className="h-3.5 w-3.5" aria-hidden /> {t("synth.plugin.stop")}
             </ActionButton>
           </div>
           <ActionButton
             className="w-full"
             disabled={session !== "none"}
-            title="Starts the plugin without the loop, so your MIDI keyboard plays it. Record as usual to capture the notes."
+            title={t("synth.plugin.liveTitle")}
             onClick={onLive}
           >
-            <Piano className="h-3.5 w-3.5" aria-hidden /> Play it from your MIDI keyboard
+            <Piano className="h-3.5 w-3.5" aria-hidden /> {t("synth.plugin.live")}
           </ActionButton>
           <p className="text-[11px] leading-snug text-slate-400" role="status">
             {session === "listening" || loopable
-              ? `${current.name} is on: a connected MIDI keyboard plays it. Press record to capture what you play as notes. `
+              ? t("synth.plugin.isOn", { name: current.name })
               : ""}
-            {session === "live" && !playing ? "Stop turns it off." : ""}
+            {session === "live" && !playing ? t("synth.plugin.stopTurnsOff") : ""}
             {!hasNotes
-              ? "Add notes to this clip to hear it through the plugin."
+              ? t("synth.plugin.addNotes")
               : session === "starting"
-                ? `Starting ${current.name}…`
+                ? t("synth.plugin.starting", { name: current.name })
                 : playing
-                  ? "Playing this clip in a loop through your speakers. Pick sounds to hear each one."
+                  ? t("synth.plugin.looping")
                   : session === "live"
                     ? ""
-                    : "Play loops this clip through the plugin, so each sound you pick is heard straight away."}
+                    : t("synth.plugin.idle")}
           </p>
           {session === "window" ? (
             <>
               <p className="rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-2 py-1.5 text-[11px] leading-snug text-cyan-100" role="status">
-                {current.name}&apos;s window is open on this computer (it may be behind this one). To hear the sound, press Play above to loop this clip, or click the piano at the bottom of Surge XT&apos;s window. Changes made there are kept.
+                {t("synth.plugin.windowOpen", { name: current.name })}
               </p>
               <ActionButton variant="primary" className="w-full" onClick={onCloseWindow}>
-                Keep this sound and close the window
+                {t("synth.plugin.keepClose")}
               </ActionButton>
             </>
           ) : (
@@ -208,16 +208,16 @@ export function PluginInstrumentSection({
               variant="primary"
               title={
                 session !== "none"
-                  ? "Press Stop first"
-                  : "The real instrument: all of its controls, displays, modulation and its own patch browser"
+                  ? t("synth.plugin.stopFirst")
+                  : t("synth.plugin.fullTitle")
               }
               onClick={onOpenWindow}
             >
-              Open {current.name}&apos;s full interface
+              {t("synth.plugin.openFull", { name: current.name })}
             </ActionButton>
           )}
           <ActionButton variant="primary" className="w-full" disabled={busy} onClick={onRender}>
-            Render this clip with {current.name}
+            {t("synth.plugin.render", { name: current.name })}
           </ActionButton>
         </>
       ) : null}
@@ -239,6 +239,7 @@ export function SoundBrowser({
   /** A longer list, for pages with room. */
   tall?: boolean;
 }) {
+  const { t, tp } = useI18n();
   const [sounds, setSounds] = useState<PluginSound[] | null>(null);
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState("");
@@ -263,7 +264,7 @@ export function SoundBrowser({
   });
   const groups = new Map<string, PluginSound[]>();
   const starred = shown.filter((sound) => favourites.includes(sound.id));
-  if (starred.length) groups.set("★ Favourites", starred);
+  if (starred.length) groups.set(t("synth.browser.favourites"), starred);
   for (const sound of shown.slice(0, 600)) {
     const key = sound.library === "Factory" ? sound.category : `${sound.library}: ${sound.category}`;
     groups.set(key, [...(groups.get(key) ?? []), sound]);
@@ -272,17 +273,17 @@ export function SoundBrowser({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between text-[11px] text-slate-400">
-        <span>Sound</span>
+        <span>{t("synth.browser.sound")}</span>
         <span className="truncate pl-2 text-slate-200" title={current}>
-          {current ?? "Plugin default"}
+          {current ?? t("synth.browser.pluginDefault")}
         </span>
       </div>
       <div className="flex gap-1.5">
         <input
           type="search"
           className={fieldClass}
-          placeholder={`Search ${sounds.length} sounds: bass, pad, keys…`}
-          aria-label="Search sounds"
+          placeholder={t("synth.browser.search", { n: sounds.length })}
+          aria-label={t("synth.browser.searchLabel")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -290,8 +291,8 @@ export function SoundBrowser({
           type="button"
           disabled={!picked}
           aria-pressed={isFavourite}
-          aria-label={isFavourite ? "Remove from favourites" : "Add to favourites"}
-          title={picked ? (isFavourite ? "Remove from favourites" : "Keep this sound at the top of the list") : "Pick a sound first"}
+          aria-label={isFavourite ? t("synth.browser.removeFav") : t("synth.browser.addFav")}
+          title={picked ? (isFavourite ? t("synth.browser.removeFav") : t("synth.browser.keepTop")) : t("synth.browser.pickFirst")}
           onClick={() => setFavourites(toggleFavourite(pluginId, picked))}
           className="inline-flex h-8 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:pointer-events-none disabled:opacity-40"
         >
@@ -301,7 +302,7 @@ export function SoundBrowser({
       <select
         className={`${fieldClass} ${tall ? "h-[min(60vh,34rem)] text-sm" : "h-36"}`}
         size={tall ? 20 : 8}
-        aria-label="Sounds"
+        aria-label={t("synth.browser.list")}
         value={picked}
         onChange={(event) => {
           const sound = sounds.find((item) => item.id === event.target.value);
@@ -321,8 +322,8 @@ export function SoundBrowser({
         ))}
       </select>
       <p className="text-[11px] text-slate-500">
-        {shown.length > 600 ? `Showing 600 of ${shown.length}: search to narrow down.` : `${shown.length} sounds.`} Use the arrow keys to step
-        through them while playing. The star keeps a sound at the top.
+        {shown.length > 600 ? t("synth.browser.showing", { n: shown.length }) : tp("synth.browser.count", shown.length)}{" "}
+        {t("synth.browser.keysHint")}
       </p>
     </div>
   );
@@ -338,6 +339,7 @@ export function PluginSoundFiles({
   sound: { name: string; state: string } | null;
   onImport: (sound: { name: string; state: string }) => void;
 }) {
+  const { t } = useI18n();
   const fileRef = useRef<HTMLInputElement>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const open = async (file: File | undefined) => {
@@ -345,11 +347,11 @@ export function PluginSoundFiles({
     setFailure(null);
     try {
       const read = await readSoundFile(file);
-      if (read.kind !== "plugin") throw new Error("That is a Music Suite synth sound. Open it with Import in the synth's sound editor.");
-      if (read.plugin !== plugin) throw new Error(`That sound is for ${read.plugin}, not ${plugin}.`);
+      if (read.kind !== "plugin") throw new Error(t("synth.files.isSynth"));
+      if (read.plugin !== plugin) throw new Error(t("synth.files.otherPlugin", { other: read.plugin, plugin }));
       onImport({ name: read.name, state: read.state });
     } catch (err) {
-      setFailure(err instanceof Error ? err.message : "That file could not be opened.");
+      setFailure(err instanceof Error ? err.message : t("synth.files.openFailed"));
     }
   };
   return (
@@ -357,13 +359,13 @@ export function PluginSoundFiles({
       <div className="grid grid-cols-2 gap-2">
         <ActionButton
           disabled={!sound}
-          title={sound ? "Save this sound as a file, to back it up or share it" : "Pick or shape a sound first"}
+          title={sound ? t("synth.files.exportTitle") : t("synth.files.shapeFirst")}
           onClick={() => sound && exportSound({ kind: "plugin", plugin, name: sound.name, state: sound.state })}
         >
-          <Download className="h-3.5 w-3.5" aria-hidden /> Export sound
+          <Download className="h-3.5 w-3.5" aria-hidden /> {t("synth.files.exportSound")}
         </ActionButton>
-        <ActionButton onClick={() => fileRef.current?.click()} title="Open a sound file saved with Export">
-          <Upload className="h-3.5 w-3.5" aria-hidden /> Import sound
+        <ActionButton onClick={() => fileRef.current?.click()} title={t("synth.files.importTitle")}>
+          <Upload className="h-3.5 w-3.5" aria-hidden /> {t("synth.files.importSound")}
         </ActionButton>
       </div>
       <input
@@ -371,7 +373,7 @@ export function PluginSoundFiles({
         type="file"
         accept={`${SOUND_FILE_EXTENSION},application/json`}
         className="hidden"
-        aria-label="Plugin sound file to import"
+        aria-label={t("synth.files.fileLabel")}
         onChange={(event) => {
           void open(event.target.files?.[0]);
           event.target.value = "";
@@ -388,6 +390,7 @@ export function PluginSoundFiles({
 
 /** One-click download of free instrument plugins that are not installed yet. */
 function InstrumentInstaller({ onInstalled }: { onInstalled: () => void }) {
+  const { t } = useI18n();
   const [offers, setOffers] = useState<InstrumentOffer[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const running = offers?.some((offer) => offer.running) ?? false;
@@ -428,7 +431,7 @@ function InstrumentInstaller({ onInstalled }: { onInstalled: () => void }) {
     editorApi
       .installInstrument(id)
       .then((offer) => setOffers((prev) => (prev ?? []).map((item) => (item.id === id ? { ...item, ...offer, running: true } : item))))
-      .catch((err: unknown) => setFailure(err instanceof Error ? err.message : "The install could not start."));
+      .catch((err: unknown) => setFailure(err instanceof Error ? err.message : t("synth.installer.startFailed")));
   };
 
   const missing = (offers ?? []).filter((offer) => offer.supported && (!offer.installed || offer.running));
@@ -447,7 +450,7 @@ function InstrumentInstaller({ onInstalled }: { onInstalled: () => void }) {
           </p>
           {offer.running ? (
             <>
-              <div className="h-1.5 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-valuenow={offer.percent} aria-valuemin={0} aria-valuemax={100} aria-label={`Installing ${offer.name}`}>
+              <div className="h-1.5 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-valuenow={offer.percent} aria-valuemin={0} aria-valuemax={100} aria-label={t("synth.installer.installing", { name: offer.name })}>
                 <div className="h-full bg-cyan-400 transition-[width]" style={{ width: `${offer.percent}%` }} />
               </div>
               <p className="text-[11px] text-slate-400">{offer.detail}</p>
@@ -460,12 +463,10 @@ function InstrumentInstaller({ onInstalled }: { onInstalled: () => void }) {
                 </p>
               ) : null}
               <p className="text-[11px] leading-snug text-slate-400">
-                Downloads {megabytes(offer.download_bytes)} from the {offer.name} project&apos;s official releases on GitHub, checks it
-                against a fixed fingerprint and installs it for your user only. Free software ({offer.license}); it runs on this
-                computer when you use it.
+                {t("synth.installer.about", { size: megabytes(offer.download_bytes), name: offer.name, license: offer.license })}
               </p>
               <ActionButton className="w-full" onClick={() => install(offer.id)}>
-                Install {offer.name} (free)
+                {t("synth.installer.install", { name: offer.name })}
               </ActionButton>
             </>
           )}

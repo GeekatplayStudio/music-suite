@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CheckCircle2, CircleAlert, Download, ExternalLink, Globe, KeyRound, Loader2, Power } from "lucide-react";
 
 import { generationApi, type GenerationSettings, type Overview, type ProviderInfo } from "@/lib/generation/api";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const button =
@@ -80,11 +81,9 @@ function NumberSetting({ label, help, value, min, max, step, unit, disabled, onC
   );
 }
 
-const KEY_SOURCES: Record<string, string> = {
-  environment: "from an environment variable",
-  keychain: "in this computer's keychain",
-  file: "in a private file on this computer (no keychain was available)"
-};
+const KEY_SOURCES = ["environment", "keychain", "file"] as const;
+const isKeySource = (value: string | null | undefined): value is (typeof KEY_SOURCES)[number] =>
+  (KEY_SOURCES as readonly (string | null | undefined)[]).includes(value);
 
 function OnlineService({
   provider,
@@ -95,6 +94,7 @@ function OnlineService({
   working: boolean;
   run: (action: () => Promise<unknown>) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState("");
   const key = provider.status.key;
   const fromEnvironment = key?.source === "environment";
@@ -109,23 +109,22 @@ function OnlineService({
             rel="noreferrer noopener"
             className="inline-flex items-center gap-1 text-xs text-cyan-300 hover:underline"
           >
-            Terms and pricing <ExternalLink className="h-3 w-3" aria-hidden />
+            {t("studioTabs.settings.online.terms")} <ExternalLink className="h-3 w-3" aria-hidden />
           </a>
         ) : null}
       </div>
       {key?.configured ? (
         <Status ok>
-          On. Key saved {KEY_SOURCES[key.source ?? ""] ?? ""}. {provider.status.message}
+          {t("studioTabs.settings.online.on", {
+            source: isKeySource(key.source) ? t(`studioTabs.settings.keySources.${key.source}`) : "",
+            message: provider.status.message
+          })}
         </Status>
       ) : (
-        <p className="text-xs text-slate-400">
-          Off. Adding your key switches it on. Your style text and lyrics are then sent to this service when you choose it
-          as the generator; it bills your account. A clip&apos;s audio is uploaded only when you tick &ldquo;Allow uploading&rdquo; to edit
-          it with ElevenLabs.
-        </p>
+        <p className="text-xs text-slate-400">{t("studioTabs.settings.online.off")}</p>
       )}
       {fromEnvironment ? (
-        <p className="text-xs text-slate-400">To change it, edit the {key?.env} environment variable.</p>
+        <p className="text-xs text-slate-400">{t("studioTabs.settings.online.fromEnvironment", { env: key?.env ?? "" })}</p>
       ) : (
         <form
           className="flex flex-wrap gap-2"
@@ -143,12 +142,12 @@ function OnlineService({
             value={draft}
             disabled={working}
             onChange={(event) => setDraft(event.target.value)}
-            aria-label={`${provider.name} API key`}
-            placeholder={key?.configured ? "Paste a new key to replace it" : "Paste your API key"}
+            aria-label={t("studioTabs.settings.online.keyLabel", { name: provider.name })}
+            placeholder={key?.configured ? t("studioTabs.settings.online.pasteNew") : t("studioTabs.settings.online.paste")}
             className={cn(input, "min-w-0 flex-1")}
           />
           <button type="submit" className={primary} disabled={working || draft.trim().length < 16}>
-            <KeyRound className="h-4 w-4" aria-hidden /> {key?.configured ? "Replace key" : "Save key"}
+            <KeyRound className="h-4 w-4" aria-hidden /> {key?.configured ? t("studioTabs.settings.online.replace") : t("studioTabs.settings.online.save")}
           </button>
           {key?.configured ? (
             <button
@@ -157,7 +156,7 @@ function OnlineService({
               disabled={working}
               onClick={() => void run(() => generationApi.removeKey(provider.id))}
             >
-              Remove key
+              {t("studioTabs.settings.online.remove")}
             </button>
           ) : null}
         </form>
@@ -167,6 +166,8 @@ function OnlineService({
 }
 
 export function SettingsPanel({ overview, onChanged }: { overview: Overview; onChanged: () => Promise<void> }) {
+  const { t, locale } = useI18n();
+  const gb = (value: number) => value.toLocaleString(locale);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const { engine, setup, writer, settings, memory_free_percent: free } = overview;
@@ -178,7 +179,7 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
       await action();
       await onChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "That did not work. Please try again.");
+      setError(err instanceof Error ? err.message : t("studioTabs.settings.failed"));
     } finally {
       setWorking(false);
     }
@@ -196,26 +197,25 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
         </p>
       ) : null}
 
-      <Card title="Local music engine" tag="On this computer">
-        <p className="text-sm text-slate-300">
-          ACE-Step 1.5 generates full songs with vocals on this computer. Nothing you write or generate leaves it.
-        </p>
+      <Card title={t("studioTabs.settings.engine.title")} tag={t("studioTabs.settings.onThisComputer")}>
+        <p className="text-sm text-slate-300">{t("studioTabs.settings.engine.intro")}</p>
         {engine.installed ? (
           <Status ok={Boolean(engine.editing_ready)}>
             {engine.editing_ready
-              ? "Editing model installed: AI edits in the Studio Editor can extract instruments, add parts and build songs around a part."
-              : "Regenerate, extend and restyle work now. Extracting an instrument, adding a part or building a song around a part needs the editing model below."}
+              ? t("studioTabs.settings.engine.editingReady")
+              : t("studioTabs.settings.engine.editingMissing")}
           </Status>
         ) : null}
         {engine.installed ? (
           <Status ok>
-            Installed{engine.running ? " and loaded" : ""}. It starts by itself when you generate and unloads after{" "}
-            {settings.idle_minutes} idle minutes.
+            {t(engine.running ? "studioTabs.settings.engine.installedLoaded" : "studioTabs.settings.engine.installed", {
+              minutes: settings.idle_minutes
+            })}
           </Status>
         ) : setup.running ? null : (
           <Status ok={false}>
-            {engine.built ? "The engine is built, but its models are missing." : "Not installed yet."} Installing downloads about{" "}
-            {setup.download_gb ?? 5.3} GB and takes a few minutes.
+            {engine.built ? t("studioTabs.settings.engine.builtNoModels") : t("studioTabs.settings.engine.notInstalled")}{" "}
+            {t("studioTabs.settings.engine.installSize", { gb: gb(setup.download_gb ?? 5.3) })}
           </Status>
         )}
         {setup.running ? (
@@ -229,11 +229,11 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(setup.percent)}
-              aria-label="Install progress"
+              aria-label={t("studioTabs.settings.engine.progress")}
             >
               <div className="h-full rounded-full bg-cyan-400 transition-[width] duration-700" style={{ width: `${setup.percent}%` }} />
             </div>
-            <p className="mt-1 text-xs text-slate-400">You can keep using Music Suite while this runs.</p>
+            <p className="mt-1 text-xs text-slate-400">{t("studioTabs.settings.engine.keepUsing")}</p>
           </div>
         ) : null}
         {setup.error && !setup.running ? (
@@ -245,7 +245,7 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
           {!engine.installed && !setup.running ? (
             <button type="button" className={primary} disabled={working} onClick={() => void run(() => generationApi.startSetup(false))}>
               <Download className="h-4 w-4" aria-hidden />
-              {setup.error ? "Try the install again" : "Install local engine"}
+              {setup.error ? t("studioTabs.settings.engine.retry") : t("studioTabs.settings.engine.install")}
             </button>
           ) : null}
           {engine.installed && !engine.quality_ready && !setup.running ? (
@@ -254,9 +254,9 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
               className={quiet}
               disabled={working}
               onClick={() => void run(() => generationApi.startSetup(false, false, true))}
-              title="A larger music model for new songs: about 25% slower and 0.6 GB more memory"
+              title={t("studioTabs.settings.engine.qualityTitle")}
             >
-              <Download className="h-4 w-4" aria-hidden /> Download high-quality model ({setup.quality_download_gb ?? 4.9} GB)
+              <Download className="h-4 w-4" aria-hidden /> {t("studioTabs.settings.engine.quality", { gb: gb(setup.quality_download_gb ?? 4.9) })}
             </button>
           ) : null}
           {engine.installed && !engine.editing_ready && !setup.running ? (
@@ -265,14 +265,14 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
               className={quiet}
               disabled={working}
               onClick={() => void run(() => generationApi.startSetup(false, true))}
-              title="Needed in the Studio Editor to extract an instrument, add a part, or build a song around a part"
+              title={t("studioTabs.settings.engine.editingTitle")}
             >
-              <Download className="h-4 w-4" aria-hidden /> Download editing model ({setup.editing_download_gb ?? 2.4} GB)
+              <Download className="h-4 w-4" aria-hidden /> {t("studioTabs.settings.engine.editing", { gb: gb(setup.editing_download_gb ?? 2.4) })}
             </button>
           ) : null}
           {engine.running ? (
             <button type="button" className={quiet} disabled={working} onClick={() => void run(() => generationApi.stopEngine())}>
-              <Power className="h-4 w-4" aria-hidden /> Unload now
+              <Power className="h-4 w-4" aria-hidden /> {t("studioTabs.settings.engine.unload")}
             </button>
           ) : null}
         </div>
@@ -286,45 +286,34 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
               className="mt-0.5 h-5 w-5 cursor-pointer accent-cyan-400"
             />
             <span>
-              Use the high-quality (XL) model for new songs
-              <span className="mt-0.5 block text-xs text-slate-400">
-                Measured here: a 2-minute song in 80 s instead of 63 s, using 5.0 GB instead of 4.4 GB. AI edits keep the
-                standard model.
-              </span>
+              {t("studioTabs.settings.engine.useQuality")}
+              <span className="mt-0.5 block text-xs text-slate-400">{t("studioTabs.settings.engine.useQualityHelp")}</span>
             </span>
           </label>
         ) : null}
-        <p className="text-xs text-slate-400">
-          Installing fetches the engine&apos;s source code from GitHub (one fixed version) and its models from Hugging Face, and
-          checks each model file against a known fingerprint. After that it works offline.
-        </p>
+        <p className="text-xs text-slate-400">{t("studioTabs.settings.engine.sources")}</p>
       </Card>
 
-      <Card title="Lyrics and style writer" tag="On this computer">
-        <p className="text-sm text-slate-300">
-          A language model running in Ollama turns an idea into a style description and lyrics.
-        </p>
+      <Card title={t("studioTabs.settings.writer.title")} tag={t("studioTabs.settings.onThisComputer")}>
+        <p className="text-sm text-slate-300">{t("studioTabs.settings.writer.intro")}</p>
         {writerReady ? (
-          <Status ok>Ready, using {writer.model}.</Status>
+          <Status ok>{t("studioTabs.settings.writer.ready", { model: writer.model })}</Status>
         ) : writer.available ? (
-          <Status ok={false}>Ollama is running, but the model “{writer.model}” is not downloaded yet (about 8 GB).</Status>
+          <Status ok={false}>{t("studioTabs.settings.writer.noModel", { model: writer.model })}</Status>
         ) : (
-          <Status ok={false}>
-            Ollama is not running. Without it, the music engine&apos;s own planner writes a simpler draft. Get Ollama from
-            ollama.com, start it, then come back here.
-          </Status>
+          <Status ok={false}>{t("studioTabs.settings.writer.noOllama")}</Status>
         )}
         <div className="flex flex-wrap items-end gap-3">
           {writer.available && writer.models.length ? (
             <label className="space-y-1.5">
-              <span className="block text-xs font-semibold text-slate-300">Model</span>
+              <span className="block text-xs font-semibold text-slate-300">{t("studioTabs.settings.writer.model")}</span>
               <select
                 value={writer.models.includes(writer.model) ? writer.model : ""}
                 disabled={working}
                 onChange={(event) => event.target.value && save({ writer_model: event.target.value })}
                 className={cn(input, "min-w-56")}
               >
-                {writer.models.includes(writer.model) ? null : <option value="">{writer.model} (not downloaded)</option>}
+                {writer.models.includes(writer.model) ? null : <option value="">{t("studioTabs.settings.writer.notDownloaded", { model: writer.model })}</option>}
                 {writer.models.map((name) => (
                   <option key={name} value={name}>
                     {name}
@@ -335,47 +324,45 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
           ) : null}
           {writer.available && !writer.model_installed && !setup.running ? (
             <button type="button" className={quiet} disabled={working} onClick={() => void run(() => generationApi.startSetup(true))}>
-              <Download className="h-4 w-4" aria-hidden /> Download {writer.model}
+              <Download className="h-4 w-4" aria-hidden /> {t("studioTabs.settings.writer.download", { model: writer.model })}
             </button>
           ) : null}
         </div>
-        <p className="text-xs text-slate-400">
-          Models much larger than 12 GB will not fit in memory next to the music engine on a 24 GB computer.
-        </p>
+        <p className="text-xs text-slate-400">{t("studioTabs.settings.writer.sizeNote")}</p>
       </Card>
 
-      <Card title="Keeping your computer responsive">
+      <Card title={t("studioTabs.settings.memory.title")}>
         <Status ok={free === null || free >= settings.min_free_percent}>
-          {free === null ? "Free memory could not be read on this system." : `${Math.round(free)}% of memory is free right now.`} One song
-          generates at a time, and the lyrics model is unloaded before music starts.
+          {free === null ? t("studioTabs.settings.memory.unknown") : t("studioTabs.settings.memory.free", { percent: Math.round(free) })}{" "}
+          {t("studioTabs.settings.memory.oneAtATime")}
         </Status>
         <div className="grid gap-4 sm:grid-cols-2">
           <NumberSetting
-            label="Do not start below"
-            help="Generation waits, then stops with a message, if less memory than this is free."
+            label={t("studioTabs.settings.memory.minLabel")}
+            help={t("studioTabs.settings.memory.minHelp")}
             value={settings.min_free_percent}
             min={5}
             max={80}
             step={5}
-            unit="% free memory"
+            unit={t("studioTabs.settings.memory.minUnit")}
             disabled={working}
             onCommit={(value) => save({ min_free_percent: Math.round(value) })}
           />
           <NumberSetting
-            label="Unload the engine after"
-            help="The engine gives its memory back when it has not been used for this long."
+            label={t("studioTabs.settings.memory.idleLabel")}
+            help={t("studioTabs.settings.memory.idleHelp")}
             value={settings.idle_minutes}
             min={1}
             max={240}
             step={1}
-            unit="idle minutes"
+            unit={t("studioTabs.settings.memory.idleUnit")}
             disabled={working}
             onCommit={(value) => save({ idle_minutes: Math.round(value) })}
           />
         </div>
       </Card>
 
-      <Card title="Loudness of new songs">
+      <Card title={t("studioTabs.settings.loudness.title")}>
         <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-200">
           <input
             type="checkbox"
@@ -385,15 +372,13 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
             className="mt-0.5 h-5 w-5 cursor-pointer accent-cyan-400"
           />
           <span>
-            Level each new song when it is imported
-            <span className="mt-0.5 block text-xs text-slate-400">
-              One gain change towards the target, never letting peaks pass −1 dBTP. The dynamics are not touched.
-            </span>
+            {t("studioTabs.settings.loudness.level")}
+            <span className="mt-0.5 block text-xs text-slate-400">{t("studioTabs.settings.loudness.levelHelp")}</span>
           </span>
         </label>
         <NumberSetting
-          label="Target loudness"
-          help="−14 LUFS suits streaming services."
+          label={t("studioTabs.settings.loudness.target")}
+          help={t("studioTabs.settings.loudness.targetHelp")}
           value={settings.target_lufs}
           min={-30}
           max={-6}
@@ -404,13 +389,10 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
         />
       </Card>
 
-      <Card title="Online services" tag="Optional">
+      <Card title={t("studioTabs.settings.services.title")} tag={t("studioTabs.settings.optional")}>
         <p className="flex items-start gap-2 text-sm text-slate-300">
           <Globe className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden />
-          <span>
-            These run on the provider&apos;s servers with your own account. Each stays off until you add its key. Keys are kept
-            on this computer and are never shown again, even here.
-          </span>
+          <span>{t("studioTabs.settings.services.intro")}</span>
         </p>
         <ul className="space-y-3">
           {online.map((provider) => (
@@ -419,7 +401,7 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
         </ul>
       </Card>
 
-      <Card title="Generators">
+      <Card title={t("studioTabs.settings.generators.title")}>
         <ul className="space-y-3">
           {local.map((provider) => (
             <li key={provider.id} className="flex items-start justify-between gap-4">
@@ -435,7 +417,7 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
                   onChange={(event) => save({ providers: { [provider.id]: event.target.checked } })}
                   className="h-5 w-5 cursor-pointer accent-cyan-400"
                 />
-                On
+                {t("studioTabs.settings.generators.on")}
               </label>
             </li>
           ))}
@@ -446,7 +428,7 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
                 <p className="text-xs text-slate-400">{planned.message}</p>
               </div>
               <span className="shrink-0 rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
-                Online service
+                {t("studioTabs.settings.generators.online")}
               </span>
             </li>
           ))}

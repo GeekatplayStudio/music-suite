@@ -1,4 +1,5 @@
 import type { Job } from "@/lib/editor/types";
+import { localizeServerFields, localizeServerText } from "@/lib/i18n/server-messages";
 
 const BASE = "/suite-api";
 
@@ -205,7 +206,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(`${BASE}${path}`, { ...init, cache: "no-store" });
   } catch {
-    throw new Error("Could not reach the Music Suite API. Restart Music Suite with its start launcher.");
+    throw new Error(localizeServerText("Could not reach the Music Suite API. Restart Music Suite with its start launcher."));
   }
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
@@ -215,9 +216,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* non-JSON error body */
     }
-    throw new Error(message);
+    throw new Error(localizeServerText(message));
   }
-  return (await res.json()) as T;
+  const body = (await res.json()) as T;
+  // History keeps the fields a song was made with, which can be sent again as they are.
+  return path.startsWith("/generation/history") ? body : localizeServerFields(body);
 }
 
 function json(body: unknown): RequestInit {

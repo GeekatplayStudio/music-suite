@@ -7,7 +7,8 @@ export const prefs = {
     amber: "Amber studio",
     violet: "Violet night",
     forest: "Forest",
-    magenta: "Magenta"
+    magenta: "Magenta",
+    light: "Light (daytime)"
   },
   note: "Saved in this browser."
 };

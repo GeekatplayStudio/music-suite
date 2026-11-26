@@ -1,5 +1,6 @@
 "use client";
 
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 interface EqualizerPanelProps {
@@ -54,6 +55,7 @@ export function EqualizerPanel({
   onExport,
   className,
 }: EqualizerPanelProps) {
+  const { t } = useI18n();
   const splinePath = solveSpline(gains, bands.length);
   const fillPath = splinePath ? `M 0 50 L ${splinePath.slice(2)} L 100 50 Z` : "";
 
@@ -61,9 +63,9 @@ export function EqualizerPanel({
     <div className={cn("space-y-4", className)}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Optional Equalizer</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t("charts.equalizer.title")}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Preview the loaded file through a manual EQ curve and export the processed result as WAV.
+            {t("charts.equalizer.intro")}
           </p>
         </div>
         <label className="inline-flex items-center gap-2 text-sm text-foreground">
@@ -73,7 +75,7 @@ export function EqualizerPanel({
             onChange={(event) => onToggle(event.target.checked)}
             className="h-4 w-4 rounded-[0.25rem] border-input"
           />
-          Enable EQ
+          {t("charts.equalizer.enable")}
         </label>
       </div>
 
@@ -149,7 +151,7 @@ export function EqualizerPanel({
           onClick={onReset}
           className="rounded-xl border border-border/70 bg-secondary px-3 py-2 text-sm font-semibold text-foreground transition hover:bg-secondary/80"
         >
-          Reset EQ
+          {t("charts.equalizer.reset")}
         </button>
         <button
           type="button"
@@ -157,7 +159,7 @@ export function EqualizerPanel({
           disabled={exporting}
           className="rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:pointer-events-none disabled:opacity-60"
         >
-          {exporting ? "Exporting EQ WAV..." : "Export EQ WAV"}
+          {exporting ? t("charts.equalizer.exporting") : t("charts.equalizer.export")}
         </button>
       </div>
     </div>

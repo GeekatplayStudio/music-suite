@@ -1,9 +1,10 @@
 "use client";
 
 import { Activity, CircleStop, Maximize2, Pause, Play, Sparkles } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 type VisualMode = "spectrum" | "orbit" | "waveform";
@@ -12,6 +13,8 @@ type SonicVisualizerProps = {
   audioSrc: string;
   filename: string;
   className?: string;
+  /** Extra header buttons, such as the pop-out button. */
+  headerExtra?: ReactNode;
 };
 
 type EnergyBands = {
@@ -62,6 +65,11 @@ function averageRange(values: Uint8Array, from: number, to: number) {
   return total / (end - from) / 255;
 }
 
+/** The window an element is shown in (it may be a popped-out window), so frames keep coming there. */
+function viewOf(element: Element | null): Window {
+  return element?.ownerDocument.defaultView ?? window;
+}
+
 function roundedRect(
   context: CanvasRenderingContext2D,
   x: number,
@@ -75,10 +83,13 @@ function roundedRect(
   context.fill();
 }
 
-export function SonicVisualizer({ audioSrc, filename, className }: SonicVisualizerProps) {
+export function SonicVisualizer({ audioSrc, filename, className, headerExtra }: SonicVisualizerProps) {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const frameRef = useRef<number | null>(null);
+  // The window that owns the pending frame: frames are cancelled where they were requested.
+  const frameViewRef = useRef<Window | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -131,7 +142,7 @@ export function SonicVisualizer({ audioSrc, filename, className }: SonicVisualiz
 
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(viewOf(canvas).devicePixelRatio || 1, 2);
     const pixelWidth = Math.max(1, Math.round(width * dpr));
     const pixelHeight = Math.max(1, Math.round(height * dpr));
     if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
@@ -312,21 +323,26 @@ export function SonicVisualizer({ audioSrc, filename, className }: SonicVisualiz
       context.globalAlpha = 1;
     }
 
-    if (playingRef.current && visibleRef.current) frameRef.current = requestAnimationFrame(drawFrame);
+    if (playingRef.current && visibleRef.current) {
+      frameViewRef.current = viewOf(canvasRef.current);
+      frameRef.current = frameViewRef.current.requestAnimationFrame(drawFrame);
+    }
   }, []);
 
   const startLoop = useCallback(() => {
-    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
-    frameRef.current = requestAnimationFrame(draw);
+    if (frameRef.current !== null) (frameViewRef.current ?? window).cancelAnimationFrame(frameRef.current);
+    frameViewRef.current = viewOf(canvasRef.current);
+    frameRef.current = frameViewRef.current.requestAnimationFrame(draw);
   }, [draw]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const observer = new IntersectionObserver(([entry]) => {
+    // Made by the canvas's own window, so it still works when the panel is popped out.
+    const observer = new ((viewOf(canvas) as Window & typeof globalThis).IntersectionObserver)(([entry]: IntersectionObserverEntry[]) => {
       visibleRef.current = entry.isIntersecting;
       if (entry.isIntersecting && playingRef.current) startLoop();
-      else if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+      else if (frameRef.current !== null) (frameViewRef.current ?? window).cancelAnimationFrame(frameRef.current);
     }, { rootMargin: "120px" });
     observer.observe(canvas);
     startLoop();
@@ -334,16 +350,19 @@ export function SonicVisualizer({ audioSrc, filename, className }: SonicVisualiz
   }, [startLoop]);
 
   useEffect(() => {
+    // The page the canvas is in: the main page, or its own window when popped out.
+    const page = canvasRef.current?.ownerDocument ?? document;
     const handleVisibility = () => {
-      visibleRef.current = !document.hidden;
-      if (!document.hidden && playingRef.current) startLoop();
+      visibleRef.current = !page.hidden;
+      if (!page.hidden && playingRef.current) startLoop();
     };
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
+    page.addEventListener("visibilitychange", handleVisibility);
+    return () => page.removeEventListener("visibilitychange", handleVisibility);
   }, [startLoop]);
 
   useEffect(() => () => {
-    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    playingRef.current = false;
+    if (frameRef.current !== null) (frameViewRef.current ?? window).cancelAnimationFrame(frameRef.current);
     sourceRef.current?.disconnect();
     analyserRef.current?.disconnect();
     void audioContextRef.current?.close();
@@ -357,14 +376,15 @@ export function SonicVisualizer({ audioSrc, filename, className }: SonicVisualiz
       if (audio.paused) await audio.play();
       else audio.pause();
     } catch (error) {
-      setAudioError(error instanceof Error ? error.message : "Unable to start visualizer playback.");
+      setAudioError(error instanceof Error ? error.message : t("charts.visualizer.cannotStart"));
     }
   };
 
   const toggleFullscreen = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    if (document.fullscreenElement) await document.exitFullscreen();
+    const page = canvas.ownerDocument;
+    if (page.fullscreenElement) await page.exitFullscreen();
     else await canvas.requestFullscreen();
   };
 
@@ -376,28 +396,29 @@ export function SonicVisualizer({ audioSrc, filename, className }: SonicVisualiz
             <Sparkles className="h-3.5 w-3.5" /> Sonic Visual AI
           </p>
           <h2 className="mt-1 truncate display-font text-xl font-semibold">{filename}</h2>
-          <p className="text-xs text-slate-400">Real-time frequency, waveform, and energy analysis</p>
+          <p className="text-xs text-slate-400">{t("charts.visualizer.subtitle")}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {(["spectrum", "orbit", "waveform"] as const).map((item) => (
             <Button key={item} size="sm" variant={mode === item ? "default" : "secondary"} onClick={() => setMode(item)}>
-              {item[0].toUpperCase() + item.slice(1)}
+              {t(`charts.visualizer.modes.${item}`)}
             </Button>
           ))}
-          <Button size="sm" variant="secondary" onClick={() => void toggleFullscreen()} title="Fullscreen visualizer">
+          <Button size="sm" variant="secondary" onClick={() => void toggleFullscreen()} title={t("charts.visualizer.fullscreen")} aria-label={t("charts.visualizer.fullscreen")}>
             <Maximize2 className="h-4 w-4" />
           </Button>
+          {headerExtra}
         </div>
       </div>
 
       <div className="relative">
-        <canvas ref={canvasRef} className="block h-[360px] w-full md:h-[480px]" aria-label="Live audio visualization" />
+        <canvas ref={canvasRef} className="block h-[360px] w-full md:h-[480px]" aria-label={t("charts.visualizer.canvas")} />
         {!isPlaying ? (
           <button
             type="button"
             onClick={() => void togglePlayback()}
             className="absolute left-1/2 top-1/2 grid h-20 w-20 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-cyan-200/40 bg-slate-950/70 text-cyan-200 shadow-[0_0_45px_rgba(34,211,238,.25)] backdrop-blur-sm transition hover:scale-105 hover:bg-cyan-400/15"
-            aria-label="Play visualizer"
+            aria-label={t("charts.visualizer.playVisualizer")}
           >
             <Play className="ml-1 h-8 w-8" />
           </button>
@@ -407,7 +428,7 @@ export function SonicVisualizer({ audioSrc, filename, className }: SonicVisualiz
       <div className="grid gap-3 border-t border-white/10 p-4 md:grid-cols-[auto_1fr_auto] md:items-center">
         <Button onClick={() => void togglePlayback()}>
           {isPlaying ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-          {isPlaying ? "Pause" : "Play"}
+          {isPlaying ? t("charts.visualizer.pause") : t("charts.visualizer.play")}
         </Button>
         <audio
           ref={audioRef}
@@ -432,21 +453,21 @@ export function SonicVisualizer({ audioSrc, filename, className }: SonicVisualiz
           onPause={() => {
             playingRef.current = false;
             setIsPlaying(false);
-            if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+            if (frameRef.current !== null) (frameViewRef.current ?? window).cancelAnimationFrame(frameRef.current);
           }}
           onEnded={() => {
             playingRef.current = false;
             setIsPlaying(false);
             setBands(EMPTY_BANDS);
           }}
-          onError={() => setAudioError("The selected audio could not be loaded.")}
+          onError={() => setAudioError(t("charts.visualizer.cannotLoad"))}
         />
         <div className="flex items-center gap-3 text-xs tabular-nums">
           <Activity className="h-4 w-4 text-cyan-300" />
-          <span className="text-slate-300">{isPlaying ? `${fps || "—"} FPS` : "Ready"}</span>
-          <span className="text-cyan-200">Bass {Math.round(bands.bass * 100)}%</span>
-          <span className="text-indigo-200">Mid {Math.round(bands.mid * 100)}%</span>
-          <span className="text-rose-200">High {Math.round(bands.high * 100)}%</span>
+          <span className="text-slate-300">{isPlaying ? `${fps || "—"} FPS` : t("charts.visualizer.ready")}</span>
+          <span className="text-cyan-200">{t("charts.visualizer.bass", { value: Math.round(bands.bass * 100) })}</span>
+          <span className="text-indigo-200">{t("charts.visualizer.mid", { value: Math.round(bands.mid * 100) })}</span>
+          <span className="text-rose-200">{t("charts.visualizer.high", { value: Math.round(bands.high * 100) })}</span>
         </div>
       </div>
       {audioError ? (

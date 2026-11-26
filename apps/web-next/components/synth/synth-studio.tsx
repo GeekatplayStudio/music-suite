@@ -12,6 +12,7 @@ import { editorApi } from "@/lib/editor/api";
 import { type MidiEvent, midiHub } from "@/lib/editor/midi";
 import { initPatch, normalizePatch, startVoice, type Patch, type Voice } from "@/lib/editor/synth";
 import type { Note, PluginInfo, PluginSound } from "@/lib/editor/types";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const quiet =
@@ -55,6 +56,7 @@ type Tab = "builtin" | "plugin";
 
 /** Design and play sounds: the suite's own synth, and installed instruments such as Surge XT. */
 export function SynthStudio() {
+  const { t } = useI18n();
   const [tab, setTab] = useState<Tab>("builtin");
   const [patch, setPatch] = useState<Patch>(loadPatch);
   const patchRef = useRef(patch);
@@ -193,13 +195,13 @@ export function SynthStudio() {
           setLooping(false);
           setPanelOpen(false);
           // Whatever was dialled in on the plugin's own panel becomes the current sound.
-          if (status.state) setSound({ name: "Edited in the full interface", state: status.state });
+          if (status.state) setSound({ name: t("synth.studio.editedFull"), state: status.state });
           if (status.error) setError(status.error);
         })
         .catch(() => undefined);
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [audition]);
+  }, [audition, t]);
 
   /** Start the instrument: with the looping phrase, or silent and ready for the piano. */
   const start = async (loop: boolean, panel = false) => {
@@ -222,7 +224,7 @@ export function SynthStudio() {
       setLooping(loop);
       setPanelOpen(panel);
     } catch (err) {
-      setError(message(err, "The instrument could not start."));
+      setError(message(err, t("synth.studio.errors.start")));
     }
     setStarting(false);
   };
@@ -276,7 +278,7 @@ export function SynthStudio() {
     try {
       await applySound(await editorApi.pluginSoundState(pluginId, picked.id));
     } catch (err) {
-      setError(message(err, "That sound could not be loaded."));
+      setError(message(err, t("synth.studio.errors.sound")));
     }
   };
   const chosen = plugins?.find((plugin) => plugin.id === pluginId);
@@ -308,61 +310,63 @@ export function SynthStudio() {
   const midiLabel =
     midi.state === "ready"
       ? midi.inputs.length
-        ? `MIDI: ${midi.inputs.map((input) => input.name).join(", ")}`
-        : "MIDI on: no keyboard found"
+        ? t("synth.studio.midi.inputs", { names: midi.inputs.map((input) => input.name).join(", ") })
+        : t("synth.studio.midi.noKeyboard")
       : midi.state === "connecting"
-        ? "Connecting…"
+        ? t("synth.studio.midi.connecting")
         : midi.state === "unsupported"
-          ? "This browser has no MIDI support"
+          ? t("synth.studio.midi.unsupported")
           : midi.state === "denied"
-            ? "MIDI access was refused"
-            : "Connect a MIDI keyboard";
+            ? t("synth.studio.midi.denied")
+            : t("synth.studio.midi.connect");
+  const instrumentName = chosen?.name ?? t("synth.studio.theInstrument");
+  const instrumentStart = chosen?.name ?? t("synth.studio.theInstrumentStart");
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-[1800px] flex-col gap-4 px-3 pb-16 pt-6 sm:px-6 sm:pt-8">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="display-font text-xl font-semibold text-slate-100 sm:text-2xl">
-            Music Suite <span className="text-cyan-300">/ Synth Studio</span>
+            Music Suite <span className="text-cyan-300">/ {t("synth.studio.title")}</span>
           </p>
           <p className="mt-1 max-w-3xl text-sm text-slate-400">
-            Design sounds and play them. Sounds saved here appear as &ldquo;My sounds&rdquo; on instrument tracks in the Studio Editor.
+            {t("synth.studio.intro")}
           </p>
         </div>
-        <nav className="flex flex-wrap gap-2" aria-label="Music Suite">
+        <nav className="flex flex-wrap gap-2" aria-label={t("synth.studio.nav.label")}>
           <button
             type="button"
             className={cn(quiet, midi.state === "ready" && midi.inputs.length ? "text-emerald-300" : "")}
             disabled={midi.state === "connecting" || midi.state === "unsupported"}
-            title="Play the open tab's instrument from a USB or Bluetooth MIDI keyboard"
+            title={t("synth.studio.nav.midiTitle")}
             onClick={() => void midiHub.connect()}
           >
             <PianoIcon className="h-3.5 w-3.5 shrink-0" aria-hidden /> <span className="max-w-56 truncate">{midiLabel}</span>
           </button>
           <Link href="/editor" className={quiet}>
-            Studio Editor
+            {t("synth.studio.nav.editor")}
           </Link>
           <Link href="/generate" className={quiet}>
-            AI Song Studio
+            {t("synth.studio.nav.studio")}
           </Link>
           <Link href="/models" className={quiet}>
-            Models &amp; engines
+            {t("synth.studio.nav.models")}
           </Link>
           <a href="/help#synth-studio" target="_blank" rel="noreferrer" className={quiet}>
-            Help
+            {t("synth.studio.nav.help")}
           </a>
           <Link href="/" className={quiet}>
-            Back to Music Suite
+            {t("synth.studio.nav.back")}
           </Link>
           <AppPrefs />
         </nav>
       </header>
 
-      <div role="tablist" aria-label="Instrument" className="flex gap-1 self-start rounded-xl bg-slate-900/80 p-1">
+      <div role="tablist" aria-label={t("synth.studio.tabs.label")} className="flex gap-1 self-start rounded-xl bg-slate-900/80 p-1">
         {(
           [
-            ["builtin", "Music Suite synth", SlidersHorizontal],
-            ["plugin", "Surge XT and plugins", Waves]
+            ["builtin", t("synth.studio.tabs.builtin"), SlidersHorizontal],
+            ["plugin", t("synth.studio.tabs.plugin"), Waves]
           ] as const
         ).map(([id, label, Icon]) => (
           <button
@@ -390,12 +394,12 @@ export function SynthStudio() {
 
       {tab === "builtin" ? (
         <div id="panel-builtin" role="tabpanel" aria-labelledby="tab-builtin" className="flex flex-col gap-4">
-          <section className="glass rounded-2xl border border-white/10 p-3 sm:p-4" aria-label="Sound">
+          <section className="glass rounded-2xl border border-white/10 p-3 sm:p-4" aria-label={t("synth.studio.sound")}>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="display-font mr-1 text-base font-semibold text-slate-100">Sound</h2>
+              <h2 className="display-font mr-1 text-base font-semibold text-slate-100">{t("synth.studio.sound")}</h2>
               <PresetBar patch={patch} onChange={(next) => setPatch(next)} />
-              <button type="button" className={quiet} onClick={() => setPatch(initPatch())} title="Start again from a plain sound">
-                <RotateCcw className="h-3.5 w-3.5" aria-hidden /> New sound
+              <button type="button" className={quiet} onClick={() => setPatch(initPatch())} title={t("synth.studio.newSoundTitle")}>
+                <RotateCcw className="h-3.5 w-3.5" aria-hidden /> {t("synth.studio.newSound")}
               </button>
             </div>
             <Piano className="mt-3" onNoteOn={noteOn} onNoteOff={noteOff} />
@@ -404,27 +408,27 @@ export function SynthStudio() {
         </div>
       ) : (
         <div id="panel-plugin" role="tabpanel" aria-labelledby="tab-plugin" className="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
-          <section className="glass space-y-3 rounded-2xl border border-white/10 p-3 sm:p-4" aria-label="Plugin instrument">
-            <h2 className="display-font text-base font-semibold text-slate-100">Instrument</h2>
+          <section className="glass space-y-3 rounded-2xl border border-white/10 p-3 sm:p-4" aria-label={t("synth.studio.pluginSection")}>
+            <h2 className="display-font text-base font-semibold text-slate-100">{t("synth.studio.instrument")}</h2>
             {plugins === null ? (
               <p className="flex items-center gap-2 text-sm text-slate-400" aria-live="polite">
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Looking for instruments…
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> {t("synth.studio.looking")}
               </p>
             ) : plugins.length === 0 ? (
               <>
-                <p className="text-sm text-slate-300">No instrument plugins are installed yet.</p>
+                <p className="text-sm text-slate-300">{t("synth.studio.noPlugins")}</p>
                 <Link href="/models" className={primary}>
-                  <Download className="h-4 w-4" aria-hidden /> Install Surge XT (free)
+                  <Download className="h-4 w-4" aria-hidden /> {t("synth.studio.installSurge")}
                 </Link>
               </>
             ) : (
               <>
                 <select
                   className="h-10 w-full rounded-lg border border-white/10 bg-slate-900 px-2 text-sm text-slate-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
-                  aria-label="Instrument"
+                  aria-label={t("synth.studio.instrument")}
                   value={pluginId}
                   disabled={Boolean(audition) || starting}
-                  title={audition ? "Turn the instrument off to choose another" : undefined}
+                  title={audition ? t("synth.studio.turnOffFirst") : undefined}
                   onChange={(event) => {
                     setPluginId(event.target.value);
                     setSound(null);
@@ -441,38 +445,38 @@ export function SynthStudio() {
                   className={cn(primary, "w-full")}
                   disabled={panelOpen || starting}
                   onClick={() => void openPanel()}
-                  title="Opens the instrument's own window with all of its controls and displays"
+                  title={t("synth.studio.fullTitle")}
                 >
                   <SlidersHorizontal className="h-4 w-4" aria-hidden />
                   {panelOpen
-                    ? `${chosen?.name ?? "The instrument"}'s full interface is open`
-                    : `Open ${chosen?.name ?? "the instrument"}'s full interface`}
+                    ? t("synth.studio.fullOpen", { name: instrumentStart })
+                    : t("synth.studio.openFull", { name: instrumentName })}
                 </button>
                 <p className="text-xs leading-snug text-slate-400">
                   {panelOpen
-                    ? "Its window is on this computer's desktop (look on the taskbar if it is behind the browser). To hear a sound: click the piano at the bottom of that window, play your MIDI keyboard, or press Play here to loop a phrase while you turn the controls. Close the window to keep the sound."
-                    : "The real instrument, exactly as its makers built it, in Music Suite's colours: oscillator and filter displays, envelopes, LFOs, the modulation matrix, effects, its own patch browser and a piano for trying sounds."}
+                    ? t("synth.studio.fullOpenHelp")
+                    : t("synth.studio.fullHelp")}
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" className={primary} disabled={looping || starting} onClick={play}>
-                    {starting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Play className="h-4 w-4" aria-hidden />} Play
+                    {starting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Play className="h-4 w-4" aria-hidden />} {t("synth.studio.play")}
                   </button>
                   <button type="button" className={cn(primary, "bg-slate-700 text-slate-100 hover:bg-slate-600")} disabled={!looping} onClick={stop}>
-                    <Square className="h-4 w-4" aria-hidden /> Stop
+                    <Square className="h-4 w-4" aria-hidden /> {t("synth.studio.stop")}
                   </button>
                 </div>
                 <p className="text-xs leading-snug text-slate-400" role="status">
                   {starting
-                    ? `Starting ${chosen?.name ?? "the instrument"}…`
+                    ? t("synth.studio.starting", { name: instrumentName })
                     : looping
-                      ? "Playing a short phrase in a loop through your speakers. Pick sounds to hear each one."
+                      ? t("synth.studio.looping")
                       : audition
-                        ? `${chosen?.name ?? "The instrument"} is on: play it on the piano below or your MIDI keyboard.`
-                        : "Play loops a short phrase so each sound you pick is heard straight away. Or just press a piano key to switch the instrument on and play it yourself."}
+                        ? t("synth.studio.on", { name: instrumentStart })
+                        : t("synth.studio.idle")}
                 </p>
                 {audition ? (
                   <button type="button" className={cn(quiet, "w-full")} onClick={turnOff}>
-                    <Power className="h-3.5 w-3.5" aria-hidden /> Turn {chosen?.name ?? "the instrument"} off
+                    <Power className="h-3.5 w-3.5" aria-hidden /> {t("synth.studio.turnOff", { name: instrumentName })}
                   </button>
                 ) : null}
                 {error ? (
@@ -484,35 +488,34 @@ export function SynthStudio() {
                   <PluginSoundFiles
                     plugin={chosen.name}
                     sound={sound}
-                    onImport={(read) => void applySound(read).catch((err: unknown) => setError(message(err, "That sound could not be loaded.")))}
+                    onImport={(read) => void applySound(read).catch((err: unknown) => setError(message(err, t("synth.studio.errors.sound"))))}
                   />
                 ) : null}
                 <p className="text-xs leading-snug text-slate-400">
-                  To use a sound in a song, star it here, then select a MIDI clip in the{" "}
+                  {t("synth.studio.useInSongBefore")}{" "}
                   <Link href="/editor" className="font-semibold text-cyan-300 underline-offset-2 hover:underline">
-                    Studio Editor
+                    {t("synth.studio.nav.editor")}
                   </Link>
-                  : your favourites are at the top of the clip&apos;s sound list. A sound file from Export opens there with Import sound.
+                  {t("synth.studio.useInSongAfter")}
                 </p>
               </>
             )}
           </section>
           {pluginId ? (
-            <section className="glass rounded-2xl border border-white/10 p-3 sm:p-4" aria-label="Sounds">
-              <h2 className="display-font mb-2 text-base font-semibold text-slate-100">Sounds</h2>
+            <section className="glass rounded-2xl border border-white/10 p-3 sm:p-4" aria-label={t("synth.studio.sounds")}>
+              <h2 className="display-font mb-2 text-base font-semibold text-slate-100">{t("synth.studio.sounds")}</h2>
               <SoundBrowser key={pluginId} pluginId={pluginId} current={sound?.name} onPick={(picked) => void pick(picked)} tall />
               {chosen && chosen.name !== "Surge XT" ? (
-                <p className="text-xs text-slate-400">The sound list is available for Surge XT. Other instruments play their default sound here.</p>
+                <p className="text-xs text-slate-400">{t("synth.studio.surgeOnly")}</p>
               ) : null}
             </section>
           ) : null}
           {pluginId ? (
-            <section className="glass rounded-2xl border border-white/10 p-3 sm:p-4 lg:col-span-2" aria-label="Play the instrument">
-              <h2 className="display-font mb-2 text-base font-semibold text-slate-100">Play {chosen?.name ?? "the instrument"}</h2>
+            <section className="glass rounded-2xl border border-white/10 p-3 sm:p-4 lg:col-span-2" aria-label={t("synth.studio.playSection")}>
+              <h2 className="display-font mb-2 text-base font-semibold text-slate-100">{t("synth.studio.playName", { name: instrumentName })}</h2>
               <Piano className="" onNoteOn={pluginNoteOn} onNoteOff={pluginNoteOff} />
               <p className="mt-1 text-xs text-slate-400">
-                Notes travel through the suite to the instrument, about 15–25 ms on this computer. Bluetooth headphones add their own delay:
-                for playing, wired headphones or speakers feel tighter.
+                {t("synth.studio.latency")}
               </p>
             </section>
           ) : null}

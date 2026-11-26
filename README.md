@@ -362,7 +362,12 @@ Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (ab
 
 ---
 
-**Languages, colours, more monitors:** English and Russian (more of the app is translated with each update), five colour themes, and editor panels that pop out into their own windows for a second monitor. See *Language, colours and extra windows* in the [user manual](docs/USER_MANUAL.md).
+**Languages, colours, more monitors:**
+- The whole app in English and Russian, including engine messages and the user manual ([по-русски](docs/USER_MANUAL.ru.md)).
+- Six colour themes, including a light one.
+- Panels that pop out into their own windows for a second monitor and remember where they were: the editor's inspector, piano roll and on-screen piano, and the analyser's Visual AI and charts.
+
+See *Language, colours and extra windows* in the [user manual](docs/USER_MANUAL.md).
 
 **New to Music Suite?** Follow [Your first song, step by step](docs/FIRST_PROJECT.md): from a melody on a keyboard to a finished song with your own lyrics.
 

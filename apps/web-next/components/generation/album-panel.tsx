@@ -9,6 +9,7 @@ import { editorApi } from "@/lib/editor/api";
 import { addAssetOnNewTrack } from "@/lib/editor/store";
 import { emptyProjectState, type ProjectState } from "@/lib/editor/types";
 import { generationApi, type Album, type CostEstimate, type FieldValues, type Overview } from "@/lib/generation/api";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const MAX_TRACKS = 20;
@@ -23,16 +24,9 @@ const quiet =
   "inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-slate-800 px-4 text-sm font-semibold text-slate-100 " +
   "hover:bg-slate-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:pointer-events-none disabled:opacity-40";
 
-const STATUS_LABEL: Record<string, string> = {
-  queued: "Waiting",
-  writing: "Writing",
-  generating: "Generating",
-  done: "Done",
-  failed: "Failed",
-  cancelled: "Cancelled",
-  running: "Running",
-  partial: "Partly done",
-};
+/** Album and song states with a label in the dictionary (studioTabs.album.status.*). */
+const STATUSES = ["queued", "writing", "generating", "done", "failed", "cancelled", "running", "partial"] as const;
+const isStatus = (value: string): value is (typeof STATUSES)[number] => (STATUSES as readonly string[]).includes(value);
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
@@ -60,6 +54,8 @@ async function placeAlbum(album: Album): Promise<void> {
 }
 
 export function AlbumPanel({ overview }: { overview: Overview }) {
+  const { t, tp, locale } = useI18n();
+  const statusLabel = (status: string) => (isStatus(status) ? t(`studioTabs.album.status.${status}`) : status);
   const router = useRouter();
   const usable = useMemo(() => overview.providers.filter((p) => p.enabled && p.status.ready), [overview]);
   const [providerId, setProviderId] = useState<string | null>(null);
@@ -140,7 +136,7 @@ export function AlbumPanel({ overview }: { overview: Overview }) {
     setError(null);
     try {
       await generationApi.createAlbum({
-        title: title.trim() || "Untitled album",
+        title: title.trim() || t("studioTabs.album.untitled"),
         provider: provider.id,
         concept: concept.trim(),
         fields,
@@ -150,7 +146,7 @@ export function AlbumPanel({ overview }: { overview: Overview }) {
       setIdeas("");
       refresh();
     } catch (err) {
-      setError(message(err, "The album could not be started."));
+      setError(message(err, t("studioTabs.album.startFailed")));
     } finally {
       setBusy(false);
     }
@@ -161,7 +157,7 @@ export function AlbumPanel({ overview }: { overview: Overview }) {
       await placeAlbum(album);
       router.push(`/editor?project=${album.project_id}`);
     } catch (err) {
-      setError(message(err, "The songs could not be placed in the editor."));
+      setError(message(err, t("studioTabs.album.placeFailed")));
     }
   };
 
@@ -175,28 +171,25 @@ export function AlbumPanel({ overview }: { overview: Overview }) {
         </p>
       ) : null}
 
-      <section className="glass space-y-4 rounded-2xl border border-white/10 p-4" aria-label="New album">
+      <section className="glass space-y-4 rounded-2xl border border-white/10 p-4" aria-label={t("studioTabs.album.newAlbum")}>
         <div>
           <h2 className="display-font flex items-center gap-2 text-base font-semibold text-slate-100">
-            <Disc3 className="h-5 w-5 text-cyan-300" aria-hidden /> Make an album
+            <Disc3 className="h-5 w-5 text-cyan-300" aria-hidden /> {t("studioTabs.album.make")}
           </h2>
-          <p className="mt-1 text-sm text-slate-400">
-            Give one idea per song. The songs are written and generated one after another in the background, so you can
-            close this page or leave it overnight; an album also continues after Music Suite restarts.
-          </p>
+          <p className="mt-1 text-sm text-slate-400">{t("studioTabs.album.intro")}</p>
         </div>
         {!provider ? (
-          <p className="text-sm text-amber-200">No generator is ready. Install the local engine or add an online service in Settings.</p>
+          <p className="text-sm text-amber-200">{t("studioTabs.album.noGenerator")}</p>
         ) : (
           <>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="space-y-1.5 text-xs font-semibold text-slate-300">
-                <span>Album title</span>
-                <input className={cn(input, "h-10")} aria-label="Album title" value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} placeholder="Night Drives" />
+                <span>{t("studioTabs.album.albumTitle")}</span>
+                <input className={cn(input, "h-10")} aria-label={t("studioTabs.album.albumTitle")} value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} placeholder={t("studioTabs.album.titlePlaceholder")} />
               </label>
               <label className="space-y-1.5 text-xs font-semibold text-slate-300">
-                <span>Generator</span>
-                <select aria-label="Generator" className={cn(input, "h-10")} value={provider.id} onChange={(e) => setProviderId(e.target.value)}>
+                <span>{t("studioTabs.album.generator")}</span>
+                <select aria-label={t("studioTabs.album.generator")} className={cn(input, "h-10")} value={provider.id} onChange={(e) => setProviderId(e.target.value)}>
                   {usable.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
@@ -206,36 +199,34 @@ export function AlbumPanel({ overview }: { overview: Overview }) {
               </label>
             </div>
             <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
-              <span>What the album is about</span>
-              <textarea className={cn(input, "py-2")} aria-label="What the album is about" rows={2} maxLength={1000} value={concept} onChange={(e) => setConcept(e.target.value)} placeholder="A synth-pop album about driving through a city at night, from leaving to sunrise." />
+              <span>{t("studioTabs.album.about")}</span>
+              <textarea className={cn(input, "py-2")} aria-label={t("studioTabs.album.about")} rows={2} maxLength={1000} value={concept} onChange={(e) => setConcept(e.target.value)} placeholder={t("studioTabs.album.aboutPlaceholder")} />
             </label>
             <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
-              <span>Shared style</span>
-              <input className={cn(input, "h-10")} aria-label="Shared style" maxLength={1000} value={style} onChange={(e) => setStyle(e.target.value)} placeholder="dreamy synth-pop, airy female vocal, analog synths" />
+              <span>{t("studioTabs.album.sharedStyle")}</span>
+              <input className={cn(input, "h-10")} aria-label={t("studioTabs.album.sharedStyle")} maxLength={1000} value={style} onChange={(e) => setStyle(e.target.value)} placeholder={t("studioTabs.album.stylePlaceholder")} />
             </label>
             <label className="block space-y-1.5 text-xs font-semibold text-slate-300">
-              <span>
-                Songs, one idea per line ({lines.length} of up to {MAX_TRACKS})
-              </span>
+              <span>{t("studioTabs.album.songs", { count: lines.length, max: MAX_TRACKS })}</span>
               <textarea
                 className={cn(input, "py-2 leading-relaxed")}
-                aria-label="Songs, one idea per line"
+                aria-label={t("studioTabs.album.songsLabel")}
                 rows={6}
                 value={ideas}
                 onChange={(e) => setIdeas(e.target.value)}
-                placeholder={"Leaving the city lights behind\nThe empty coastal road\nA gas station at 3 a.m.\nSunrise over the bridge"}
+                placeholder={t("studioTabs.album.songsPlaceholder")}
               />
             </label>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
               {has("duration") ? (
                 <label className="flex items-center gap-2 text-sm text-slate-300">
-                  <span>Each song about</span>
+                  <span>{t("studioTabs.album.eachAbout")}</span>
                   <input
                     type="number"
                     min={30}
                     max={300}
                     step={10}
-                    aria-label="Length of each song in seconds"
+                    aria-label={t("studioTabs.album.lengthLabel")}
                     value={seconds}
                     onChange={(e) => {
                       const value = Number(e.target.value);
@@ -243,75 +234,78 @@ export function AlbumPanel({ overview }: { overview: Overview }) {
                     }}
                     className={cn(input, "h-10 w-24 tabular-nums")}
                   />
-                  <span className="text-xs text-slate-400">seconds</span>
+                  <span className="text-xs text-slate-400">{t("studioTabs.album.seconds")}</span>
                 </label>
               ) : null}
               {has("instrumental") ? (
                 <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
-                  <input type="checkbox" aria-label="Instrumental" checked={instrumental} onChange={(e) => setInstrumental(e.target.checked)} className="h-5 w-5 accent-cyan-400" />
-                  Instrumental
+                  <input type="checkbox" aria-label={t("studioTabs.album.instrumental")} checked={instrumental} onChange={(e) => setInstrumental(e.target.checked)} className="h-5 w-5 accent-cyan-400" />
+                  {t("studioTabs.album.instrumental")}
                 </label>
               ) : null}
               <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
-                <input type="checkbox" aria-label="Write lyrics and style for each song" checked={writeLyrics} onChange={(e) => setWriteLyrics(e.target.checked)} className="h-5 w-5 accent-cyan-400" />
-                Write lyrics and style for each song
+                <input type="checkbox" aria-label={t("studioTabs.album.writeLyrics")} checked={writeLyrics} onChange={(e) => setWriteLyrics(e.target.checked)} className="h-5 w-5 accent-cyan-400" />
+                {t("studioTabs.album.writeLyrics")}
               </label>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className={cn("text-xs", online ? "text-amber-200" : "text-slate-400")}>
                 {online && estimate && lines.length
-                  ? `About $${(estimate.usd * lines.length).toFixed(2)} for ${lines.length} songs on your account (prices as of ${estimate.as_of}).`
+                  ? tp("studioTabs.album.onlineCost", lines.length, {
+                      usd: (estimate.usd * lines.length).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+                      date: estimate.as_of
+                    })
                   : localMinutes
-                    ? `Roughly ${localMinutes} minutes on this computer, one song at a time.`
+                    ? tp("studioTabs.album.localTime", localMinutes)
                     : " "}
               </p>
               <button type="button" className={primary} disabled={busy || !lines.length || !provider} onClick={() => void start()}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Disc3 className="h-4 w-4" aria-hidden />}
-                Make {lines.length || ""} song{lines.length === 1 ? "" : "s"}
+                {lines.length ? tp("studioTabs.album.makeSongs", lines.length) : t("studioTabs.album.makeNone")}
               </button>
             </div>
           </>
         )}
       </section>
 
-      <section className="space-y-3" aria-label="Albums">
+      <section className="space-y-3" aria-label={t("studioTabs.album.albums")}>
         {albums === null ? (
-          <p className="py-6 text-center text-sm text-slate-400">Loading albums…</p>
+          <p className="py-6 text-center text-sm text-slate-400">{t("studioTabs.album.loading")}</p>
         ) : albums.length === 0 ? (
-          <p className="rounded-2xl bg-slate-900/70 px-4 py-8 text-center text-sm text-slate-400">No albums yet.</p>
+          <p className="rounded-2xl bg-slate-900/70 px-4 py-8 text-center text-sm text-slate-400">{t("studioTabs.album.none")}</p>
         ) : (
           albums.map((album) => {
             const running = album.status === "queued" || album.status === "running";
             return (
-              <article key={album.id} className="glass rounded-2xl border border-white/10 p-4" aria-label={`Album ${album.title}`}>
+              <article key={album.id} className="glass rounded-2xl border border-white/10 p-4" aria-label={t("studioTabs.album.albumLabel", { title: album.title })}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="display-font truncate text-base font-semibold text-slate-100">{album.title}</h3>
                     <p className="text-xs text-slate-400" aria-live="polite">
-                      {STATUS_LABEL[album.status] ?? album.status} · {album.done} of {album.total} songs ready
+                      {t("studioTabs.album.ready", { status: statusLabel(album.status), done: album.done, total: album.total })}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {album.done > 0 ? (
                       <button type="button" className={cn(quiet, "bg-cyan-400 text-slate-950 hover:bg-cyan-300")} onClick={() => void open(album)}>
-                        <AudioWaveform className="h-4 w-4" aria-hidden /> Open in Studio Editor
+                        <AudioWaveform className="h-4 w-4" aria-hidden /> {t("studioTabs.album.openEditor")}
                       </button>
                     ) : null}
                     {running ? (
                       <button
                         type="button"
                         className={quiet}
-                        onClick={() => void generationApi.cancelAlbum(album.id).then(refresh).catch((err: unknown) => setError(message(err, "Could not cancel.")))}
+                        onClick={() => void generationApi.cancelAlbum(album.id).then(refresh).catch((err: unknown) => setError(message(err, t("studioTabs.album.cancelFailed"))))}
                       >
-                        <Square className="h-3.5 w-3.5" aria-hidden /> Stop
+                        <Square className="h-3.5 w-3.5" aria-hidden /> {t("studioTabs.album.stop")}
                       </button>
                     ) : (
                       <button
                         type="button"
                         className={cn(quiet, "w-10 px-0")}
-                        aria-label={`Remove album ${album.title} from the list`}
-                        title="Remove from the list (the project and songs are kept)"
-                        onClick={() => void generationApi.deleteAlbum(album.id).then(refresh).catch((err: unknown) => setError(message(err, "Could not remove.")))}
+                        aria-label={t("studioTabs.album.removeLabel", { title: album.title })}
+                        title={t("studioTabs.album.removeTitle")}
+                        onClick={() => void generationApi.deleteAlbum(album.id).then(refresh).catch((err: unknown) => setError(message(err, t("studioTabs.album.removeFailed"))))}
                       >
                         <Trash2 className="h-4 w-4" aria-hidden />
                       </button>
@@ -333,7 +327,7 @@ export function AlbumPanel({ overview }: { overview: Overview }) {
                         )}
                         title={track.error ?? track.detail}
                       >
-                        {STATUS_LABEL[track.status] ?? track.status}
+                        {statusLabel(track.status)}
                         {track.status === "generating" ? ` ${Math.round(track.progress)}%` : ""}
                       </span>
                     </li>
@@ -350,9 +344,9 @@ export function AlbumPanel({ overview }: { overview: Overview }) {
         )}
       </section>
       <p className="text-xs text-slate-500">
-        Each album is its own project. Opening it places the finished songs one after another on separate tracks.{" "}
+        {t("studioTabs.album.footer")}{" "}
         <Link href="/editor" className="underline">
-          All projects
+          {t("studioTabs.album.allProjects")}
         </Link>
       </p>
     </div>

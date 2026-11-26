@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ActionButton, PanelSection } from "@/components/editor/controls";
 import { SchemaForm } from "@/components/generation/schema-form";
 import { type FieldValues, type ProviderInfo, defaultValues } from "@/lib/generation/api";
+import { useI18n } from "@/lib/i18n";
 
 /** The generation provider that writes notes rather than audio. */
 export const ARRANGER_ID = "arranger";
@@ -31,6 +32,7 @@ export function ArrangeSection({
   beatUnit: 4 | 8;
   onRun: (params: Record<string, unknown>, title: string) => void;
 }) {
+  const { t } = useI18n();
   const provider = providers.find((p) => p.id === ARRANGER_ID && p.enabled) ?? null;
   const [edited, setEdited] = useState<FieldValues>({});
   const [open, setOpen] = useState(false);
@@ -53,13 +55,14 @@ export function ArrangeSection({
     for (const [key, value] of Object.entries(values)) {
       if (value !== null && value !== undefined && value !== "") fields[key] = value;
     }
-    onRun({ provider: provider.id, task: "arrange", title: "Arrangement", fields }, "Writing an arrangement");
+    onRun({ provider: provider.id, task: "arrange", title: "Arrangement", fields }, t("editor.arrange.working"));
   };
 
   return (
     <PanelSection
-      title="Write an arrangement"
-      hint="Drums, bass, chords, a melody and more, written as notes on this computer in a moment. Each part lands on its own instrument track, ready to edit, re-voice or export as MIDI."
+      title={t("editor.arrange.title")}
+      help="write-an-arrangement"
+      hint={t("editor.arrange.hint")}
     >
       {open ? (
         <>
@@ -70,12 +73,12 @@ export function ArrangeSection({
             onChange={(key, value) => setEdited((current) => ({ ...current, [key]: value }))}
           />
           <ActionButton variant="primary" className="w-full" disabled={busy} onClick={run}>
-            Write the parts
+            {t("editor.arrange.run")}
           </ActionButton>
         </>
       ) : (
         <ActionButton variant="primary" className="w-full" onClick={() => setOpen(true)}>
-          Choose a style
+          {t("editor.arrange.choose")}
         </ActionButton>
       )}
     </PanelSection>
