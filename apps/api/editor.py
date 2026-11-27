@@ -147,11 +147,14 @@ def list_instruments() -> list[dict[str, Any]]:
 
 
 @router.post("/instruments/{instrument_id}/install")
-def install_instrument(instrument_id: str) -> dict[str, Any]:
+def install_instrument(instrument_id: str, payload: dict[str, Any] | None = Body(None)) -> dict[str, Any]:
+    """Install into Music Suite's own folder, or with ``{"for_daws": true}`` into the user's
+    VST3 folder so other music programs find it too."""
     if instrument_id not in instruments.CATALOG:
         raise HTTPException(status_code=404, detail="Unknown instrument.")
+    for_daws = bool((payload or {}).get("for_daws", False))
     try:
-        return instruments.start_background(instrument_id)
+        return instruments.start_background(instrument_id, for_daws=for_daws)
     except instruments.InstallError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

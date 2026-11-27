@@ -20,3 +20,6 @@ build/
 .tools/
 .DS_Store
 .claude/
+
+# Download caches kept inside the folder (scripts/install-state.ps1, audioqi/portable.py)
+.cache/

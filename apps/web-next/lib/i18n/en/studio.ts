@@ -113,5 +113,41 @@ export const studio = {
     generateInStyle: "Generate in its style",
     generateIntoProject: "Generate into this project"
   },
+  style: {
+    improve: "Improve the description",
+    improveTitle: "Rewrites the style description so it is clearer and more concrete for the music model, keeping your idea. You can undo it.",
+    improving: "Improving…",
+    undo: "Undo",
+    byModel: "Improved by {model}. Edit it as you like.",
+    byPlanner: "Improved by the music engine's planner.",
+    failed: "The style description could not be improved."
+  },
+  lyricsHelper: {
+    heading: "Rhymes and syllables",
+    lines: { one: "{n} line", other: "{n} lines" },
+    help: "Each sung line with its syllable count and a rhyme letter: lines with the same letter rhyme (AABB, ABAB…). An amber count is much longer or shorter than the rest of its section.",
+    approximate: "In this language rhymes are judged from spelling, so treat them as a guide.",
+    rhymeTitle: "Rhymes with the other “{letter}” lines",
+    noRhyme: "Rhymes with no other line in this section",
+    offTitle: "{n} syllables; most lines in this section have about {typical}",
+    syllables: { one: "{n} syllable", other: "{n} syllables" },
+    alternatives: "Alternatives",
+    alternativesTitle: "Suggest other versions of this line that keep its rhyme and length",
+    rhymeWith: "Rhyme with",
+    rhymeAuto: "Its partner line (automatic)",
+    rhymeNone: "No rhyme",
+    ideaPlaceholder: "Optional: what to change (e.g. “more hopeful”)",
+    suggest: "Suggest",
+    suggesting: "Suggesting…",
+    failed: "No alternatives could be suggested.",
+    target: "Aim: {n} syllables, rhyming with “{word}”. A tick means the line really rhymes and fits.",
+    targetFree: "Aim: {n} syllables. A tick means the line fits.",
+    noRhymeMark: "Does not rhyme",
+    lengthMark: "{n} syllables: does not fit the melody",
+    goodMark: "Rhymes and fits",
+    use: "Use",
+    none: "The model gave no usable lines. Try again.",
+    noneGood: "None of these both rhymes and fits. Press Suggest again for new ones, or pick the closest and edit it."
+  },
   allOff: "Every generator is switched off. Turn one on in Settings."
 };

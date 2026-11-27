@@ -51,6 +51,10 @@
 - floating panels (`components/detachable.tsx`): a panel is rendered with a React portal into a window the page opened, so state and playback stay shared; styles are copied from the live stylesheet rules and kept in step, unused keys are passed back, and `Floatable` / `FloatButton` make any section floatable. Canvases, meters and size watching use their own window's animation frames and `ResizeObserver` (`viewOf` in `lib/windows.ts`), so they keep drawing when the main page is covered. Window geometry and the floating layout are kept in `localStorage`; placement on other monitors uses the Window Management API where granted,
 - workspace and tab windows (`openPageWindow`), each remembering its place (`components/window-memory.tsx`); a `BroadcastChannel` detects one editor session open in two windows.
 
+- `audioqi/generation/lyrics_tools.py` + `writer.py`: the lyrics helper (syllables and rhymes by rule, `/generation/lyrics/check`), verified line alternatives (`/generation/lyrics/line`) and the style improver (`/generation/style/improve`).
+
+- `audioqi/portable.py`: points library caches (PyTorch, Hugging Face, matplotlib) into `data/cache` unless they already hold models in the default place; `Set-MusicSuitePortableEnvironment` (scripts/install-state.ps1) does the same for pip, npm, pnpm and corepack (`.cache`). Instruments install into `data/plugins/VST3` on Windows (Surge XT with its own `SurgeXTUserData`) unless the user asks to share them with other music programs.
+
 - `apps/web-next/lib/handoff.ts`: moving songs between the analyser, the AI Song Studio and the editor (always added, never replacing).
 
 - `apps/web` Dash frontend (legacy compatibility UI):

@@ -115,8 +115,12 @@ In-app updates need Music Suite to have been installed with Git (a clone), not f
 | Stem separation models | `data\models\audio-separator\` |
 | Logs (when something goes wrong) | `logs\` (`api.log`, `web.log`, `install.log`) and `data\generation\engine.log` |
 | Online service keys | Windows Credential Manager ("Music Suite") |
-| Surge XT | `%LOCALAPPDATA%\Programs\Common\VST3\` |
+| Surge XT | `data\plugins\VST3\` (Windows), or your own VST3 folder if you chose to share it with other music programs |
+| Music Suite's own Python, FFmpeg, Node.js and Git | `.tools\` |
+| Download caches (libraries, models) | `.cache\` and `data\cache\` |
 | Your synth sounds, plugin favourites, MIDI choices, mapper presets | Your browser's storage: not in the Music Suite folder, and not included in project files |
+
+**Everything stays in this folder.** Like ComfyUI Portable, Music Suite installs nothing on Windows: its Python, tools, downloads and caches all live in its folder, so deleting the folder removes it completely. The only things kept elsewhere are the online service keys (Windows Credential Manager), what your browser stores (above), Surge XT if you chose to share it with other music programs, and, with the complete install only, Ollama and the build tools for the AI music engine.
 
 To back up or move a session, use the editor's **Export → Whole project** (see [Saving, project files and undo](#saving-project-files-and-undo)).
 
@@ -1165,6 +1169,12 @@ Extract, Add a part and Build need the editing model (2.4 GB, from Settings). Wi
 
 **Rewrite** (under the lyrics) changes the lyrics on request, for example "add a bridge" or "translate to Spanish". It needs Ollama.
 
+**Rhymes and syllables** (under the lyrics) shows every sung line with its syllable count and a rhyme letter: lines with the same letter rhyme, so you can see the scheme (AABB, ABAB…) at a glance. A count in amber means the line is much longer or shorter than the rest of its section and will not sit on the same melody. It works without Ollama and updates as you type. Rhymes are exact in Spanish and, once its pronouncing dictionary has downloaded (3.6 MB, the first time), in English; in Russian, Ukrainian, German and French they are judged from spelling, so treat them as a guide.
+
+**Alternatives** (beside a line) suggests other versions of that line that keep its rhyme and its length. Choose what it should rhyme with (its partner line, another line or no rhyme), optionally say what to change, and press **Suggest**. Every suggestion is checked by the same rules: a tick means it really rhymes and has the right number of syllables. **Use** puts it in place of the line. It needs Ollama. Small local models rhyme well in English and Spanish and less reliably in Russian and Ukrainian, which is why each suggestion is checked rather than trusted.
+
+**Improve the description** (under the style description) rewrites it so it is clearer and more concrete for the music model: genre, mood, tempo feel, instruments, voice and production, keeping your idea. It writes in English, which the music models understand best. **Undo** brings back what you had.
+
 The bar at the bottom shows how long it will take (local) or what it will cost (online). While generating it shows each stage and a **Cancel** button. Online services cannot be cancelled once the request is sent.
 
 **Results:** each version has a player and its tempo, key, loudness and seed. The buttons are:
@@ -1299,11 +1309,11 @@ Optional engines and AI models. Everything here runs on this computer, and insta
 | Editing model | Extract an instrument, add a part, build a song around a part. | 2.4 GB |
 | High-quality (XL) model | Better songs, a little slower. | 4.9 GB |
 | Lyrics writer | Lyrics and style descriptions with Ollama. Needs Ollama running. | About 8 GB |
-| Surge XT | A free hybrid synthesizer with thousands of factory sounds, for instrument tracks and the Synth Studio. | About 300 MB download |
+| Surge XT | A free hybrid synthesizer with thousands of factory sounds, for instrument tracks and the Synth Studio. On Windows it stays inside Music Suite's folder, where your other music programs do not see it, unless you tick **Also make it available to my other music programs (DAW)**. | About 300 MB download |
 
 When a pack finishes, reload any open editor pages to use it. **Install log** shows what the installer did if something fails.
 
-From a terminal: `.venv\Scripts\python -m audioqi.addons install stems` and `python -m audioqi.editor.instruments install surge-xt`.
+From a terminal: `.venv\Scripts\python -m audioqi.addons install stems` and `python -m audioqi.editor.instruments install surge-xt`. Add `--for-daws` to put Surge XT in your VST3 folder instead.
 
 <a id="settings-reference"></a>
 ## Settings reference

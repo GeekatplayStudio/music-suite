@@ -517,8 +517,8 @@ def test_install_checks_every_download_and_places_the_files(tmp_path: Path, monk
     )
     monkeypatch.setitem(instruments.CATALOG, "surge-xt", item)
     vst3, data = tmp_path / "VST3", tmp_path / "Application Support" / "Surge XT"
-    monkeypatch.setattr(instruments, "user_vst3_dir", lambda: vst3)
-    monkeypatch.setattr(instruments, "content_dir", lambda _item: data)
+    monkeypatch.setattr(instruments, "install_dir", lambda for_daws=False: vst3)
+    monkeypatch.setattr(instruments, "content_dir", lambda _item, _vst3=None: data)
     monkeypatch.setattr(plugins, "plugin_dirs", lambda: [(vst3, "*.vst3", "vst3")])
     monkeypatch.setattr(instruments, "UNPACK_BYTES", 0)
 
@@ -566,10 +566,11 @@ def test_instrument_routes(client: TestClient, monkeypatch) -> None:
     assert client.post("/editor/instruments/nope/install").status_code == 404
     started: list[str] = []
     monkeypatch.setattr(
-        instruments, "start_background", lambda iid: started.append(iid) or {"id": iid}
+        instruments, "start_background", lambda iid, for_daws=False: started.append((iid, for_daws)) or {"id": iid}
     )
     assert client.post("/editor/instruments/surge-xt/install").status_code == 200
-    assert started == ["surge-xt"]
+    assert client.post("/editor/instruments/surge-xt/install", json={"for_daws": True}).status_code == 200
+    assert started == [("surge-xt", False), ("surge-xt", True)]
 
 
 def test_pinned_downloads_are_complete() -> None:
@@ -719,7 +720,7 @@ def test_command_line_lists_and_installs(monkeypatch, capsys) -> None:
     monkeypatch.setattr(instruments, "_installed_bundle", lambda _item: None)
     calls: list[str] = []
 
-    def fake_install(instrument_id, report):
+    def fake_install(instrument_id, report, for_daws=False):
         calls.append(instrument_id)
         report(50.0, "Halfway.")
         report(100.0, "Done.")
@@ -730,7 +731,7 @@ def test_command_line_lists_and_installs(monkeypatch, capsys) -> None:
     assert instruments.main(["install", "surge-xt"]) == 0 and calls == ["surge-xt"]
     assert "100.0%" in capsys.readouterr().out
 
-    def failing(_id, _report):
+    def failing(_id, _report, for_daws=False):
         raise instruments.InstallError("no disk space")
 
     monkeypatch.setattr(instruments, "install", failing)
@@ -956,6 +957,9 @@ def test_surge_skin_is_built_and_made_the_default(tmp_path, monkeypatch) -> None
 
     from audioqi.editor import surge_skin
 
+    # Music Suite's own copy of Surge (a shared one is covered by its own test).
+    monkeypatch.setattr(instruments, "in_own_folder", lambda _item: True)
+
     factory = tmp_path / "factory" / surge_skin.BASE_SKIN
     (factory / "SVG").mkdir(parents=True)
     (factory / "skin.xml").write_text(
@@ -981,3 +985,48 @@ def test_surge_skin_is_built_and_made_the_default(tmp_path, monkeypatch) -> None
     again = surge_skin.ensure()
     assert again["built"] is False and again["defaults"] == []
     assert "mine.surge-skin" in (user / "SurgeXTUserDefaults.xml").read_text()
+
+
+def test_instruments_install_inside_music_suite_unless_asked_for_other_programs(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """On Windows an instrument goes into Music Suite's own folder, so it does not appear in
+    the user's DAW; the user's VST3 folder is used only when they ask for that."""
+    monkeypatch.setattr(instruments.sys, "platform", "win32")
+    monkeypatch.setenv("AUDIOQI_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    own = tmp_path / "data" / "plugins" / "VST3"
+    assert instruments.suite_vst3_dir() == own
+    assert instruments.install_dir() == own
+    assert instruments.install_dir(for_daws=True) == tmp_path / "local" / "Programs" / "Common" / "VST3"
+    # Music Suite's folder is the first place the plugin scanner looks.
+    assert plugins.plugin_dirs()[0] == (own, "*.vst3", "vst3")
+
+    item = instruments.CATALOG["surge-xt"]
+    (own / "Surge XT.vst3").mkdir(parents=True)
+    monkeypatch.setattr(plugins, "plugin_dirs", lambda: [(own, "*.vst3", "vst3")])
+    assert instruments.in_own_folder(item)
+    assert instruments.content_dir(item) == own / "SurgeXTData"
+    # Its patches, skins and preferences stay beside it, not in Documents\Surge XT.
+    assert instruments.user_data_dir(item) == own / "SurgeXTUserData"
+
+
+def test_the_surge_skin_never_changes_a_shared_copys_preferences(tmp_path: Path, monkeypatch) -> None:
+    from audioqi.editor import surge_skin
+
+    factory = tmp_path / "factory" / surge_skin.BASE_SKIN
+    factory.mkdir(parents=True)
+    (factory / "skin.xml").write_text('<surge-skin><color id="a" value="#112233"/></surge-skin>')
+    user = tmp_path / "user"
+    monkeypatch.setattr(surge_skin, "factory_skin", lambda: factory)
+    monkeypatch.setattr(surge_skin, "user_dir", lambda: user)
+
+    monkeypatch.setattr(instruments, "in_own_folder", lambda _item: False)
+    shared = surge_skin.ensure()
+    assert shared["ok"] and shared["defaults"] == []
+    assert not (user / "SurgeXTUserDefaults.xml").exists()  # The DAW's Surge keeps its look.
+    assert (user / "Skins" / surge_skin.SKIN_DIR / "skin.xml").is_file()  # One more choice only.
+
+    monkeypatch.setattr(instruments, "in_own_folder", lambda _item: True)
+    own = surge_skin.ensure()
+    assert "defaultSkin" in own["defaults"]

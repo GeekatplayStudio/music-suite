@@ -29,6 +29,7 @@ import { LivePanel } from "@/components/generation/live-panel";
 import { PlanEditor } from "@/components/generation/plan-editor";
 import { SchemaForm } from "@/components/generation/schema-form";
 import { LocalDownloads } from "./local-downloads";
+import { LyricsHelper } from "@/components/generation/lyrics-helper";
 import { SettingsPanel } from "@/components/generation/settings-panel";
 import { NEW_IN_ITS_STYLE, SourceSongPanel, type SourceSong } from "@/components/generation/source-song";
 import { editorApi } from "@/lib/editor/api";
@@ -407,6 +408,28 @@ export function GenerateStudio({
     Boolean(field.editor) ||
     (field.tasks !== undefined && !field.tasks.includes(task)) ||
     (instrumental && (field.key === "lyrics" || field.key === "vocal_language"));
+
+  // The style improver: a clearer, more concrete style description; the old one can be restored.
+  const [improving, setImproving] = useState(false);
+  const [styleBefore, setStyleBefore] = useState<string | null>(null);
+  const [styleNote, setStyleNote] = useState<string | null>(null);
+  const improveStyle = async (key: string) => {
+    const before = String(values[key] ?? "");
+    setImproving(true);
+    setError(null);
+    try {
+      const { caption, engine } = await generationApi.improveStyle({ caption: before, lyrics: String(values.lyrics ?? "") || undefined });
+      setValue(key, caption);
+      setStyleBefore(before);
+      setStyleNote(
+        engine.startsWith("ollama:") ? t("studio.style.byModel", { model: engine.slice(7) }) : t("studio.style.byPlanner")
+      );
+    } catch (err) {
+      setError(message(err, t("studio.style.failed")));
+    } finally {
+      setImproving(false);
+    }
+  };
 
   const write = async (mode: "brief" | "lyrics") => {
     setWriting(true);
@@ -950,7 +973,45 @@ export function GenerateStudio({
                 />
               </label>
 
-              <SchemaForm schema={provider.schema} values={values} disabled={busy || writing} onChange={setValue} hidden={hidden} />
+              <SchemaForm
+                schema={provider.schema}
+                values={values}
+                disabled={busy || writing}
+                onChange={setValue}
+                hidden={hidden}
+                fieldExtra={(field) =>
+                  field.key === "lyrics" ? (
+                    <div className="mt-2">
+                      <LyricsHelper
+                        lyrics={String(values.lyrics ?? "")}
+                        language={String(values.vocal_language ?? values.language ?? "") || undefined}
+                        caption={String(values.caption ?? values.prompt ?? "") || undefined}
+                        disabled={busy || writing}
+                        onChange={(next) => setValue("lyrics", next)}
+                      />
+                    </div>
+                  ) : (field.key === "caption" || field.key === "prompt") && field.type === "text" ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        className={quietButton}
+                        disabled={busy || writing || improving || String(values[field.key] ?? "").trim().length < 3}
+                        onClick={() => void improveStyle(field.key)}
+                        title={t("studio.style.improveTitle")}
+                      >
+                        {improving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Wand2 className="h-4 w-4" aria-hidden />}
+                        {improving ? t("studio.style.improving") : t("studio.style.improve")}
+                      </button>
+                      {styleBefore !== null ? (
+                        <button type="button" className={quietButton} onClick={() => { setValue(field.key, styleBefore); setStyleBefore(null); setStyleNote(null); }}>
+                          {t("studio.style.undo")}
+                        </button>
+                      ) : null}
+                      {styleNote ? <span className="text-xs text-slate-400" aria-live="polite">{styleNote}</span> : null}
+                    </div>
+                  ) : null
+                }
+              />
 
               {provider.id === "yue2" ? (
                 <button type="button" className={quietButton}

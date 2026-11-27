@@ -5,6 +5,12 @@
 
 /** Messages the backend sends word for word. */
 export const EXACT: Record<string, string> = {
+  // Lyrics helper and style improver (generation/writer.py).
+  "No language model is available to improve the style. Start Ollama, or install the local music engine.": "Нет языковой модели, чтобы улучшить стиль. Запустите Ollama или установите локальный музыкальный движок.",
+  "The style could not be improved. Try rewording it.": "Не удалось улучшить стиль. Попробуйте сформулировать иначе.",
+  "That line has no words to replace.": "В этой строке нет слов, которые можно заменить.",
+  "'line' must be the number of a line in the lyrics.": "Нужно указать номер строки текста.",
+  "'lyrics' must be text of at most 6000 characters.": "Текст песни должен быть не длиннее 6000 символов.",
   // The AI engines' own form fields: labels, help, groups, options (generation/providers).
   "-1 picks a random seed.": "-1 — случайный сид.",
   "-1 picks a random seed. Reuse a seed to get the same result again.": "-1 — случайный сид. С тем же сидом получится тот же результат.",

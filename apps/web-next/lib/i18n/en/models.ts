@@ -82,7 +82,11 @@ export const models = {
     platformOnly: "macOS and Windows only",
     progress: "{name} install progress",
     useBefore: "To use one, select a MIDI clip in the",
-    useMiddle: "and open its Plugin instrument section, or try the sounds in"
+    useMiddle: "and open its Plugin instrument section, or try the sounds in",
+    forDaws: "Also make it available to my other music programs (DAW)",
+    forDawsHelp: "Installs it into your VST3 folder. Left unticked, it stays inside Music Suite's folder and no other program sees it.",
+    ownCopy: "Installed inside Music Suite's folder: only Music Suite sees this copy.",
+    sharedCopy: "Installed in your VST3 folder: your other music programs see it too."
   },
   terminal: {
     heading: "From a terminal",

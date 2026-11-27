@@ -79,6 +79,7 @@ export function ModelsPage() {
   const [addons, setAddons] = useState<AddonsOverview | null>(null);
   const [music, setMusic] = useState<Overview | null>(null);
   const [instruments, setInstruments] = useState<InstrumentOffer[]>([]);
+  const [forDaws, setForDaws] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [chosen, setChosen] = useState<Set<string> | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -527,12 +528,24 @@ export function ModelsPage() {
                       type="button"
                       className={quiet}
                       disabled={busy}
-                      onClick={() => void run(() => editorApi.installInstrument(item.id), t("models.installFailed"))}
+                      onClick={() => void run(() => editorApi.installInstrument(item.id, forDaws), t("models.installFailed"))}
                     >
                       <Download className="h-3.5 w-3.5" aria-hidden /> {t("common.install")}
                     </button>
                   )}
                 </div>
+                {item.choose_place && !item.installed && !item.running ? (
+                  <label className="flex items-start gap-2 text-xs text-slate-300">
+                    <input type="checkbox" className="mt-0.5 accent-cyan-400" checked={forDaws} onChange={(event) => setForDaws(event.target.checked)} />
+                    <span>
+                      {t("models.instruments.forDaws")}
+                      <span className="block text-slate-400">{t("models.instruments.forDawsHelp")}</span>
+                    </span>
+                  </label>
+                ) : null}
+                {item.installed && item.choose_place ? (
+                  <p className="text-xs text-slate-400">{item.own_folder ? t("models.instruments.ownCopy") : t("models.instruments.sharedCopy")}</p>
+                ) : null}
                 {item.running ? <Progress percent={item.percent} detail={item.detail} label={t("models.instruments.progress", { name: item.name })} /> : null}
                 {item.error && !item.running ? (
                   <p role="alert" className="rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-200">

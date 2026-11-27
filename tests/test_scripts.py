@@ -218,7 +218,7 @@ def test_windows_core_install_does_not_depend_on_winget() -> None:
     assert '$checksumUrl = "$downloadUrl.sha256"' in windows
     assert "Install-PortableNode" in windows
     assert "SHASUMS256.txt" in windows
-    assert "Install-PythonDirect" in windows
+    assert "Install-PortablePython" in windows
     assert "Get-AuthenticodeSignature" in windows
     assert "Python Software Foundation" in windows
     assert "Install-PortableGit" in windows
@@ -268,3 +268,24 @@ def test_windows_launchers_never_vanish_without_an_explanation() -> None:
     assert "function Wait-IfOwnWindow" in shared
     assert 'Wait-IfOwnWindow "install.ps1"' in Path("install.ps1").read_text(encoding="utf-8")
     assert 'Wait-IfOwnWindow "start.ps1"' in Path("start.ps1").read_text(encoding="utf-8")
+
+
+def test_windows_core_install_never_installs_anything_on_windows() -> None:
+    """Portable, like ComfyUI Portable: the core tools are private copies in .tools, caches
+    live in .cache, and nothing is installed system-wide (winget is only for optional AI tools
+    of the complete install, which says so)."""
+    windows = Path("install.ps1").read_text(encoding="utf-8")
+    for package in ("Gyan.FFmpeg", "OpenJS.NodeJS", "Git.Git", "Python.Python"):
+        assert package not in windows
+    assert "Install-PythonDirect" not in windows
+    assert "corepack enable" not in windows.replace('"corepack enable" is not used', "")
+    assert "complete install adds" in windows
+    shared = Path("scripts/install-state.ps1").read_text(encoding="utf-8")
+    assert "function Set-MusicSuitePortableEnvironment" in shared
+    for variable in ("PIP_CACHE_DIR", "npm_config_store_dir", "COREPACK_HOME", "NEXT_TELEMETRY_DISABLED"):
+        assert variable in shared
+    # pnpm 11+ ignores npm_config_* for its own settings: the store goes on its command line.
+    assert r'"--store-dir=$cache\pnpm-store"' in shared
+    for script in ("install.ps1", "start.ps1"):
+        assert "Set-MusicSuitePortableEnvironment -Root $root" in Path(script).read_text(encoding="utf-8")
+    assert ".cache/" in Path(".gitignore").read_text(encoding="utf-8")

@@ -110,6 +110,7 @@ Generate panel (editor)    ── REST ──▶    /generation/lyrics      ─�
 | `engine.py` | `EngineSupervisor` for acestep.cpp, described below. |
 | `resources.py` | `ResourceGuard`, described below. |
 | `writer.py` | Ollama lyrics and style writer, described below. |
+| `lyrics_tools.py` | Syllables and rhymes by rule (no model) for the lyrics helper, and the check every suggested line must pass. |
 | `records.py` | A generation record per result: provider, model, every parameter, seed, timings and cost estimate. It is stored with the editor asset so "regenerate", "variation" and "same seed, new lyrics" are one click. |
 
 **EngineSupervisor**
@@ -136,6 +137,12 @@ Generate panel (editor)    ── REST ──▶    /generation/lyrics      ─�
   - restyle a caption;
   - describe a reference track — this uses the suite's existing BPM, key and loudness analysis, so the model gets facts rather than guessing.
 - The existing loopback rule and output-token budget from [GUARDRAILS](../GUARDRAILS.md) apply.
+
+**Lyrics helper and style improver (done, 2026-11-27)**
+- `POST /generation/lyrics/check` (`lyrics_tools.analyse`): every sung line's syllables and a rhyme letter per section, by rule, with no model. Russian and Ukrainian syllables are exact (vowel letters); a rhyme there is judged from the word's end (last vowel and tail; for open endings also the consonant before it and the vowel before that, with unstressed о/а and е/я merged), because stress is not written. Spanish uses the diphthong, hiatus and stress rules, so its rhymes are exact. English uses the CMU pronouncing dictionary (BSD), downloaded once into `data/cache/lyrics` from a pinned commit with a SHA-256 check; the GPL `cmudict` package is not used. German and French are approximate (vowel groups; French silent endings removed).
+- `POST /generation/lyrics/line` (`writer.suggest_line`): the model proposes 8 replacements for one line (same syllables, rhyme with its partner line); each is measured, the ones that rhyme and fit come first, and the model is asked again with the failures named when fewer than 3 pass (twice more in Russian and Ukrainian). Measured with `gemma4:12b`: English and Spanish 7-8 of 8 pass; Russian 0-5 of 8 depending on the ending. Telling the model the ending letters ("-ни") raised Russian from 0 of 16 to 5 of 8 in a trial, so Cyrillic prompts do that.
+- `POST /generation/style/improve` (`writer.improve_caption`): a concrete English style description that keeps the user's intent; ACE-Step's planner is the fallback without Ollama.
+- Known limit: without a stress dictionary, a Russian rhyme stressed on the last syllable after different vowels («душа» / «хороша», «в тени» / «огни») is not recognised. A licensed Russian stress dictionary would remove it.
 
 ### 3.3 Parameter schema: how every provider shows every control
 

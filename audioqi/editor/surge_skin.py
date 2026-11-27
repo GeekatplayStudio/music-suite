@@ -11,6 +11,10 @@ artwork (GPL-3) is stored in this repository.
 It also sets two of Surge's own preferences, only where the user has not chosen yet:
 the skin as the default, and Surge's on-screen keyboard shown in the plugin window, so
 a sound can be played with the mouse or the computer keyboard right there.
+
+Both only touch Music Suite's own copy of Surge (installed in its folder, with its own
+"SurgeXTUserData"). A Surge XT shared with the user's other music programs gets the skin as
+one more choice in its Skins menu, but its default look and preferences are left alone.
 """
 
 from __future__ import annotations
@@ -83,8 +87,10 @@ def recolour_text(text: str) -> str:
 
 
 def user_dir() -> Path:
-    """Surge XT's user area (its own default location)."""
-    return Path.home() / "Documents" / "Surge XT"
+    """Surge XT's user area: Music Suite's own copy's, or Surge's default location."""
+    item = instruments.CATALOG.get("surge-xt")
+    found = instruments.user_data_dir(item) if item else None
+    return found or Path.home() / "Documents" / "Surge XT"
 
 
 def factory_skin() -> Path | None:
@@ -154,7 +160,10 @@ def ensure() -> dict[str, object]:
     fresh = stamp.is_file() and stamp.read_text(encoding="utf-8").strip() == str(VERSION)
     try:
         files = 0 if fresh else build_skin(source, target)
-        added = set_defaults(user_dir() / "SurgeXTUserDefaults.xml")
+        item = instruments.CATALOG.get("surge-xt")
+        # Preferences are changed only in Music Suite's own copy, never in a shared one.
+        own = item is not None and instruments.in_own_folder(item)
+        added = set_defaults(user_dir() / "SurgeXTUserDefaults.xml") if own else []
     except OSError as exc:
         return {"ok": False, "reason": f"The skin could not be written ({exc.strerror})."}
     return {"ok": True, "skin": str(target), "built": not fresh, "files": files, "defaults": added}

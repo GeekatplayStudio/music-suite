@@ -128,6 +128,10 @@ export interface InstrumentOffer {
   summary: string;
   supported: boolean;
   installed: boolean;
+  /** Installed in Music Suite's own folder, where no other music program sees it. */
+  own_folder?: boolean;
+  /** The install can go into Music Suite's own folder or the user's VST3 folder (Windows). */
+  choose_place?: boolean;
   download_bytes: number;
   running: boolean;
   percent: number;

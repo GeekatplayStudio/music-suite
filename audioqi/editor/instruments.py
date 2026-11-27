@@ -26,6 +26,7 @@ from typing import Any
 
 import requests
 
+from audioqi import portable
 from audioqi.editor import plugins
 
 Report = Callable[[float, str], None]
@@ -96,6 +97,24 @@ UNPACK_BYTES = 700 * 1024**2
 # --------------------------------------------------------------------------- locations
 
 
+def suite_vst3_dir() -> Path | None:
+    """Music Suite's own plugin folder (Windows), inside its data folder.
+
+    A plugin installed here is seen only by Music Suite: it does not appear in the user's other
+    music programs, and deleting Music Suite's folder removes it. On macOS Surge XT reads its
+    sound library only from the user's Application Support folder, so it is installed there.
+    """
+    if sys.platform == "win32":
+        return portable.data_dir() / "plugins" / "VST3"
+    return None
+
+
+def install_dir(for_daws: bool = False) -> Path | None:
+    """Where an install goes: Music Suite's own folder, or (if asked) the user's VST3 folder."""
+    own = suite_vst3_dir()
+    return own if own is not None and not for_daws else user_vst3_dir()
+
+
 def user_vst3_dir() -> Path | None:
     """The current user's VST3 folder, which the plugin scanner also searches."""
     if sys.platform == "darwin":
@@ -106,15 +125,44 @@ def user_vst3_dir() -> Path | None:
     return None
 
 
-def content_dir(item: Instrument) -> Path | None:
-    """Where the plugin looks for its sound library (from Surge XT's own search order)."""
+def content_dir(item: Instrument, vst3: Path | None = None) -> Path | None:
+    """Where the plugin looks for its sound library (from Surge XT's own search order).
+
+    ``vst3`` is the folder the plugin is (or is going) in; by default the one it is installed
+    in, or Music Suite's own folder when it is not installed yet.
+    """
     if item.id != "surge-xt":
         return None
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "Surge XT"
-    vst3 = user_vst3_dir()
+    if vst3 is None:
+        bundle = _installed_bundle(item)
+        vst3 = bundle.parent if bundle is not None else install_dir()
     # On Windows Surge XT first looks for a "SurgeXTData" folder above its own file.
     return None if vst3 is None else vst3 / "SurgeXTData"
+
+
+def user_data_dir(item: Instrument) -> Path | None:
+    """Surge XT's user area (its patches, skins and preferences).
+
+    A copy in Music Suite's own folder gets a "SurgeXTUserData" folder beside it, which Surge
+    uses instead of Documents\\Surge XT, so that copy shares nothing with the user's other
+    music programs. A copy in the user's VST3 folder uses Surge's normal place.
+    """
+    if item.id != "surge-xt":
+        return None
+    bundle = _installed_bundle(item)
+    own = suite_vst3_dir()
+    if bundle is not None and own is not None and bundle.parent == own:
+        return own / "SurgeXTUserData"
+    return Path.home() / "Documents" / "Surge XT"
+
+
+def in_own_folder(item: Instrument) -> bool:
+    """True when the installed copy is Music Suite's own (seen by no other program)."""
+    bundle = _installed_bundle(item)
+    own = suite_vst3_dir()
+    return bundle is not None and own is not None and bundle.parent == own
 
 
 def _installed_bundle(item: Instrument) -> Path | None:
@@ -148,6 +196,9 @@ def _status(item: Instrument) -> dict[str, Any]:
         "summary": item.summary,
         "supported": supported(item),
         "installed": _installed_bundle(item) is not None,
+        "own_folder": in_own_folder(item),
+        # Windows: the user can choose Music Suite's own folder or their VST3 folder.
+        "choose_place": suite_vst3_dir() is not None,
         "download_bytes": download,
         "running": bool(job.get("running")),
         "percent": float(job.get("percent") or 0.0),
@@ -278,17 +329,22 @@ def _replace(staged: Path, final: Path) -> None:
     shutil.rmtree(old, ignore_errors=True)
 
 
-def install(instrument_id: str, report: Report) -> None:
+def install(instrument_id: str, report: Report, for_daws: bool = False) -> None:
+    """Install into Music Suite's own folder, or with ``for_daws`` into the user's VST3 folder
+    so other music programs find it too."""
     item = CATALOG.get(instrument_id)
     if item is None:
         raise InstallError("Unknown instrument.")
     if not supported(item):
         raise InstallError(f"{item.name} can be installed here only on macOS and Windows.")
     plugin_spec = item.plugin[sys.platform]
-    vst3 = user_vst3_dir()
-    data = content_dir(item)
+    vst3 = install_dir(for_daws)
     assert vst3 is not None
+    data = content_dir(item, vst3)
     vst3.mkdir(parents=True, exist_ok=True)
+    if vst3 == suite_vst3_dir() and item.id == "surge-xt":
+        # Surge keeps its patches, skins and preferences here instead of Documents\Surge XT.
+        (vst3 / "SurgeXTUserData").mkdir(exist_ok=True)
     need = plugin_spec.size + (item.content.size if item.content else 0) + UNPACK_BYTES
     if shutil.disk_usage(vst3).free < need:
         raise InstallError(
@@ -314,7 +370,7 @@ def install(instrument_id: str, report: Report) -> None:
     report(100.0, f"{item.name} is installed.")
 
 
-def start_background(instrument_id: str) -> dict[str, Any]:
+def start_background(instrument_id: str, for_daws: bool = False) -> dict[str, Any]:
     item = CATALOG.get(instrument_id)
     if item is None:
         raise InstallError("Unknown instrument.")
@@ -335,7 +391,7 @@ def start_background(instrument_id: str) -> dict[str, Any]:
             _set(item.id, percent=round(percent, 1), detail=detail)
 
         try:
-            install(item.id, report)
+            install(item.id, report, for_daws=for_daws)
             _set(item.id, running=False, detail=f"{item.name} is installed.")
         except InstallError as exc:
             _set(item.id, running=False, error=str(exc), detail="Install failed.")
@@ -366,6 +422,12 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("list", help="show the instruments and whether each is installed")
     add = sub.add_parser("install", help="download and install an instrument")
     add.add_argument("instrument", choices=sorted(CATALOG))
+    add.add_argument(
+        "--for-daws",
+        action="store_true",
+        help="install into your VST3 folder so other music programs find it too "
+        "(by default it stays inside Music Suite's folder)",
+    )
     args = parser.parse_args(argv)
 
     if args.command == "list":
@@ -389,7 +451,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {percent:5.1f}%  {detail}", flush=True)
 
     try:
-        install(item.id, report)
+        install(item.id, report, for_daws=args.for_daws)
     except InstallError as exc:
         print(f"{item.name} was not installed: {exc}", file=sys.stderr)
         return 1

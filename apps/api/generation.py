@@ -168,6 +168,24 @@ def write_lyrics(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     return _guard(lambda: writer.write(payload))
 
 
+@router.post("/lyrics/check")
+def check_lyrics(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """Syllables and rhyme letters for every sung line, by rule (no language model)."""
+    return _guard(lambda: writer.check_lyrics(payload))
+
+
+@router.post("/lyrics/line")
+def suggest_line(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """Alternatives for one line, measured for syllables and rhyme before they are shown."""
+    return _guard(lambda: writer.suggest_line(payload))
+
+
+@router.post("/style/improve")
+def improve_style(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    """A clearer, more concrete style description that keeps the user's intent."""
+    return _guard(lambda: writer.improve_caption(payload))
+
+
 KEY_ACTION = "generation-key"
 
 

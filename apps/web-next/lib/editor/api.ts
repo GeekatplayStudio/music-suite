@@ -76,8 +76,13 @@ export const editorApi = {
   pluginSounds: (pluginId: string) => request<{ sounds: PluginSound[] }>(`/plugins/${pluginId}/sounds`),
   pluginSoundState: (pluginId: string, soundId: string) =>
     request<{ name: string; state: string }>(`/plugins/${pluginId}/sounds/${soundId}`, { method: "POST" }),
-  installInstrument: (instrumentId: string) =>
-    request<InstrumentOffer>(`/instruments/${instrumentId}/install`, { method: "POST" }),
+  /** Into Music Suite's own folder, or with `forDaws` into the user's VST3 folder too. */
+  installInstrument: (instrumentId: string, forDaws = false) =>
+    request<InstrumentOffer>(`/instruments/${instrumentId}/install`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ for_daws: forDaws })
+    }),
   listProjects: () => request<ProjectSummary[]>("/projects"),
   createProject: (name: string) => request<ProjectDetail>("/projects", json({ name })),
   getProject: (id: string) => request<ProjectDetail>(`/projects/${id}`),

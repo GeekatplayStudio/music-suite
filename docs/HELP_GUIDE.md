@@ -368,6 +368,12 @@ Open **AI Song Studio** from the workspace. It has three tabs.
 - *Generators*: switch engines on or off. *ACE-Step 1.5 (your own Python server)* is for computers that already run ACE-Step's server (start it with `uv run acestep-api`). *YuE2* needs an NVIDIA GPU with about 24 GB and the `MUSIC_SUITE_YUE2_PYTHON` setting, and every song asks you to confirm its non-commercial licence.
 - *Online services*: paste your own ElevenLabs or fal.ai API key and press **Save key** to switch that service on. It then appears in the *Generator* list. Your style text and lyrics are sent to it and it bills your account. A clip's audio is uploaded only when you tick *Allow uploading this clip* in an AI edit. A cost estimate appears next to **Generate** before anything is sent. **Remove key** switches it off again. Keys are stored in your computer's keychain and are never shown again.
 
+### Lyrics helper and style improver
+
+- **Rhymes and syllables** under the lyrics: each sung line's syllable count and a rhyme letter per section, by rule, with no language model (exact in Spanish and, with its pronouncing dictionary, English; from spelling in Russian, Ukrainian, German and French). An amber count is much longer or shorter than the rest of its section.
+- **Alternatives** beside a line: the lyrics model proposes replacements, and each is checked for rhyme and syllables before it is listed; a tick means it passed. Needs Ollama.
+- **Improve the description** under the style description: a clearer, concrete English description for the music model, with **Undo**.
+
 ### Starting from a song
 
 The **Start from a song** panel at the top of *Create* turns a song you already have into the starting point for a new one.

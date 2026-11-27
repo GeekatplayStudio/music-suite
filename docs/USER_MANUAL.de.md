@@ -115,8 +115,12 @@ Updates in der App setzen voraus, dass Music Suite mit Git (als Klon) installier
 | Modelle für die Stem-Trennung | `data\models\audio-separator\` |
 | Logs (wenn etwas schiefgeht) | `logs\` (`api.log`, `web.log`, `install.log`) und `data\generation\engine.log` |
 | Schlüssel für Online-Dienste | Windows-Anmeldeinformationsverwaltung ("Music Suite") |
-| Surge XT | `%LOCALAPPDATA%\Programs\Common\VST3\` |
+| Surge XT | `data\plugins\VST3\` (Windows) oder dein eigener VST3-Ordner, wenn du es mit anderen Musikprogrammen teilen wolltest |
+| Eigenes Python, FFmpeg, Node.js und Git von Music Suite | `.tools\` |
+| Download-Caches (Bibliotheken, Modelle) | `.cache\` und `data\cache\` |
 | Deine Synth-Sounds, Plugin-Favoriten, MIDI-Einstellungen, Mapper-Presets | Der Speicher deines Browsers: nicht im Music-Suite-Ordner und nicht in Projektdateien enthalten |
+
+**Alles bleibt in diesem Ordner.** Wie ComfyUI Portable installiert Music Suite nichts in Windows: Python, Werkzeuge, Downloads und Caches liegen in seinem Ordner, und wer den Ordner löscht, entfernt es vollständig. Außerhalb liegen nur die Schlüssel für Online-Dienste (Windows-Anmeldeinformationsverwaltung), was dein Browser speichert (siehe oben), Surge XT, wenn du es mit anderen Musikprogrammen teilen wolltest, und – nur bei der vollständigen Installation – Ollama und die Build-Werkzeuge für die KI-Musik-Engine.
 
 Um eine Session zu sichern oder umzuziehen, nutze im Editor **Exportieren → Ganzes Projekt** (siehe [Speichern, Projektdateien und Rückgängig](#saving-project-files-and-undo)).
 
@@ -1163,7 +1167,13 @@ Extrahieren, Stimme hinzufügen und Aufbauen brauchen das Bearbeitungsmodell (2,
 - **Musikmodell und Planermodell:** Auto verwendet das hochwertige XL-Modell, wenn es installiert und eingeschaltet ist.
 - **LoRA-Adapter und Stärke:** nur angezeigt, wenn Adapter installiert sind.
 
-**Umschreiben** (unter dem Songtext) ändert den Songtext auf Wunsch, zum Beispiel "add a bridge" oder "translate to Spanish". Dafür wird Ollama gebraucht.
+**Neu schreiben** (unter dem Songtext) ändert den Songtext auf Wunsch, zum Beispiel "add a bridge" oder "translate to Spanish". Dafür wird Ollama gebraucht.
+
+**Reime und Silben** (unter dem Songtext) zeigt jede gesungene Zeile mit Silbenzahl und Reimbuchstabe: Zeilen mit demselben Buchstaben reimen sich, so ist das Schema (AABB, ABAB…) auf einen Blick zu sehen. Eine bernsteinfarbene Zahl heißt, die Zeile ist deutlich länger oder kürzer als der Rest des Abschnitts und passt nicht auf dieselbe Melodie. Funktioniert ohne Ollama und aktualisiert sich beim Tippen. Exakt sind die Reime im Spanischen und – sobald das Aussprachewörterbuch geladen ist (3,6 MB, beim ersten Mal) – im Englischen; im Russischen, Ukrainischen, Deutschen und Französischen werden sie nach der Schreibweise beurteilt, nimm sie als Hinweis.
+
+**Alternativen** (neben einer Zeile) schlägt andere Fassungen dieser Zeile vor, die Reim und Länge behalten. Wähle, worauf sie sich reimen soll (ihre Partnerzeile, eine andere Zeile oder kein Reim), sag optional, was sich ändern soll, und drücke **Vorschlagen**. Jeder Vorschlag wird nach denselben Regeln geprüft: Ein Haken heißt, er reimt sich wirklich und hat die richtige Silbenzahl. **Übernehmen** setzt ihn an die Stelle der Zeile. Braucht Ollama. Kleine lokale Modelle reimen gut auf Englisch und Spanisch und weniger zuverlässig auf Russisch und Ukrainisch – darum wird jeder Vorschlag geprüft, statt ihm blind zu vertrauen.
+
+**Beschreibung verbessern** (unter der Stilbeschreibung) schreibt sie klarer und konkreter für das Musikmodell um: Genre, Stimmung, Tempogefühl, Instrumente, Stimme und Produktion – deine Idee bleibt erhalten. Sie wird auf Englisch geschrieben, das die Musikmodelle am besten verstehen. **Rückgängig** holt deine Fassung zurück.
 
 Die Leiste unten zeigt, wie lange es dauern wird (lokal) oder was es kosten wird (online). Während der Generierung zeigt sie jede Phase und eine Schaltfläche **Abbrechen**. Online-Dienste lassen sich nicht mehr abbrechen, sobald die Anfrage gesendet ist.
 
@@ -1299,11 +1309,11 @@ Optionale Engines und KI-Modelle. Alles hier läuft auf diesem Computer, und ein
 | Bearbeitungsmodell | Ein Instrument extrahieren, eine Stimme hinzufügen, einen Song um eine Stimme herum bauen. | 2,4 GB |
 | Hochwertiges Modell (XL) | Bessere Songs, etwas langsamer. | 4,9 GB |
 | Texter | Songtexte und Stilbeschreibungen mit Ollama. Braucht laufendes Ollama. | Etwa 8 GB |
-| Surge XT | Ein kostenloser Hybrid-Synthesizer mit Tausenden Werks-Sounds, für Instrumentenspuren und das Synth-Studio. | Etwa 300 MB Download |
+| Surge XT | Ein kostenloser Hybrid-Synthesizer mit Tausenden Werks-Sounds, für Instrumentenspuren und das Synth-Studio. Unter Windows bleibt es im Music-Suite-Ordner, wo deine anderen Musikprogramme es nicht sehen, außer du setzt den Haken bei **Auch in meinen anderen Musikprogrammen (DAW) verfügbar machen**. | Etwa 300 MB Download |
 
 Wenn ein Paket fertig ist, lade offene Editor-Seiten neu, um es zu nutzen. **Installationsprotokoll** zeigt, was der Installer getan hat, falls etwas fehlschlägt.
 
-Im Terminal: `.venv\Scripts\python -m audioqi.addons install stems` und `python -m audioqi.editor.instruments install surge-xt`.
+Im Terminal: `.venv\Scripts\python -m audioqi.addons install stems` und `python -m audioqi.editor.instruments install surge-xt`. Mit `--for-daws` kommt Surge XT stattdessen in deinen VST3-Ordner.
 
 <a id="settings-reference"></a>
 ## Einstellungsreferenz

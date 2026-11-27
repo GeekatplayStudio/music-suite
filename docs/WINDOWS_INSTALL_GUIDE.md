@@ -47,13 +47,17 @@ the authors, or the commit you happen to be on.
 
 The FFmpeg website primarily publishes source code and links to several Windows builds, so it is easy to download a command-line program and mistake its brief black window for an installer. Music Suite now handles this automatically.
 
-The installer first tries Windows Package Manager. If `winget` is missing or fails, it downloads the Windows Essentials ZIP linked by the official FFmpeg project, verifies the publisher's SHA-256 checksum, and keeps FFmpeg inside the Music Suite `.tools` folder. `start.bat` finds it automatically; no PATH editing is needed.
+When FFmpeg is not already on the computer, the installer downloads the Windows Essentials ZIP linked by the official FFmpeg project, verifies the publisher's SHA-256 checksum, and keeps FFmpeg inside the Music Suite `.tools` folder. Nothing is installed on Windows: `start.bat` finds it automatically, and no PATH editing is needed.
 
-The same fallback approach is used for Node.js and Git.
+Node.js and Git work the same way: private, checksum-verified copies in `.tools`, never a Windows install. Windows Package Manager (`winget`) is not used for any of them.
 
 ## Python comes with Music Suite
 
-You do not need Python on the computer, and an existing one is left alone. Like ComfyUI's portable build, Music Suite keeps its own Python 3.12 inside its folder (`.tools\python`): the installer downloads python.org's official build (published as a package on `api.nuget.org`, about 14 MB), checks it against a fixed SHA-256 fingerprint and the Python Software Foundation's signature, and unpacks it. Nothing is installed on Windows, no administrator password is asked, and PATH is not changed. Only when that download is impossible does the installer use a Python 3.12 or newer already on the computer, or install one from python.org.
+You do not need Python on the computer, and an existing one is left alone. Like ComfyUI's portable build, Music Suite keeps its own Python 3.12 inside its folder (`.tools\python`): the installer downloads python.org's official build (published as a package on `api.nuget.org`, about 14 MB), checks it against a fixed SHA-256 fingerprint and the Python Software Foundation's signature, and unpacks it. Nothing is installed on Windows, no administrator password is asked, and PATH is not changed. Only when that download is impossible does the installer use a Python 3.12 or newer already on the computer, as it is; it never installs Python on Windows.
+
+## Nothing outside the Music Suite folder
+
+Like ComfyUI Portable, Music Suite keeps what it adds in its own folder: its Python and tools in `.tools`, download caches (pip, pnpm, npm) in `.cache`, model caches in `data\cache`, and Surge XT, when you install it from **Models & engines**, in `data\plugins\VST3`, where your DAW does not see it (tick **Also make it available to my other music programs** if you want it there). Deleting the folder removes Music Suite completely. Only the optional complete install adds programs to Windows: Ollama for the lyrics writer, and CMake and the C++ build tools for the AI music engine; the installer says so before you choose it.
 
 If you move or rename the Music Suite folder, run `install.bat` once more (or just `start.bat`): it notices that the app's Python environment points to the old place and rebuilds it.
 
@@ -63,7 +67,7 @@ Double-click `install.bat` in the **extracted** folder. Opened straight from the
 
 ## If `winget` reports certificate error `0x8a15005e`
 
-That error belongs to Windows Package Manager's repository connection, not Music Suite or your internet speed. The standard Music Suite installation now falls back to verified official downloads instead of stopping.
+That error belongs to Windows Package Manager's repository connection, not Music Suite or your internet speed. The standard Music Suite installation does not use `winget` at all; only the optional complete install does, for Ollama, CMake and the build tools.
 
 The optional AI music engine also explicitly selects the `winget` community source for CMake, avoiding the older “several packages were found; specify a source” failure. If Windows still cannot install optional CMake, Build Tools, or Ollama:
 

@@ -115,5 +115,41 @@ export const studio: Dictionary["studio"] = {
     generateInStyle: "Générer dans son style",
     generateIntoProject: "Générer dans ce projet"
   },
+  style: {
+    improve: "Améliorer la description",
+    improveTitle: "Réécrit la description du style pour la rendre plus claire et plus concrète pour le modèle musical, en gardant votre idée. Annulable.",
+    improving: "Amélioration…",
+    undo: "Annuler",
+    byModel: "Améliorée par {model}. Modifiez-la à votre guise.",
+    byPlanner: "Améliorée par le planificateur du moteur musical.",
+    failed: "La description du style n'a pas pu être améliorée."
+  },
+  lyricsHelper: {
+    heading: "Rimes et syllabes",
+    lines: { one: "{n} vers", other: "{n} vers" },
+    help: "Chaque vers chanté avec son nombre de syllabes et une lettre de rime : les vers de même lettre riment (AABB, ABAB…). Un nombre ambré est bien plus long ou plus court que le reste de sa section.",
+    approximate: "Dans cette langue, les rimes sont jugées sur l'orthographe : prenez-les comme une indication.",
+    rhymeTitle: "Rime avec les autres vers « {letter} »",
+    noRhyme: "Ne rime avec aucun autre vers de cette section",
+    offTitle: "{n} syllabes ; la plupart des vers de cette section en ont environ {typical}",
+    syllables: { one: "{n} syllabe", other: "{n} syllabes" },
+    alternatives: "Variantes",
+    alternativesTitle: "Proposer d'autres versions de ce vers qui gardent sa rime et sa longueur",
+    rhymeWith: "Rimer avec",
+    rhymeAuto: "Son vers partenaire (automatique)",
+    rhymeNone: "Sans rime",
+    ideaPlaceholder: "Facultatif : quoi changer (p. ex. « plus optimiste »)",
+    suggest: "Proposer",
+    suggesting: "Recherche…",
+    failed: "Aucune variante n'a pu être proposée.",
+    target: "Objectif : {n} syllabes, rime avec « {word} ». Une coche signifie que le vers rime vraiment et convient.",
+    targetFree: "Objectif : {n} syllabes. Une coche signifie que le vers convient.",
+    noRhymeMark: "Ne rime pas",
+    lengthMark: "{n} syllabes : ne colle pas à la mélodie",
+    goodMark: "Rime et convient",
+    use: "Utiliser",
+    none: "Le modèle n'a donné aucun vers utilisable. Réessayez.",
+    noneGood: "Aucun ne rime et ne convient à la fois. Appuyez de nouveau sur Proposer, ou prenez le plus proche et retouchez-le."
+  },
   allOff: "Tous les générateurs sont désactivés. Activez-en un dans les Réglages."
 };

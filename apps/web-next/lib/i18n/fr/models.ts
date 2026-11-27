@@ -84,7 +84,11 @@ export const models: Dictionary["models"] = {
     platformOnly: "macOS et Windows uniquement",
     progress: "Progression de l'installation de {name}",
     useBefore: "Pour en utiliser un, sélectionnez un clip MIDI dans",
-    useMiddle: "et ouvrez sa section Instrument plug-in, ou essayez les sons dans"
+    useMiddle: "et ouvrez sa section Instrument plug-in, ou essayez les sons dans",
+    forDaws: "Le rendre aussi disponible dans mes autres logiciels de musique (DAW)",
+    forDawsHelp: "L'installe dans votre dossier VST3. Sans cette case, il reste dans le dossier de Music Suite et aucun autre logiciel ne le voit.",
+    ownCopy: "Installé dans le dossier de Music Suite : seul Music Suite voit cette copie.",
+    sharedCopy: "Installé dans votre dossier VST3 : vos autres logiciels de musique le voient aussi."
   },
   terminal: {
     heading: "Depuis un terminal",

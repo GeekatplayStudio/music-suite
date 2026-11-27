@@ -13,6 +13,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 . (Join-Path $root "scripts\install-state.ps1")
+Set-MusicSuitePortableEnvironment -Root $root
 $toolsRoot = Join-Path $root ".tools"
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 Push-Location $root
@@ -302,30 +303,6 @@ function Install-PortableGit {
     }
 }
 
-function Install-PythonDirect {
-    $version = "3.12.10"
-    $architecture = Get-WindowsArchitecture
-    $suffix = if ($architecture -eq "arm64") { "-arm64" } else { "-amd64" }
-    $installer = Join-Path ([IO.Path]::GetTempPath()) "music-suite-python-$version$suffix.exe"
-    $url = "https://www.python.org/ftp/python/$version/python-$version$suffix.exe"
-    try {
-        Invoke-TrustedDownload $url $installer "Python $version"
-        $signature = Get-AuthenticodeSignature -LiteralPath $installer
-        if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notlike "*Python Software Foundation*") {
-            throw "The Python installer did not have a valid Python Software Foundation signature. Nothing was installed."
-        }
-        Write-Host "Installing Python $version for this Windows user..."
-        $process = Start-Process -FilePath $installer -ArgumentList @(
-            "/quiet", "InstallAllUsers=0", "PrependPath=1", "Include_test=0",
-            "Include_launcher=1", "InstallLauncherAllUsers=0"
-        ) -Wait -PassThru
-        if ($process.ExitCode -ne 0) { throw "Python setup failed (exit code $($process.ExitCode))." }
-        Refresh-Path
-    } finally {
-        Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
-    }
-}
-
 function Assert-LastExitCode([string]$Action) {
     if ($LASTEXITCODE -ne 0) {
         throw "$Action failed (exit code $LASTEXITCODE). Review the messages above and run install.bat again."
@@ -435,29 +412,21 @@ function Install-PortablePython {
 
 function Find-SystemPython {
     # Music Suite's own Python first: it behaves the same on every computer. A Python already
-    # on the computer is used only when that download is impossible (nuget.org blocked).
+    # on the computer is used, as it is, only when that download is impossible (nuget.org
+    # blocked). Nothing is ever installed on Windows for Python.
     try {
         $portable = Install-PortablePython
         return [PSCustomObject]@{ Executable = $portable; PrefixArgs = @("-I") }
     } catch {
         Write-Host "Music Suite's own Python could not be set up: $($_.Exception.Message)" -ForegroundColor Yellow
-        Write-Host "Looking for a Python 3.$minPythonMinor or newer on this computer instead..." -ForegroundColor Yellow
+        Write-Host "Looking for a Python 3.$minPythonMinor or newer already on this computer instead..." -ForegroundColor Yellow
     }
 
     $found = Find-SupportedPython
     if ($found) { return $found }
-
-    $null = Try-InstallWithWinget "Python.Python.3.$minPythonMinor" "Python 3.$minPythonMinor"
-    Refresh-Path
-
-    $found = Find-SupportedPython
-    if ($found) { return $found }
-    Install-PythonDirect
-    $found = Find-SupportedPython
-    if ($found) { return $found }
-    throw ("Python 3.$minPythonMinor could not be set up. Music Suite downloads its own Python from api.nuget.org " +
-        "(or, failing that, from python.org); check that this computer can reach them (a VPN, proxy or antivirus web " +
-        "filter can block it), then run install.bat again.")
+    throw ("Music Suite could not download its own Python from api.nuget.org. Check that this computer can " +
+        "reach it (a VPN, proxy or antivirus web filter can block it), then run install.bat again. Music Suite " +
+        "does not install Python on Windows.")
 }
 
 # Node 20 is end-of-life and the current toolchain needs 22.13 or newer.
@@ -523,6 +492,8 @@ try {
         Write-Host "This enables AI songs, AI editing, XL quality, lyrics, all stem models,"
         Write-Host "and Surge XT. Allow about 30 GB of downloads and at least 45 GB free."
         Write-Host "You can also add these later from Models & engines inside the app."
+        Write-Host "Everything stays inside this folder, except that the complete install adds"
+        Write-Host "Ollama (lyrics writer) and, for the AI music engine, CMake and C++ build tools to Windows."
         Write-Host ""
         $completeInstall = Test-Yes (Read-Host "Complete install? [y/N]")
     }
@@ -546,36 +517,16 @@ try {
     Write-Step "Step 1 of 5 - Checking system tools (Python, FFmpeg, Node.js, Git)..."
 
     if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
-        $null = Try-InstallWithWinget "Gyan.FFmpeg" "FFmpeg"
-        Refresh-Path
-        if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
-            Install-PortableFFmpeg
-        }
+        # A private copy inside Music Suite's folder (.tools), never a Windows install: a tool
+        # already on the computer is used as it is, a missing one is not added to the system.
+        Install-PortableFFmpeg
     }
 
-    if (-not (Test-NodeVersion)) {
-        $null = Try-InstallWithWinget "OpenJS.NodeJS.LTS" "Node.js LTS"
-        Refresh-Path
-        if (-not (Test-NodeVersion)) { Install-PortableNode }
-    }
+    if (-not (Test-NodeVersion)) { Install-PortableNode }
 
-    if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) {
-        $null = Try-InstallWithWinget "Git.Git" "Git"
-        Refresh-Path
-        if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { Install-PortableGit }
-    }
-
-    if (-not (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) -and (Get-Command corepack -ErrorAction SilentlyContinue)) {
-        Write-Host "Enabling pnpm via corepack..."
-        $env:COREPACK_ENABLE_DOWNLOAD_PROMPT = "0"
-        Invoke-Native { & corepack enable 2>$null }
-        if ($LASTEXITCODE -ne 0) {
-            # Needs administrator rights when Node is installed for all users. Not a problem:
-            # pnpm is then run through corepack directly.
-            Write-Host "pnpm will run through corepack (enabling its shortcut needs administrator rights)." -ForegroundColor DarkGray
-        }
-        $global:LASTEXITCODE = 0
-    }
+    if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { Install-PortableGit }
+    # pnpm runs through "corepack pnpm" (Get-PnpmInvocation). "corepack enable" is not used:
+    # it writes shortcuts into Node's own folder, which may be a system-wide Node.js.
 
     if ($completeInstall) {
         Add-KnownOllamaPath

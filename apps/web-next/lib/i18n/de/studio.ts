@@ -115,5 +115,41 @@ export const studio: Dictionary["studio"] = {
     generateInStyle: "In seinem Stil generieren",
     generateIntoProject: "In dieses Projekt generieren"
   },
+  style: {
+    improve: "Beschreibung verbessern",
+    improveTitle: "Schreibt die Stilbeschreibung klarer und konkreter für das Musikmodell um und behält deine Idee bei. Lässt sich rückgängig machen.",
+    improving: "Wird verbessert…",
+    undo: "Rückgängig",
+    byModel: "Verbessert von {model}. Bearbeite sie nach Belieben.",
+    byPlanner: "Verbessert vom Planer der Musik-Engine.",
+    failed: "Die Stilbeschreibung konnte nicht verbessert werden."
+  },
+  lyricsHelper: {
+    heading: "Reime und Silben",
+    lines: { one: "{n} Zeile", other: "{n} Zeilen" },
+    help: "Jede gesungene Zeile mit Silbenzahl und Reimbuchstabe: Zeilen mit demselben Buchstaben reimen sich (AABB, ABAB…). Eine bernsteinfarbene Zahl ist deutlich länger oder kürzer als der Rest des Abschnitts.",
+    approximate: "In dieser Sprache werden Reime nach der Schreibweise beurteilt – nimm sie als Hinweis.",
+    rhymeTitle: "Reimt sich mit den anderen „{letter}“-Zeilen",
+    noRhyme: "Reimt sich mit keiner anderen Zeile dieses Abschnitts",
+    offTitle: "{n} Silben; die meisten Zeilen dieses Abschnitts haben etwa {typical}",
+    syllables: { one: "{n} Silbe", other: "{n} Silben" },
+    alternatives: "Alternativen",
+    alternativesTitle: "Andere Fassungen dieser Zeile vorschlagen, die Reim und Länge behalten",
+    rhymeWith: "Reimen auf",
+    rhymeAuto: "Ihre Partnerzeile (automatisch)",
+    rhymeNone: "Kein Reim",
+    ideaPlaceholder: "Optional: was ändern (z. B. „hoffnungsvoller“)",
+    suggest: "Vorschlagen",
+    suggesting: "Wird vorgeschlagen…",
+    failed: "Es konnten keine Alternativen vorgeschlagen werden.",
+    target: "Ziel: {n} Silben, Reim auf „{word}“. Ein Haken heißt: Die Zeile reimt sich wirklich und passt.",
+    targetFree: "Ziel: {n} Silben. Ein Haken heißt: Die Zeile passt.",
+    noRhymeMark: "Reimt sich nicht",
+    lengthMark: "{n} Silben: passt nicht zur Melodie",
+    goodMark: "Reimt sich und passt",
+    use: "Übernehmen",
+    none: "Das Modell lieferte keine brauchbaren Zeilen. Versuche es erneut.",
+    noneGood: "Keine reimt sich und passt zugleich. Drücke noch einmal auf Vorschlagen oder nimm die nächstbeste und bearbeite sie."
+  },
   allOff: "Alle Generatoren sind ausgeschaltet. Schalte einen in den Einstellungen ein."
 };

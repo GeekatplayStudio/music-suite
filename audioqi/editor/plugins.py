@@ -67,7 +67,10 @@ def plugin_dirs() -> list[tuple[Path, str, str]]:
             (home / "Components", "*.component", "au"),
         ]
     if sys.platform == "win32":
-        dirs = []
+        from audioqi import portable
+
+        # Music Suite's own plugin folder first: instruments it installed for itself.
+        dirs = [(portable.data_dir() / "plugins" / "VST3", "*.vst3", "vst3")]
         common = os.environ.get("COMMONPROGRAMFILES")
         if common:
             dirs.append((Path(common) / "VST3", "*.vst3", "vst3"))

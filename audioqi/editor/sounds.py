@@ -83,7 +83,9 @@ def _surge_libraries() -> list[tuple[str, Path]]:
             ("Factory", data / "patches_factory"),
             ("Third party", data / "patches_3rdparty"),
         ]
-    libraries.append(("My patches", Path.home() / "Documents" / "Surge XT" / "Patches"))
+    user = instruments.user_data_dir(item)
+    if user is not None:
+        libraries.append(("My patches", user / "Patches"))
     return libraries
 
 

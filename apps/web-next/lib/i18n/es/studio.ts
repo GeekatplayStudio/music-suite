@@ -115,5 +115,41 @@ export const studio: Dictionary["studio"] = {
     generateInStyle: "Generar en su estilo",
     generateIntoProject: "Generar en este proyecto"
   },
+  style: {
+    improve: "Mejorar la descripción",
+    improveTitle: "Reescribe la descripción del estilo para que sea más clara y concreta para el modelo musical, manteniendo tu idea. Puedes deshacerlo.",
+    improving: "Mejorando…",
+    undo: "Deshacer",
+    byModel: "Mejorada por {model}. Edítala como quieras.",
+    byPlanner: "Mejorada por el planificador del motor musical.",
+    failed: "No se pudo mejorar la descripción del estilo."
+  },
+  lyricsHelper: {
+    heading: "Rimas y sílabas",
+    lines: { one: "{n} verso", other: "{n} versos" },
+    help: "Cada verso con su número de sílabas y una letra de rima: los versos con la misma letra riman (AABB, ABAB…). Un número en ámbar es mucho más largo o corto que el resto de su sección.",
+    approximate: "En este idioma las rimas se juzgan por la escritura, así que tómalas como una guía.",
+    rhymeTitle: "Rima con los otros versos «{letter}»",
+    noRhyme: "No rima con ningún otro verso de esta sección",
+    offTitle: "{n} sílabas; la mayoría de los versos de esta sección tienen unas {typical}",
+    syllables: { one: "{n} sílaba", other: "{n} sílabas" },
+    alternatives: "Alternativas",
+    alternativesTitle: "Sugerir otras versiones de este verso que mantengan su rima y su longitud",
+    rhymeWith: "Rimar con",
+    rhymeAuto: "Su verso pareja (automático)",
+    rhymeNone: "Sin rima",
+    ideaPlaceholder: "Opcional: qué cambiar (p. ej., «más esperanzador»)",
+    suggest: "Sugerir",
+    suggesting: "Sugiriendo…",
+    failed: "No se pudieron sugerir alternativas.",
+    target: "Objetivo: {n} sílabas, rimando con «{word}». Una marca significa que el verso rima de verdad y encaja.",
+    targetFree: "Objetivo: {n} sílabas. Una marca significa que el verso encaja.",
+    noRhymeMark: "No rima",
+    lengthMark: "{n} sílabas: no encaja en la melodía",
+    goodMark: "Rima y encaja",
+    use: "Usar",
+    none: "El modelo no dio versos útiles. Inténtalo de nuevo.",
+    noneGood: "Ninguno rima y encaja a la vez. Pulsa Sugerir otra vez o elige el más cercano y edítalo."
+  },
   allOff: "Todos los generadores están desactivados. Activa uno en Ajustes."
 };

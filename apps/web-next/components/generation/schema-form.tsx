@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef } from "react";
+import { type ReactNode, useId, useRef } from "react";
 
 import {
   optionLabel,
@@ -208,10 +208,12 @@ interface SchemaFormProps {
   onChange: (key: string, value: FieldValue) => void;
   /** Fields whose control is hidden because another choice makes them irrelevant. */
   hidden?: (field: FieldSpec) => boolean;
+  /** Something shown under a field (the lyrics helper, the style improver). */
+  fieldExtra?: (field: FieldSpec) => ReactNode;
 }
 
 /** Builds a form from a provider's own description of its controls. */
-export function SchemaForm({ schema, values, disabled, onChange, hidden }: SchemaFormProps) {
+export function SchemaForm({ schema, values, disabled, onChange, hidden, fieldExtra }: SchemaFormProps) {
   const { tp } = useI18n();
   const visible = schema.fields.filter((field) => !hidden?.(field));
   return (
@@ -232,6 +234,7 @@ export function SchemaForm({ schema, values, disabled, onChange, hidden }: Schem
                   onChange={(value) => onChange(field.key, value)}
                   songDuration={Number(values.duration) || undefined}
                 />
+                {fieldExtra?.(field)}
               </div>
             ))}
           </div>

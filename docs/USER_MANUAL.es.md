@@ -115,8 +115,12 @@ Las actualizaciones desde la aplicación requieren que Music Suite se haya insta
 | Modelos de separación de stems | `data\models\audio-separator\` |
 | Registros (cuando algo va mal) | `logs\` (`api.log`, `web.log`, `install.log`) y `data\generation\engine.log` |
 | Claves de servicios en línea | Administrador de credenciales de Windows ("Music Suite") |
-| Surge XT | `%LOCALAPPDATA%\Programs\Common\VST3\` |
+| Surge XT | `data\plugins\VST3\` (Windows), o tu propia carpeta VST3 si elegiste compartirlo con otros programas de música |
+| Python, FFmpeg, Node.js y Git propios de Music Suite | `.tools\` |
+| Cachés de descargas (bibliotecas, modelos) | `.cache\` y `data\cache\` |
 | Tus sonidos de sintetizador, plug-ins favoritos, opciones MIDI y presets del mapeador | El almacenamiento de tu navegador: no está en la carpeta de Music Suite y no se incluye en los archivos de proyecto |
+
+**Todo se queda en esta carpeta.** Como ComfyUI Portable, Music Suite no instala nada en Windows: su Python, sus herramientas, descargas y cachés viven en su carpeta, así que borrar la carpeta lo elimina por completo. Lo único que se guarda fuera son las claves de los servicios en línea (Administrador de credenciales de Windows), lo que guarda tu navegador (arriba), Surge XT si elegiste compartirlo con otros programas de música y, solo con la instalación completa, Ollama y las herramientas de compilación del motor de música con IA.
 
 Para hacer una copia de seguridad de una sesión o moverla, usa en el editor **Exportar → Proyecto completo** (consulta [Guardado, archivos de proyecto y deshacer](#saving-project-files-and-undo)).
 
@@ -1165,6 +1169,12 @@ Extraer, Añadir una parte y Construir necesitan el modelo de edición (2.4 GB, 
 
 **Reescribir** (bajo la letra) cambia la letra según lo que pidas, por ejemplo "add a bridge" o "translate to Spanish". Necesita Ollama.
 
+**Rimas y sílabas** (bajo la letra) muestra cada verso con su número de sílabas y una letra de rima: los versos con la misma letra riman, así que ves el esquema (AABB, ABAB…) de un vistazo. Un número en ámbar indica que el verso es mucho más largo o corto que el resto de su sección y no encajará en la misma melodía. Funciona sin Ollama y se actualiza mientras escribes. Las rimas son exactas en español y, cuando se ha descargado su diccionario de pronunciación (3,6 MB, la primera vez), en inglés; en ruso, ucraniano, alemán y francés se juzgan por la escritura, así que tómalas como una guía.
+
+**Alternativas** (junto a un verso) sugiere otras versiones de ese verso que mantienen su rima y su longitud. Elige con qué debe rimar (su verso pareja, otro verso o sin rima), indica si quieres qué cambiar y pulsa **Sugerir**. Cada sugerencia se comprueba con las mismas reglas: una marca significa que rima de verdad y tiene el número de sílabas correcto. **Usar** la pone en lugar del verso. Necesita Ollama. Los modelos locales pequeños riman bien en inglés y español y con menos fiabilidad en ruso y ucraniano; por eso cada sugerencia se comprueba en lugar de darla por buena.
+
+**Mejorar la descripción** (bajo la descripción del estilo) la reescribe para que sea más clara y concreta para el modelo musical: género, ambiente, tempo, instrumentos, voz y producción, manteniendo tu idea. La escribe en inglés, que es lo que mejor entienden los modelos musicales. **Deshacer** recupera lo que tenías.
+
 La barra inferior muestra cuánto tardará (en local) o cuánto costará (en línea). Mientras genera, muestra cada etapa y un botón **Cancelar**. Los servicios en línea no se pueden cancelar una vez enviada la petición.
 
 **Resultados:** cada versión tiene un reproductor y su tempo, tonalidad, sonoridad y semilla. Los botones son:
@@ -1299,11 +1309,11 @@ Motores y modelos de IA opcionales. Todo lo de aquí funciona en este equipo, e 
 | Modelo de edición | Extraer un instrumento, añadir una parte, construir una canción alrededor de una parte. | 2.4 GB |
 | Modelo de alta calidad (XL) | Mejores canciones, algo más lento. | 4.9 GB |
 | Letrista | Letras y descripciones de estilo con Ollama. Necesita Ollama en marcha. | Unos 8 GB |
-| Surge XT | Un sintetizador híbrido gratuito con miles de sonidos de fábrica, para las pistas de instrumento y el Estudio de síntesis. | Unos 300 MB de descarga |
+| Surge XT | Un sintetizador híbrido gratuito con miles de sonidos de fábrica, para las pistas de instrumento y el Estudio de síntesis. En Windows se queda dentro de la carpeta de Music Suite, donde tus otros programas de música no lo ven, salvo que marques **Hacerlo disponible también en mis otros programas de música (DAW)**. | Unos 300 MB de descarga |
 
 Cuando termine un paquete, recarga las páginas del editor que tengas abiertas para usarlo. **Registro de instalación** muestra lo que hizo el instalador si algo falla.
 
-Desde un terminal: `.venv\Scripts\python -m audioqi.addons install stems` y `python -m audioqi.editor.instruments install surge-xt`.
+Desde un terminal: `.venv\Scripts\python -m audioqi.addons install stems` y `python -m audioqi.editor.instruments install surge-xt`. Añade `--for-daws` para poner Surge XT en tu carpeta VST3.
 
 <a id="settings-reference"></a>
 ## Referencia de ajustes
