@@ -6,12 +6,17 @@
  * Plural forms are objects ({ one, few, many, other }) chosen with Intl.PluralRules.
  */
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { type Locale, LOCALE_COOKIE, THEME_COOKIE, type ThemeId, rememberPref } from "@/lib/prefs";
 
+import { de } from "./de";
 import { en } from "./en";
+import { es } from "./es";
+import { fr } from "./fr";
 import { ru } from "./ru";
+import { uk } from "./uk";
+import { loadServerMessages } from "./server-messages";
 
 /** A plural entry: Intl.PluralRules categories, "other" always present. */
 export type Plural = { one?: string; few?: string; many?: string; other: string };
@@ -40,7 +45,7 @@ export type MessageKey = Leaves<typeof en>;
 export type PluralKey = PluralLeaves<typeof en>;
 export type Vars = Record<string, string | number>;
 
-const DICTIONARIES: Record<Locale, Dictionary> = { en, ru };
+const DICTIONARIES: Record<Locale, Dictionary> = { en, es, de, fr, ru, uk };
 
 function lookup(dictionary: Dictionary, key: string): unknown {
   let node: unknown = dictionary;
@@ -80,6 +85,11 @@ export function I18nProvider({
 }) {
   const [locale, setLocaleState] = useState<Locale>(initialLocale);
   const [theme, setThemeState] = useState<ThemeId>(initialTheme);
+
+  // The backend's messages are translated from a catalogue per language, fetched when needed.
+  useEffect(() => {
+    void loadServerMessages(locale);
+  }, [locale]);
 
   const setLocale = useCallback((next: Locale) => {
     setLocaleState(next);

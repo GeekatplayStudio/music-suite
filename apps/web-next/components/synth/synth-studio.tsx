@@ -1,9 +1,10 @@
 "use client";
 
 import { AppPrefs } from "@/components/app-prefs";
+import { FloatButton, Floatable } from "@/components/detachable";
 import Link from "next/link";
 import { useCallback, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
-import { Download, Loader2, Piano as PianoIcon, Play, Power, RotateCcw, SlidersHorizontal, Square, Waves } from "lucide-react";
+import { AppWindow, Download, Loader2, Piano as PianoIcon, Play, Power, RotateCcw, SlidersHorizontal, Square, Waves } from "lucide-react";
 
 import { PluginSoundFiles, SoundBrowser } from "@/components/editor/plugin-instrument";
 import { PresetBar, SynthControls } from "@/components/editor/synth-editor";
@@ -14,6 +15,7 @@ import { initPatch, normalizePatch, startVoice, type Patch, type Voice } from "@
 import type { Note, PluginInfo, PluginSound } from "@/lib/editor/types";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { openPageWindow } from "@/lib/windows";
 
 const quiet =
   "inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-slate-800 px-3 text-xs font-semibold text-slate-100 " +
@@ -57,7 +59,9 @@ type Tab = "builtin" | "plugin";
 /** Design and play sounds: the suite's own synth, and installed instruments such as Surge XT. */
 export function SynthStudio() {
   const { t } = useI18n();
-  const [tab, setTab] = useState<Tab>("builtin");
+  // ?tab=plugin opens on the plug-in tab (a tab opened in a window of its own). This component
+  // renders in the browser only, so the address can be read straight away.
+  const [tab, setTab] = useState<Tab>(() => (new URLSearchParams(window.location.search).get("tab") === "plugin" ? "plugin" : "builtin"));
   const [patch, setPatch] = useState<Patch>(loadPatch);
   const patchRef = useRef(patch);
   useEffect(() => {
@@ -362,7 +366,8 @@ export function SynthStudio() {
         </nav>
       </header>
 
-      <div role="tablist" aria-label={t("synth.studio.tabs.label")} className="flex gap-1 self-start rounded-xl bg-slate-900/80 p-1">
+      <div className="flex items-stretch gap-2 self-start">
+      <div role="tablist" aria-label={t("synth.studio.tabs.label")} className="flex gap-1 rounded-xl bg-slate-900/80 p-1">
         {(
           [
             ["builtin", t("synth.studio.tabs.builtin"), SlidersHorizontal],
@@ -391,9 +396,22 @@ export function SynthStudio() {
           </button>
         ))}
       </div>
+      <button
+        type="button"
+        title={t("windows.tab", { tab: t(`synth.studio.tabs.${tab}`) })}
+        aria-label={t("windows.tab", { tab: t(`synth.studio.tabs.${tab}`) })}
+        onClick={() => {
+          if (!openPageWindow(`synth-${tab}`, `/synth?tab=${tab}`)) window.alert(t("windows.blocked"));
+        }}
+        className="inline-flex w-12 items-center justify-center rounded-xl bg-slate-900/80 text-slate-300 hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
+      >
+        <AppWindow className="h-4 w-4" aria-hidden />
+      </button>
+      </div>
 
       {tab === "builtin" ? (
         <div id="panel-builtin" role="tabpanel" aria-labelledby="tab-builtin" className="flex flex-col gap-4">
+          <Floatable id="synth-sound" title={t("synth.studio.sound")}>
           <section className="glass rounded-2xl border border-white/10 p-3 sm:p-4" aria-label={t("synth.studio.sound")}>
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="display-font mr-1 text-base font-semibold text-slate-100">{t("synth.studio.sound")}</h2>
@@ -401,15 +419,27 @@ export function SynthStudio() {
               <button type="button" className={quiet} onClick={() => setPatch(initPatch())} title={t("synth.studio.newSoundTitle")}>
                 <RotateCcw className="h-3.5 w-3.5" aria-hidden /> {t("synth.studio.newSound")}
               </button>
+              <FloatButton className="ml-auto" />
             </div>
             <Piano className="mt-3" onNoteOn={noteOn} onNoteOff={noteOff} />
           </section>
-          <SynthControls patch={patch} onChange={(next) => setPatch(next)} wide />
+          </Floatable>
+          <Floatable id="synth-controls" title={t("detach.titles.synthControls")}>
+            <p className="mb-2 flex items-center gap-2 px-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              {t("detach.titles.synthControls")}
+              <FloatButton className="ml-auto" />
+            </p>
+            <SynthControls patch={patch} onChange={(next) => setPatch(next)} wide />
+          </Floatable>
         </div>
       ) : (
         <div id="panel-plugin" role="tabpanel" aria-labelledby="tab-plugin" className="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+          <Floatable id="synth-instrument" title={t("synth.studio.instrument")}>
           <section className="glass space-y-3 rounded-2xl border border-white/10 p-3 sm:p-4" aria-label={t("synth.studio.pluginSection")}>
-            <h2 className="display-font text-base font-semibold text-slate-100">{t("synth.studio.instrument")}</h2>
+            <h2 className="display-font flex items-center gap-2 text-base font-semibold text-slate-100">
+              {t("synth.studio.instrument")}
+              <FloatButton className="ml-auto" />
+            </h2>
             {plugins === null ? (
               <p className="flex items-center gap-2 text-sm text-slate-400" aria-live="polite">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> {t("synth.studio.looking")}
@@ -501,23 +531,34 @@ export function SynthStudio() {
               </>
             )}
           </section>
+          </Floatable>
           {pluginId ? (
+            <Floatable id="synth-sounds" title={t("synth.studio.sounds")}>
             <section className="glass rounded-2xl border border-white/10 p-3 sm:p-4" aria-label={t("synth.studio.sounds")}>
-              <h2 className="display-font mb-2 text-base font-semibold text-slate-100">{t("synth.studio.sounds")}</h2>
+              <h2 className="display-font mb-2 flex items-center gap-2 text-base font-semibold text-slate-100">
+                {t("synth.studio.sounds")}
+                <FloatButton className="ml-auto" />
+              </h2>
               <SoundBrowser key={pluginId} pluginId={pluginId} current={sound?.name} onPick={(picked) => void pick(picked)} tall />
               {chosen && chosen.name !== "Surge XT" ? (
                 <p className="text-xs text-slate-400">{t("synth.studio.surgeOnly")}</p>
               ) : null}
             </section>
+            </Floatable>
           ) : null}
           {pluginId ? (
-            <section className="glass rounded-2xl border border-white/10 p-3 sm:p-4 lg:col-span-2" aria-label={t("synth.studio.playSection")}>
-              <h2 className="display-font mb-2 text-base font-semibold text-slate-100">{t("synth.studio.playName", { name: instrumentName })}</h2>
+            <Floatable id="synth-play" title={t("synth.studio.playSection")} className="lg:col-span-2">
+            <section className="glass rounded-2xl border border-white/10 p-3 sm:p-4" aria-label={t("synth.studio.playSection")}>
+              <h2 className="display-font mb-2 flex items-center gap-2 text-base font-semibold text-slate-100">
+                {t("synth.studio.playName", { name: instrumentName })}
+                <FloatButton className="ml-auto" />
+              </h2>
               <Piano className="" onNoteOn={pluginNoteOn} onNoteOff={pluginNoteOff} />
               <p className="mt-1 text-xs text-slate-400">
                 {t("synth.studio.latency")}
               </p>
             </section>
+            </Floatable>
           ) : null}
         </div>
       )}

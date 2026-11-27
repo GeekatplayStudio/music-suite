@@ -9,7 +9,7 @@ import {
   UpdateStatus,
   UploadResponse
 } from "@/lib/types";
-import { localizeServerFields, localizeServerText } from "@/lib/i18n/server-messages";
+import { localizeServerFields, localizeServerText, serverMessagesReady } from "@/lib/i18n/server-messages";
 
 const API_BASE = "/suite-api";
 
@@ -21,7 +21,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${API_BASE}${path}`;
   let res: Response;
   try {
-    res = await fetch(url, { ...init, cache: "no-store" });
+    res = (await Promise.all([fetch(url, { ...init, cache: "no-store" }), serverMessagesReady()]))[0];
   } catch (err) {
     if ((err as { name?: string }).name === "AbortError") {
       throw err;

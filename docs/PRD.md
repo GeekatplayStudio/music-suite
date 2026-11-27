@@ -55,6 +55,8 @@ Provide studio-grade technical and perceptual analysis in a reproducible local t
 - source-aware adaptation visibility and post-master diagnostics,
 - post-master self-check interpretation and recommended follow-up fixes,
 - stage ticker and stage-detail feedback for long-running analysis steps.
+- Interface in six languages (English, Spanish, German, French, Russian, Ukrainian) with translated backend messages and a user manual per language; six colour themes including a light one.
+- Every major panel can float in a window of its own to customise the layout or use a second monitor; windows remember their place, and the last floating layout can be reopened (implemented November 2026).
 
 ### Exports
 

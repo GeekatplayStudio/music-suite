@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { viewOf } from "@/lib/windows";
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const BLACK = new Set([1, 3, 6, 8, 10]);
@@ -50,7 +51,7 @@ export function Piano({
     if (!host) return;
     const fit = () => setOctaves(Math.max(1, Math.min(7, Math.floor(host.clientWidth / (7 * WHITE_MIN_PX)))));
     fit();
-    const observer = new ResizeObserver(fit);
+    const observer = new (viewOf(host).ResizeObserver)(fit);
     observer.observe(host);
     return () => observer.disconnect();
   }, []);

@@ -7,16 +7,45 @@
  * it, and it reads the language from <html lang>.
  */
 
-import { EXACT, KEEP, PATTERNS } from "./server-messages-ru";
+type Catalogue = { exact: Record<string, string>; patterns: [RegExp, string][]; keep: ReadonlySet<string> };
+type CatalogueModule = { EXACT: Record<string, string>; PATTERNS: [string, string][]; KEEP: ReadonlySet<string> };
 
-type Catalogue = { exact: Record<string, string>; patterns: [RegExp, string][] };
+/**
+ * One catalogue per language (server-messages-<locale>.ts), each loaded the first time that
+ * language is used so the others are not downloaded. Until it arrives, messages stay English.
+ */
+const LOADERS: Record<string, () => Promise<CatalogueModule>> = {
+  ru: () => import("./server-messages-ru"),
+  es: () => import("./server-messages-es"),
+  de: () => import("./server-messages-de"),
+  fr: () => import("./server-messages-fr"),
+  uk: () => import("./server-messages-uk")
+};
+const loaded = new Map<string, Catalogue>();
 
-let russian: Catalogue | null = null;
+/** Fetch a language's catalogue (once). Safe to call repeatedly; never throws. */
+export async function loadServerMessages(locale: string): Promise<void> {
+  const load = LOADERS[locale];
+  if (!load || loaded.has(locale)) return;
+  try {
+    const book = await load();
+    loaded.set(locale, {
+      exact: book.EXACT,
+      patterns: book.PATTERNS.map(([source, text]) => [new RegExp(source), text]),
+      keep: book.KEEP
+    });
+  } catch {
+    /* offline or missing: messages stay English */
+  }
+}
+
+/** The current language's catalogue, loaded: API helpers wait for it alongside each request. */
+export function serverMessagesReady(): Promise<void> {
+  return loadServerMessages(currentLocale());
+}
 
 function catalogue(locale: string): Catalogue | null {
-  if (locale !== "ru") return null;
-  russian ??= { exact: EXACT, patterns: PATTERNS.map(([source, text]) => [new RegExp(source), text]) };
-  return russian;
+  return loaded.get(locale) ?? null;
 }
 
 function currentLocale(): string {
@@ -44,7 +73,7 @@ const SENTENCE_BREAK = /(?<=[.!?…])\s+(?=[A-Z"“'(])|\n/;
 
 function translate(text: string, book: Catalogue, depth: number): string | null {
   const trimmed = text.trim();
-  if (!trimmed || KEEP.has(trimmed)) return null;
+  if (!trimmed || book.keep.has(trimmed)) return null;
   const whole = translateWhole(trimmed, book, depth);
   if (whole !== null) return text.replace(trimmed, whole);
   const pieces = trimmed.split(SENTENCE_BREAK);
@@ -60,9 +89,9 @@ function translate(text: string, book: Catalogue, depth: number): string | null 
 }
 
 /** A backend message in the interface language, or unchanged when there is no translation. */
-export function localizeServerText(text: string): string {
+export function localizeServerText(text: string, locale: string = currentLocale()): string {
   try {
-    const book = catalogue(currentLocale());
+    const book = catalogue(locale);
     if (!book || typeof text !== "string") return text;
     return translate(text, book, 0) ?? text;
   } catch {
@@ -91,6 +120,15 @@ const MESSAGE_FIELDS = new Set([
 ]);
 
 /**
+ * Fields that carry sentences in some responses and codes in others, so they are translated
+ * only when the value has a space in it. The analyser's recommendations and the mastering
+ * self-check both use `issue` and `assessment`: a sentence in one ("Top end stops near 0.6
+ * kHz.") and a code in the other ("loudness_range_collapse", "strong_improvement").
+ */
+const PROSE_FIELDS = new Set(["issue", "action", "reasons", "when", "assessment", "warnings", "notes"]);
+const isProse = (text: string) => /\s/.test(text.trim());
+
+/**
  * A copy of an API response with its message fields in the interface language. `extra` adds
  * field names for one response (for example the add-on packs' `label`).
  */
@@ -110,10 +148,12 @@ function walk(value: unknown, fields: Set<string>, book: Catalogue): unknown {
   if (value === null || typeof value !== "object") return value;
   const out: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    if (fields.has(key) && typeof item === "string") {
-      out[key] = translate(item, book, 0) ?? item;
-    } else if (fields.has(key) && Array.isArray(item) && item.every((entry) => typeof entry === "string")) {
-      out[key] = item.map((entry: string) => translate(entry, book, 0) ?? entry);
+    const prose = PROSE_FIELDS.has(key);
+    const wanted = (text: string) => !prose || isProse(text);
+    if ((fields.has(key) || prose) && typeof item === "string") {
+      out[key] = wanted(item) ? (translate(item, book, 0) ?? item) : item;
+    } else if ((fields.has(key) || prose) && Array.isArray(item) && item.every((entry) => typeof entry === "string")) {
+      out[key] = item.map((entry: string) => (wanted(entry) ? (translate(entry, book, 0) ?? entry) : entry));
     } else {
       out[key] = walk(item, fields, book);
     }

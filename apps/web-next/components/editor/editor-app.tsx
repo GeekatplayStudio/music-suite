@@ -610,6 +610,7 @@ export function EditorApp({
     jobsRef.current = jobs;
   }, [jobs]);
   const [notice, setNotice] = useState<string | null>(null);
+
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -623,7 +624,26 @@ export function EditorApp({
   const { t, tp } = useI18n();
   const lowerPop = useDetachable("lower", t("detach.titles.lower"), { width: 1200, height: 560 });
   const inspectorPop = useDetachable("inspector", t("detach.titles.inspector"), { width: 420, height: 900 });
-  const keysPop = useDetachable("keys", t("detach.titles.keys"), { width: 1100, height: 280 });
+  const keysPop = useDetachable("keys", t("detach.titles.keys"), { width: 1100, height: 280 }, showKeys);
+  const arrangePop = useDetachable("editor-arrange", t("detach.titles.arrange"), { width: 1400, height: 820 });
+  /** The window the tracks and timeline are drawn in: the page's, or their own when floating. */
+  const arrangeWindow = arrangePop.window as (Window & typeof globalThis) | null;
+
+  // The same session open in another window (or tab): each would save over the other's edits,
+  // so both windows say so. Pop-out panels are part of this page and do not count.
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel("music-suite-editor");
+    const me = crypto.randomUUID();
+    channel.onmessage = (event: MessageEvent<{ kind?: string; project?: string; from?: string }>) => {
+      const { kind, project, from } = event.data ?? {};
+      if (project !== projectId || from === me) return;
+      if (kind === "hello") channel.postMessage({ kind: "here", project: projectId, from: me });
+      setNotice(t("windows.sameSession"));
+    };
+    channel.postMessage({ kind: "hello", project: projectId, from: me });
+    return () => channel.close();
+  }, [projectId, t]);
   const lowerButton = <DetachButton state={lowerPop} label={t("detach.panels.lower")} />;
   const [recording, setRecording] = useState(false);
   const [recentSteps, setRecentSteps] = useState<ProcessStep[]>([]);
@@ -760,10 +780,10 @@ export function EditorApp({
   useEffect(() => {
     const element = scrollerRef.current;
     if (!element) return;
-    const observer = new ResizeObserver(() => setLanesHeight(Math.max(200, element.clientHeight - RULER_HEIGHT)));
+    const observer = new ((arrangeWindow ?? window).ResizeObserver)(() => setLanesHeight(Math.max(200, element.clientHeight - RULER_HEIGHT)));
     observer.observe(element);
     return () => observer.disconnect();
-  }, [ready]);
+  }, [ready, arrangeWindow]);
 
   /* ---------- In-browser plugins ---------- */
 
@@ -839,6 +859,9 @@ export function EditorApp({
   /* ---------- Meters and clock ---------- */
 
   useEffect(() => {
+    // The track meters are drawn in the tracks' window, which keeps drawing on another monitor
+    // when the main page is covered or minimised.
+    const view = arrangeWindow ?? window;
     let frame = 0;
     const held = new Map<string, number>();
     const paint = (element: HTMLDivElement | null, id: string, peak: number) => {
@@ -870,11 +893,11 @@ export function EditorApp({
       }
       for (const [id, element] of meterEls.current) paint(element, id, engine.trackLevel(id));
       paint(masterMeterRef.current, "master", engine.masterLevel());
-      frame = requestAnimationFrame(loop);
+      frame = view.requestAnimationFrame(loop);
     };
-    frame = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(frame);
-  }, [engine]);
+    frame = view.requestAnimationFrame(loop);
+    return () => view.cancelAnimationFrame(frame);
+  }, [engine, arrangeWindow]);
 
   /* ---------- Derived ---------- */
 
@@ -2218,9 +2241,12 @@ export function EditorApp({
       setMenu(null);
       setExportOpen(false);
     };
-    window.addEventListener("pointerdown", close);
-    return () => window.removeEventListener("pointerdown", close);
-  }, [menu, exportOpen]);
+    const views = new Set<Window>([window, arrangeWindow ?? window]);
+    for (const view of views) view.addEventListener("pointerdown", close);
+    return () => {
+      for (const view of views) view.removeEventListener("pointerdown", close);
+    };
+  }, [menu, exportOpen, arrangeWindow]);
 
   /* ---------- Render ---------- */
 
@@ -2553,102 +2579,116 @@ export function EditorApp({
 
       <div className="flex min-h-0 flex-1">
         <div className="relative flex min-w-0 flex-1 flex-col">
-          <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-            <div className="flex min-h-full">
-              <div className="sticky left-0 z-30 shrink-0 border-r border-white/10 bg-slate-950" style={{ width: HEADER_WIDTH }}>
-                <div
-                  className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-slate-950 pl-3 pr-2"
-                  style={{ height: RULER_HEIGHT }}
-                >
-                  <span className="display-font text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    {t("editor.tracks.heading")}
-                  </span>
-                  <IconButton size="sm" label={t("editor.tracks.add")} shortcut="Shift+T" onClick={addEmptyTrack}>
-                    <Plus className="h-3.5 w-3.5" />
-                  </IconButton>
-                </div>
-                {state.tracks.map((track, index) => (
-                  <TrackHeader
-                    key={track.id}
-                    track={track}
-                    index={index}
-                    count={state.tracks.length}
-                    selected={selectedTrack?.id === track.id}
-                    onSelect={() => setSelectedTrackId(track.id)}
-                    onChange={(patch, key) => patchTrack(track.id, patch, key)}
-                    onRemove={() => {
-                      commit(removeTrack(state, track.id));
-                      meterEls.current.delete(track.id);
-                    }}
-                    onMove={(direction) => commit(moveTrack(state, track.id, direction))}
-                    meterRef={(element) => {
-                      if (element) meterEls.current.set(track.id, element);
-                      else meterEls.current.delete(track.id);
-                    }}
-                  />
-                ))}
-              </div>
-              <Timeline
-                state={state}
-                assets={assets}
-                getBuffer={getBuffer}
-                getPeaks={getPeaks}
-                mediaVersion={mediaVersion}
-                selection={selection}
-                onSelect={select}
-                selectedTrackId={selectedTrack?.id ?? null}
-                range={range}
-                onRange={setRange}
-                tool={tool}
-                pxPerSec={pxPerSec}
-                scrollSec={scrollSec}
-                onView={setView}
-                getPosition={getPosition}
-                playing={playing}
-                onSeek={seek}
-                onGestureStart={() => dispatch({ type: "gestureStart" })}
-                onTransient={(next) => dispatch({ type: "transient", state: next })}
-                onGestureEnd={() => dispatch({ type: "gestureEnd" })}
-                onCommit={commit}
-                onContextMenu={(x, y, clipId, time) => setMenu({ x, y, clipId, time })}
-                onDropFiles={(files, time, trackId) => void importFiles(files, time, trackId)}
-                minLanesHeight={lanesHeight}
-                onWidth={(width) => {
-                  viewWidthRef.current = width;
-                  setViewWidth(width);
-                }}
-              />
-            </div>
-          </div>
-
-          {ready && !state.tracks.length ? (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center" style={{ left: HEADER_WIDTH, top: RULER_HEIGHT }}>
-              <div className="pointer-events-auto max-w-sm rounded-2xl border border-dashed border-white/20 bg-slate-950/80 p-6 text-center">
-                <p className="display-font text-base font-semibold text-slate-100">{t("editor.empty.title")}</p>
-                <p className="mt-1 text-xs leading-relaxed text-slate-400">
-                  {t("editor.empty.body")}
-                </p>
-                <ActionButton variant="primary" className="mt-4 h-10 px-5 text-sm" onClick={() => fileInputRef.current?.click()}>
-                  <Upload className="h-4 w-4" /> {t("editor.empty.import")}
-                </ActionButton>
-              </div>
-            </div>
+          {arrangePop.detached ? (
+            <DetachedPlaceholder
+              state={arrangePop}
+              label={t("detach.titles.arrange")}
+              className="m-3 flex min-h-24 flex-1 items-center justify-center gap-3 rounded-2xl border border-dashed border-white/15 text-sm text-slate-400"
+            />
           ) : null}
+          {arrangePop.render(
+          <div className="relative flex min-h-0 flex-1 flex-col bg-[#070b14] text-slate-100">
+            <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+              <div className="flex min-h-full">
+                <div className="sticky left-0 z-30 shrink-0 border-r border-white/10 bg-slate-950" style={{ width: HEADER_WIDTH }}>
+                  <div
+                    className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-slate-950 pl-3 pr-2"
+                    style={{ height: RULER_HEIGHT }}
+                  >
+                    <span className="display-font text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      {t("editor.tracks.heading")}
+                    </span>
+                    <span className="flex items-center">
+                      <IconButton size="sm" label={t("editor.tracks.add")} shortcut="Shift+T" onClick={addEmptyTrack}>
+                        <Plus className="h-3.5 w-3.5" />
+                      </IconButton>
+                      <DetachButton state={arrangePop} label={t("detach.panels.arrange")} />
+                    </span>
+                  </div>
+                  {state.tracks.map((track, index) => (
+                    <TrackHeader
+                      key={track.id}
+                      track={track}
+                      index={index}
+                      count={state.tracks.length}
+                      selected={selectedTrack?.id === track.id}
+                      onSelect={() => setSelectedTrackId(track.id)}
+                      onChange={(patch, key) => patchTrack(track.id, patch, key)}
+                      onRemove={() => {
+                        commit(removeTrack(state, track.id));
+                        meterEls.current.delete(track.id);
+                      }}
+                      onMove={(direction) => commit(moveTrack(state, track.id, direction))}
+                      meterRef={(element) => {
+                        if (element) meterEls.current.set(track.id, element);
+                        else meterEls.current.delete(track.id);
+                      }}
+                    />
+                  ))}
+                </div>
+                <Timeline
+                  state={state}
+                  assets={assets}
+                  getBuffer={getBuffer}
+                  getPeaks={getPeaks}
+                  mediaVersion={mediaVersion}
+                  selection={selection}
+                  onSelect={select}
+                  selectedTrackId={selectedTrack?.id ?? null}
+                  range={range}
+                  onRange={setRange}
+                  tool={tool}
+                  pxPerSec={pxPerSec}
+                  scrollSec={scrollSec}
+                  onView={setView}
+                  getPosition={getPosition}
+                  playing={playing}
+                  onSeek={seek}
+                  onGestureStart={() => dispatch({ type: "gestureStart" })}
+                  onTransient={(next) => dispatch({ type: "transient", state: next })}
+                  onGestureEnd={() => dispatch({ type: "gestureEnd" })}
+                  onCommit={commit}
+                  onContextMenu={(x, y, clipId, time) => setMenu({ x, y, clipId, time })}
+                  onDropFiles={(files, time, trackId) => void importFiles(files, time, trackId)}
+                  minLanesHeight={lanesHeight}
+                  onWidth={(width) => {
+                    viewWidthRef.current = width;
+                    setViewWidth(width);
+                  }}
+                />
+              </div>
+            </div>
 
-          <div className="flex shrink-0 border-t border-white/10 bg-slate-950">
-            <div className="shrink-0 border-r border-white/10" style={{ width: HEADER_WIDTH }} />
-            <div
-              ref={hscrollRef}
-              className="h-3.5 min-w-0 flex-1 overflow-x-scroll overflow-y-hidden"
-              aria-label={t("editor.tracks.hscroll")}
-              onScroll={(event) => {
-                const next = event.currentTarget.scrollLeft / pxPerSec;
-                if (Math.abs(next - scrollSec) * pxPerSec > 1) setScrollSec(next);
-              }}
-            >
-              <div style={{ width: totalSec * pxPerSec, height: 1 }} />
+            {ready && !state.tracks.length ? (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center" style={{ left: HEADER_WIDTH, top: RULER_HEIGHT }}>
+                <div className="pointer-events-auto max-w-sm rounded-2xl border border-dashed border-white/20 bg-slate-950/80 p-6 text-center">
+                  <p className="display-font text-base font-semibold text-slate-100">{t("editor.empty.title")}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                    {t("editor.empty.body")}
+                  </p>
+                  <ActionButton variant="primary" className="mt-4 h-10 px-5 text-sm" onClick={() => fileInputRef.current?.click()}>
+                    <Upload className="h-4 w-4" /> {t("editor.empty.import")}
+                  </ActionButton>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex shrink-0 border-t border-white/10 bg-slate-950">
+              <div className="shrink-0 border-r border-white/10" style={{ width: HEADER_WIDTH }} />
+              <div
+                ref={hscrollRef}
+                className="h-3.5 min-w-0 flex-1 overflow-x-scroll overflow-y-hidden"
+                aria-label={t("editor.tracks.hscroll")}
+                onScroll={(event) => {
+                  const next = event.currentTarget.scrollLeft / pxPerSec;
+                  if (Math.abs(next - scrollSec) * pxPerSec > 1) setScrollSec(next);
+                }}
+              >
+                <div style={{ width: totalSec * pxPerSec, height: 1 }} />
+              </div>
             </div>
           </div>
+          )}
 
           {lowerPop.detached ? <DetachedPlaceholder state={lowerPop} label={t("detach.titles.lower")} /> : null}
           {lowerPop.render(
@@ -2869,11 +2909,14 @@ export function EditorApp({
         )}
       </div>
 
-      {menu && menuItems.length ? (
+      {menu && menuItems.length ? arrangePop.render(
         <div
           role="menu"
           className="fixed z-50 w-56 rounded-xl border border-white/10 bg-slate-900 p-1 shadow-2xl"
-          style={{ left: Math.min(menu.x, window.innerWidth - 232), top: Math.min(menu.y, window.innerHeight - menuItems.length * 34 - 12) }}
+          style={{
+            left: Math.min(menu.x, (arrangeWindow ?? window).innerWidth - 232),
+            top: Math.min(menu.y, (arrangeWindow ?? window).innerHeight - menuItems.length * 34 - 12)
+          }}
           onPointerDown={(event) => event.stopPropagation()}
         >
           {menuItems.map((item) => (

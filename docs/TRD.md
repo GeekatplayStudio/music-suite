@@ -45,6 +45,12 @@
 - providers, settings, the one-step engine install, the lyrics writer, albums and history,
 - `inspire.py` reads a clip into form values (tempo, key, metre, length, style tags).
 
+- `apps/web-next` interface-wide (every workspace):
+- translations (`lib/i18n`): typed dictionaries per language (en, es, de, fr, ru, uk; 15 areas each, TypeScript refuses missing or extra keys), plural forms through `Intl.PluralRules`, the language in the `ms-lang` cookie; backend messages translated in the browser from per-language catalogues (`server-messages-<locale>.ts`: exact sentences, regex patterns with values kept, loaded on demand and awaited alongside API requests); manuals per language with English section anchors checked by `tests/test_docs_i18n.py`,
+- colour themes (`app/themes.css`) re-map the Tailwind palettes through CSS variables,
+- floating panels (`components/detachable.tsx`): a panel is rendered with a React portal into a window the page opened, so state and playback stay shared; styles are copied from the live stylesheet rules and kept in step, unused keys are passed back, and `Floatable` / `FloatButton` make any section floatable. Canvases, meters and size watching use their own window's animation frames and `ResizeObserver` (`viewOf` in `lib/windows.ts`), so they keep drawing when the main page is covered. Window geometry and the floating layout are kept in `localStorage`; placement on other monitors uses the Window Management API where granted,
+- workspace and tab windows (`openPageWindow`), each remembering its place (`components/window-memory.tsx`); a `BroadcastChannel` detects one editor session open in two windows.
+
 - `apps/web-next/lib/handoff.ts`: moving songs between the analyser, the AI Song Studio and the editor (always added, never replacing).
 
 - `apps/web` Dash frontend (legacy compatibility UI):

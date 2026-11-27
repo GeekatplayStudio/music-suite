@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import type { ReactNode } from "react";
 
+import { WindowMemory } from "@/components/window-memory";
 import { I18nProvider } from "@/lib/i18n";
 import { DEFAULT_THEME, LOCALE_COOKIE, THEME_COOKIE, browserLocale, isLocale, isTheme } from "@/lib/prefs";
 
@@ -24,6 +25,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     <html lang={locale} className="dark" data-theme={theme === DEFAULT_THEME ? undefined : theme} suppressHydrationWarning>
       <body suppressHydrationWarning className="bg-background font-[family-name:var(--font-manrope)] text-foreground">
         <I18nProvider initialLocale={locale} initialTheme={theme}>
+          <WindowMemory />
           {children}
         </I18nProvider>
       </body>

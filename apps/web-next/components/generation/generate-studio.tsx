@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 
 import { AppPrefs } from "@/components/app-prefs";
+import { FloatButton, Floatable } from "@/components/detachable";
+import { AppWindow } from "lucide-react";
 import { AlbumPanel } from "@/components/generation/album-panel";
 import { LivePanel } from "@/components/generation/live-panel";
 import { PlanEditor } from "@/components/generation/plan-editor";
@@ -49,8 +51,9 @@ import {
 import { analyseClip, type ClipRef, type Incoming, placeIncoming, placeInEditorUrl } from "@/lib/handoff";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { openPageWindow } from "@/lib/windows";
 
-type Tab = "create" | "live" | "album" | "history" | "settings";
+export type Tab = "create" | "live" | "album" | "history" | "settings";
 
 interface Result {
   projectId: string;
@@ -256,10 +259,19 @@ function ResultCard({
   );
 }
 
-export function GenerateStudio({ projectId, start = null }: { projectId: string | null; start?: Incoming | null }) {
+export function GenerateStudio({
+  projectId,
+  start = null,
+  initialTab = "create"
+}: {
+  projectId: string | null;
+  start?: Incoming | null;
+  /** The tab to open on (?tab=), e.g. when a tab is opened in a window of its own. */
+  initialTab?: Tab;
+}) {
   const router = useRouter();
   const { t, tp } = useI18n();
-  const [tab, setTab] = useState<Tab>("create");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [source, setSource] = useState<SourceSong | null>(null);
   const [sourceWorking, setSourceWorking] = useState<string | null>(null);
   const [sourceTaskId, setSourceTaskId] = useState(NEW_IN_ITS_STYLE);
@@ -592,6 +604,15 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
       .catch((err: unknown) => setError(message(err, t("studio.errors.history"))));
   };
 
+  // Opened straight on the history tab (its own window): load it, as the tab button would.
+  useEffect(() => {
+    if (initialTab !== "history") return;
+    generationApi
+      .history()
+      .then(setHistory)
+      .catch((err: unknown) => setError(message(err, t("studio.errors.history"))));
+  }, [initialTab, t]);
+
   const reuse = (record: HistoryRecord) => {
     setProviderId(record.provider);
     const target = overview?.providers.find((p) => p.id === record.provider);
@@ -642,14 +663,15 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
         </div>
       </header>
       <LocalDownloads settings={tab === 'settings'} onChanged={refresh} />
-      {tab === "live" && <LivePanel projectId={source?.projectId ?? projectId} assetId={source?.assetId}
+      {tab === "live" && <Floatable id="studio-live" title={t("studio.tabs.live")} corner><LivePanel projectId={source?.projectId ?? projectId} assetId={source?.assetId}
         onSaved={async (target, asset) => {
           await placeInProject(target, [asset], {});
           setResults(previous => [{ projectId: target, title: t("studio.defaults.liveTake"), assets: [asset], outputs: [], secondsTaken: 0 }, ...previous]);
           setTab("create");
-        }} />}
+        }} /></Floatable>}
 
-      <div role="tablist" aria-label={t("studio.tabs.label")} className="flex gap-1 rounded-2xl bg-slate-900/80 p-1">
+      <div className="flex items-stretch gap-2">
+      <div role="tablist" aria-label={t("studio.tabs.label")} className="flex flex-1 gap-1 rounded-2xl bg-slate-900/80 p-1">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -667,6 +689,24 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
             {label}
           </button>
         ))}
+      </div>
+      {(() => {
+        const label = tabs.find((entry) => entry.id === tab)?.label ?? tab;
+        const text = t("windows.tab", { tab: label });
+        return (
+          <button
+            type="button"
+            title={text}
+            aria-label={text}
+            onClick={() => {
+              if (!openPageWindow(`studio-${tab}`, `/generate?tab=${tab}`)) window.alert(t("windows.blocked"));
+            }}
+            className="inline-flex w-12 items-center justify-center rounded-2xl bg-slate-900/80 text-slate-300 hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-cyan-300"
+          >
+            <AppWindow className="h-4 w-4" aria-hidden />
+          </button>
+        );
+      })()}
       </div>
 
       {loadError ? (
@@ -686,75 +726,85 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
         </p>
       ) : null}
 
-      {overview && tab === "settings" ? <SettingsPanel overview={overview} onChanged={refresh} /> : null}
-      {overview && tab === "album" ? <AlbumPanel overview={overview} /> : null}
+      {overview && tab === "settings" ? (
+        <Floatable id="studio-settings" title={t("studio.tabs.settings")} corner>
+          <SettingsPanel overview={overview} onChanged={refresh} />
+        </Floatable>
+      ) : null}
+      {overview && tab === "album" ? (
+        <Floatable id="studio-album" title={t("studio.tabs.album")} corner>
+          <AlbumPanel overview={overview} />
+        </Floatable>
+      ) : null}
 
       {overview && tab === "history" ? (
-        <section className="space-y-3" aria-label={t("studio.history.label")}>
-          {history === null ? (
-            <p className="py-10 text-center text-sm text-slate-400">{t("studio.history.loading")}</p>
-          ) : history.length === 0 ? (
-            <p className="rounded-2xl bg-slate-900/70 px-4 py-10 text-center text-sm text-slate-400">
-              {t("studio.history.empty")}
-            </p>
-          ) : (
-            history.map((record) => (
-              <article key={record.id} className="glass rounded-2xl border border-white/10 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="display-font truncate text-base font-semibold text-slate-100">{record.title}</h3>
-                    <p className="text-xs text-slate-400">
-                      {new Date(record.created_at).toLocaleString()} · {tp("studio.result.versions", record.asset_ids.length)} ·{" "}
-                      {formatSeconds(record.seconds_taken)}
-                    </p>
+        <Floatable id="studio-history" title={t("studio.tabs.history")} corner>
+          <section className="space-y-3" aria-label={t("studio.history.label")}>
+            {history === null ? (
+              <p className="py-10 text-center text-sm text-slate-400">{t("studio.history.loading")}</p>
+            ) : history.length === 0 ? (
+              <p className="rounded-2xl bg-slate-900/70 px-4 py-10 text-center text-sm text-slate-400">
+                {t("studio.history.empty")}
+              </p>
+            ) : (
+              history.map((record) => (
+                <article key={record.id} className="glass rounded-2xl border border-white/10 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="display-font truncate text-base font-semibold text-slate-100">{record.title}</h3>
+                      <p className="text-xs text-slate-400">
+                        {new Date(record.created_at).toLocaleString()} · {tp("studio.result.versions", record.asset_ids.length)} ·{" "}
+                        {formatSeconds(record.seconds_taken)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" className={quietButton} onClick={() => reuse(record)}>
+                        {t("studio.history.useSettings")}
+                      </button>
+                      <Link href={`/editor?project=${record.project_id}`} className={quietButton}>
+                        {t("studio.history.openProject")}
+                      </Link>
+                      <button
+                        type="button"
+                        aria-label={t("studio.history.removeLabel", { title: record.title })}
+                        title={t("studio.history.removeTitle")}
+                        className={cn(quietButton, "w-10 px-0")}
+                        onClick={() =>
+                          generationApi
+                            .deleteHistory(record.id)
+                            .then(() => setHistory((list) => (list ?? []).filter((r) => r.id !== record.id)))
+                            .catch((err: unknown) => setError(message(err, t("studio.errors.removeEntry"))))
+                        }
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" className={quietButton} onClick={() => reuse(record)}>
-                      {t("studio.history.useSettings")}
-                    </button>
-                    <Link href={`/editor?project=${record.project_id}`} className={quietButton}>
-                      {t("studio.history.openProject")}
-                    </Link>
-                    <button
-                      type="button"
-                      aria-label={t("studio.history.removeLabel", { title: record.title })}
-                      title={t("studio.history.removeTitle")}
-                      className={cn(quietButton, "w-10 px-0")}
-                      onClick={() =>
-                        generationApi
-                          .deleteHistory(record.id)
-                          .then(() => setHistory((list) => (list ?? []).filter((r) => r.id !== record.id)))
-                          .catch((err: unknown) => setError(message(err, t("studio.errors.removeEntry"))))
-                      }
-                    >
-                      <Trash2 className="h-4 w-4" aria-hidden />
-                    </button>
-                  </div>
-                </div>
-                {typeof record.fields.caption === "string" ? (
-                  <p className="mt-2 line-clamp-2 text-xs text-slate-400">{record.fields.caption}</p>
-                ) : null}
-                {record.asset_ids[0] ? (
-                  <SendActions
-                    clip={{ projectId: record.project_id, assetId: record.asset_ids[0], name: record.title }}
-                    onAnalyse={(clip) => void analyse(clip)}
-                    onStartFrom={startFrom}
-                  />
-                ) : null}
-                {record.asset_ids.map((assetId) => (
-                  <audio
-                    key={assetId}
-                    controls
-                    preload="none"
-                    src={editorApi.assetAudioUrl(record.project_id, assetId)}
-                    className="mt-2 h-10 w-full"
-                    aria-label={t("studio.result.play", { name: record.title })}
-                  />
-                ))}
-              </article>
-            ))
-          )}
-        </section>
+                  {typeof record.fields.caption === "string" ? (
+                    <p className="mt-2 line-clamp-2 text-xs text-slate-400">{record.fields.caption}</p>
+                  ) : null}
+                  {record.asset_ids[0] ? (
+                    <SendActions
+                      clip={{ projectId: record.project_id, assetId: record.asset_ids[0], name: record.title }}
+                      onAnalyse={(clip) => void analyse(clip)}
+                      onStartFrom={startFrom}
+                    />
+                  ) : null}
+                  {record.asset_ids.map((assetId) => (
+                    <audio
+                      key={assetId}
+                      controls
+                      preload="none"
+                      src={editorApi.assetAudioUrl(record.project_id, assetId)}
+                      className="mt-2 h-10 w-full"
+                      aria-label={t("studio.result.play", { name: record.title })}
+                    />
+                  ))}
+                </article>
+              ))
+            )}
+          </section>
+        </Floatable>
       ) : null}
 
       {overview && tab === "create" ? (
@@ -832,6 +882,7 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
           ) : null}
 
           {provider ? (
+            <Floatable id="studio-source" title={t("source.panel.title")} corner>
             <SourceSongPanel
               source={source}
               working={sourceWorking}
@@ -846,12 +897,15 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                 setSourceTaskId(NEW_IN_ITS_STYLE);
               }}
             />
+            </Floatable>
           ) : null}
 
           {provider && hasLyricsField && !usesSource ? (
+            <Floatable id="studio-idea" title={t("studio.idea.heading")}>
             <section className="glass rounded-2xl border border-white/10 p-4" aria-label={t("studio.idea.heading")}>
               <h2 className="display-font flex items-center gap-2 text-sm font-semibold text-slate-200">
                 <Wand2 className="h-4 w-4 text-cyan-300" aria-hidden /> {t("studio.idea.heading")}
+                <FloatButton className="ml-auto" />
               </h2>
               <textarea
                 rows={3}
@@ -878,10 +932,11 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                 </p>
               </div>
             </section>
+            </Floatable>
           ) : null}
 
           {provider ? (
-            <>
+            <Floatable id="studio-song" title={t("detach.titles.song")} corner className="flex flex-col gap-5" floatingClassName="flex flex-col gap-4">
               <label className="block space-y-1.5">
                 <span className="text-xs font-semibold text-slate-300">{t("studio.form.title")}</span>
                 <input
@@ -1010,22 +1065,30 @@ export function GenerateStudio({ projectId, start = null }: { projectId: string 
                   </div>
                 )}
               </div>
-            </>
+            </Floatable>
           ) : (
             <p className="rounded-2xl bg-slate-900/70 px-4 py-10 text-center text-sm text-slate-400">
               {t("studio.allOff")}
             </p>
           )}
 
-          {results.map((result) => (
-            <ResultCard
-              key={result.assets[0]?.id ?? result.title}
-              result={result}
-              onReuseSeed={(seed) => setValue("seed", seed)}
-              onAnalyse={(clip) => void analyse(clip)}
-              onStartFrom={startFrom}
-            />
-          ))}
+          {results.length ? (
+            <Floatable id="studio-results" title={t("detach.titles.results")} className="flex flex-col gap-5" floatingClassName="flex flex-col gap-4">
+              <p className="-mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                {t("detach.titles.results")}
+                <FloatButton className="ml-auto" />
+              </p>
+              {results.map((result) => (
+                <ResultCard
+                  key={result.assets[0]?.id ?? result.title}
+                  result={result}
+                  onReuseSeed={(seed) => setValue("seed", seed)}
+                  onAnalyse={(clip) => void analyse(clip)}
+                  onStartFrom={startFrom}
+                />
+              ))}
+            </Floatable>
+          ) : null}
         </>
       ) : null}
     </main>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 import { useI18n } from "@/lib/i18n";
+import { viewOf } from "@/lib/windows";
 
 import type { Peaks } from "@/lib/editor/peaks";
 import { traceWaveform } from "@/lib/editor/peaks";
@@ -569,7 +570,7 @@ export function Timeline(props: TimelineProps) {
     if (!wrap) return;
     const resize = () => {
       const width = Math.max(200, Math.floor(wrap.clientWidth));
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const dpr = Math.min(2, viewOf(wrap).devicePixelRatio || 1);
       sizeRef.current = { width, dpr };
       const sizes: [HTMLCanvasElement | null, number][] = [
         [rulerRef.current, RULER_HEIGHT],
@@ -589,7 +590,8 @@ export function Timeline(props: TimelineProps) {
       drawOverlay();
     };
     resize();
-    const observer = new ResizeObserver(resize);
+    // From the window the timeline is drawn in (it can float in a window of its own).
+    const observer = new (viewOf(wrap).ResizeObserver)(resize);
     observer.observe(wrap);
     return () => observer.disconnect();
   }, [lanesHeight, drawRuler, drawContent, drawOverlay]);
@@ -604,6 +606,7 @@ export function Timeline(props: TimelineProps) {
 
   useEffect(() => {
     if (!props.playing) return;
+    const view = viewOf(wrapRef.current);
     let frame = 0;
     const loop = () => {
       const p = propsRef.current;
@@ -615,10 +618,10 @@ export function Timeline(props: TimelineProps) {
         drawRuler();
         drawOverlay();
       }
-      frame = requestAnimationFrame(loop);
+      frame = view.requestAnimationFrame(loop);
     };
-    frame = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(frame);
+    frame = view.requestAnimationFrame(loop);
+    return () => view.cancelAnimationFrame(frame);
   }, [props.playing, drawRuler, drawOverlay]);
 
   /* ---------- Wheel: zoom and horizontal scroll ---------- */

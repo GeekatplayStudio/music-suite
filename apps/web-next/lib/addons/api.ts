@@ -1,6 +1,6 @@
 /** Optional engines and models: what is installed, and installing more (``/addons``). */
 
-import { localizeServerFields, localizeServerText } from "@/lib/i18n/server-messages";
+import { localizeServerFields, localizeServerText, serverMessagesReady } from "@/lib/i18n/server-messages";
 
 const BASE = "/suite-api/addons";
 // Installs change Music Suite's environment, so the API wants this header on every change.
@@ -59,7 +59,7 @@ export interface AddonsOverview {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, { ...init, cache: "no-store" });
+    res = (await Promise.all([fetch(`${BASE}${path}`, { ...init, cache: "no-store" }), serverMessagesReady()]))[0];
   } catch {
     throw new Error(localizeServerText("Could not reach the Music Suite API. Restart Music Suite with its start launcher."));
   }

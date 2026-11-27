@@ -363,9 +363,10 @@ Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (ab
 ---
 
 **Languages, colours, more monitors:**
-- The whole app in English and Russian, including engine messages and the user manual ([по-русски](docs/USER_MANUAL.ru.md)).
+- The whole app in six languages: English, Español, Deutsch, Français, Русский and Українська, including engine messages and the user manual ([ES](docs/USER_MANUAL.es.md) · [DE](docs/USER_MANUAL.de.md) · [FR](docs/USER_MANUAL.fr.md) · [RU](docs/USER_MANUAL.ru.md) · [UK](docs/USER_MANUAL.uk.md)).
 - Six colour themes, including a light one.
-- Panels that pop out into their own windows for a second monitor and remember where they were: the editor's inspector, piano roll and on-screen piano, and the analyser's Visual AI and charts.
+- Every panel can float in a window of its own, to arrange the screen your way or use a second monitor: the analyser's cards, Visual AI and charts, the editor's tracks and timeline, inspector, piano roll and on-screen piano, and the sections of the AI Song Studio, Synth Studio and Models & engines. Each remembers where it was, and the language and colours button can dock them all or reopen your last layout.
+- Any workspace, or a tab of the AI Song Studio or Synth Studio, opens in a window of its own (**language and colours** button ▸ *Open in a new window*, or the window button beside the tabs).
 
 See *Language, colours and extra windows* in the [user manual](docs/USER_MANUAL.md).
 

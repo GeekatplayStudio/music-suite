@@ -70,7 +70,7 @@ import {
 } from "@/lib/types";
 import { startSongUrl } from "@/lib/handoff";
 import { AppPrefs } from "@/components/app-prefs";
-import { DetachButton, DetachedPlaceholder, useDetachable } from "@/components/detachable";
+import { DetachButton, DetachedPlaceholder, FloatButton, Floatable, useDetachable } from "@/components/detachable";
 import { HelpLink } from "@/components/help-link";
 import { type I18n, type MessageKey, useI18n } from "@/lib/i18n";
 
@@ -703,7 +703,7 @@ export default function HomePage() {
   const [savingOutputId, setSavingOutputId] = useState<string | null>(null);
   const [visualizerOpen, setVisualizerOpen] = useState(false);
   // Visual AI and the charts can each go to a window of their own, for another monitor.
-  const visualPop = useDetachable("visual", t("analyser.popout.visualTitle"), { width: 1100, height: 720 });
+  const visualPop = useDetachable("visual", t("analyser.popout.visualTitle"), { width: 1100, height: 720 }, visualizerOpen && selectedRunId !== null);
   const chartsPop = useDetachable("charts", t("analyser.popout.chartsTitle"), { width: 1200, height: 900 });
   const [configurationOpen, setConfigurationOpen] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
@@ -2217,7 +2217,7 @@ export default function HomePage() {
 
   return (
     <main className="mx-auto max-w-[1800px] px-4 py-6 md:px-8">
-      <section className="glass mb-5 rounded-3xl border border-border/80 p-6 shadow-soft">
+      <section className="glass relative z-30 mb-5 rounded-3xl border border-border/80 p-6 shadow-soft">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="inline-flex items-center gap-2 rounded-full bg-secondary/75 px-3 py-1 text-xs font-semibold text-muted-foreground">
@@ -2324,77 +2324,79 @@ export default function HomePage() {
       </section>
 
       {configurationOpen ? (
-        <Card className="mb-5 border-cyan-500/25 bg-slate-950/70">
-          <CardHeader>
-            <CardTitle>{t("analyser.config.title")}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded-xl border border-border/70 bg-background/40 p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("analyser.config.product")}</p>
-                <p className="mt-1 font-semibold">Geekatplay Studio Music Suite</p>
-                <p className="text-xs text-muted-foreground">{t("analyser.config.createdBy")}</p>
+        <Floatable id="analyser-config" title={t("analyser.config.title")}>
+          <Card className="mb-5 border-cyan-500/25 bg-slate-950/70">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">{t("analyser.config.title")}<FloatButton className="ml-auto" /></CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border border-border/70 bg-background/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("analyser.config.product")}</p>
+                  <p className="mt-1 font-semibold">Geekatplay Studio Music Suite</p>
+                  <p className="text-xs text-muted-foreground">{t("analyser.config.createdBy")}</p>
+                </div>
+                <div className="rounded-xl border border-border/70 bg-background/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("analyser.config.installedVersion")}</p>
+                  <p className="mt-1 font-semibold">{updateStatus?.version ?? "1.0.0"}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {t("analyser.config.revision", { rev: updateStatus?.current_commit?.slice(0, 12) ?? t("analyser.config.notAvailable") })}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border/70 bg-background/40 p-3">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("analyser.config.officialSource")}</p>
+                  <a
+                    className="mt-1 block font-semibold text-cyan-300 hover:text-cyan-200"
+                    href="https://github.com/GeekatplayStudio/music-suite"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    GeekatplayStudio/music-suite
+                  </a>
+                  <p className="text-xs text-muted-foreground">{t("analyser.config.stableBranch")}</p>
+                </div>
               </div>
-              <div className="rounded-xl border border-border/70 bg-background/40 p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("analyser.config.installedVersion")}</p>
-                <p className="mt-1 font-semibold">{updateStatus?.version ?? "1.0.0"}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {t("analyser.config.revision", { rev: updateStatus?.current_commit?.slice(0, 12) ?? t("analyser.config.notAvailable") })}
-                </p>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 p-3">
+                <div>
+                  <p className="font-medium">
+                    {updateStatus
+                      ? updateStatus.update_available
+                        ? t("analyser.config.updateAvailable")
+                        : t("analyser.config.upToDate")
+                      : t("analyser.config.readyToCheck")}
+                  </p>
+                  <p className="max-w-3xl text-xs text-muted-foreground">
+                    {updateStatus?.working_tree_dirty
+                      ? t("analyser.config.dirty")
+                      : updateStatus?.message ?? t("analyser.config.officialOnly")}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={() => void refreshUpdateStatus()}
+                    disabled={isCheckingUpdate || isInstallingUpdate}
+                  >
+                    <RefreshCcw className="mr-2 h-4 w-4" />
+                    {isCheckingUpdate ? t("analyser.config.checking") : t("analyser.config.check")}
+                  </Button>
+                  <Button
+                    onClick={() => void onInstallUpdate()}
+                    disabled={
+                      isCheckingUpdate ||
+                      isInstallingUpdate ||
+                      !updateStatus?.update_available ||
+                      !updateStatus.update_supported ||
+                      updateStatus.working_tree_dirty
+                    }
+                  >
+                    {isInstallingUpdate ? t("analyser.config.installing") : t("analyser.config.install")}
+                  </Button>
+                </div>
               </div>
-              <div className="rounded-xl border border-border/70 bg-background/40 p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">{t("analyser.config.officialSource")}</p>
-                <a
-                  className="mt-1 block font-semibold text-cyan-300 hover:text-cyan-200"
-                  href="https://github.com/GeekatplayStudio/music-suite"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  GeekatplayStudio/music-suite
-                </a>
-                <p className="text-xs text-muted-foreground">{t("analyser.config.stableBranch")}</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 p-3">
-              <div>
-                <p className="font-medium">
-                  {updateStatus
-                    ? updateStatus.update_available
-                      ? t("analyser.config.updateAvailable")
-                      : t("analyser.config.upToDate")
-                    : t("analyser.config.readyToCheck")}
-                </p>
-                <p className="max-w-3xl text-xs text-muted-foreground">
-                  {updateStatus?.working_tree_dirty
-                    ? t("analyser.config.dirty")
-                    : updateStatus?.message ?? t("analyser.config.officialOnly")}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="secondary"
-                  onClick={() => void refreshUpdateStatus()}
-                  disabled={isCheckingUpdate || isInstallingUpdate}
-                >
-                  <RefreshCcw className="mr-2 h-4 w-4" />
-                  {isCheckingUpdate ? t("analyser.config.checking") : t("analyser.config.check")}
-                </Button>
-                <Button
-                  onClick={() => void onInstallUpdate()}
-                  disabled={
-                    isCheckingUpdate ||
-                    isInstallingUpdate ||
-                    !updateStatus?.update_available ||
-                    !updateStatus.update_supported ||
-                    updateStatus.working_tree_dirty
-                  }
-                >
-                  {isInstallingUpdate ? t("analyser.config.installing") : t("analyser.config.install")}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </Floatable>
       ) : null}
 
       {visualizerOpen && selectedRunId ? (
@@ -2414,1433 +2416,1461 @@ export default function HomePage() {
 
       <div className="grid gap-4 lg:grid-cols-12">
         <div className="space-y-4 lg:col-span-3">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <FileAudio2 className="h-5 w-5 text-primary" /> {t("analyser.session.title")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDragging(true);
-                }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setIsDragging(false);
-                  if (e.dataTransfer.files?.length) {
-                    const file = e.dataTransfer.files[0];
-                    console.log("[AudioQI Debug] File dropped. File:", file);
-                    setSelectedFile(file);
-                    void handleAutoUpload(file);
-                  }
-                }}
-                className={`flex flex-col items-center justify-center border border-dashed rounded-2xl p-4 transition-colors ${
-                  isDragging ? "border-primary bg-primary/10" : "border-border/60 hover:border-primary/50"
-                }`}
-              >
-                <Upload className="h-6 w-6 text-muted-foreground mb-2" />
-                <p className="text-xs text-center text-muted-foreground mb-2">
-                  {selectedFile ? (
-                    <span className="font-semibold text-foreground">{selectedFile.name}</span>
-                  ) : (
-                    t("analyser.session.dropHint")
-                  )}
-                </p>
-                <input
-                  type="file"
-                  accept=".wav,.flac,.mp3,.aac,.ogg,.m4a,.aiff,.aif"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] ?? null;
-                    console.log("[AudioQI Debug] File input changed. File:", file);
-                    setSelectedFile(file);
-                    if (file) {
+          <Floatable id="analyser-session" title={t("analyser.session.title")}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <FileAudio2 className="h-5 w-5 text-primary" /> {t("analyser.session.title")}
+                  <FloatButton className="ml-auto" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    if (e.dataTransfer.files?.length) {
+                      const file = e.dataTransfer.files[0];
+                      console.log("[AudioQI Debug] File dropped. File:", file);
+                      setSelectedFile(file);
                       void handleAutoUpload(file);
                     }
                   }}
-                  className="hidden"
-                  id="drag-drop-file-input"
-                />
-                <Button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    document.getElementById("drag-drop-file-input")?.click();
-                  }}
-                  variant="secondary"
-                  size="sm"
+                  className={`flex flex-col items-center justify-center border border-dashed rounded-2xl p-4 transition-colors ${
+                    isDragging ? "border-primary bg-primary/10" : "border-border/60 hover:border-primary/50"
+                  }`}
                 >
-                  {t("analyser.session.browse")}
-                </Button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={() => void onUpload()} disabled={!selectedFile || isBusy}>
-                  {t("analyser.session.upload")}
-                </Button>
-                <Button variant="secondary" onClick={() => void onAnalyze()} disabled={!selectedRunId || isBusy}>
-                  {t("analyser.session.analyze")}
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={openVisualizer}
-                  disabled={!selectedRunId}
-                  title={t("analyser.session.visualTitle")}
-                >
-                  <Waves className="mr-2 h-4 w-4" />
-                  {t("analyser.session.visual")}
-                </Button>
-              </div>
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={useGpu}
-                  onChange={(e) => setUseGpu(e.target.checked)}
-                  className="h-4 w-4 rounded-[0.25rem] border-input"
-                />
-                <Cpu className="h-4 w-4" />
-                {t("analyser.session.useGpu")}
-              </label>
-              <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <Badge variant={statusVariant[currentStatus] ?? "outline"}>{statusWord(t, currentStatus)}</Badge>
-                  <span className="text-xs text-muted-foreground">{progress.toFixed(1)}%</span>
-                </div>
-                <Progress value={progress} />
-                <p className="mt-2 text-xs font-semibold text-primary">{analysisTicker}</p>
-                <p className="mt-1 text-[11px] text-muted-foreground">{analysisStageMeta}</p>
-                {analysisStageAgeSeconds !== null &&
-                (currentStatus === "running" || currentStatus === "queued") &&
-                analysisStageAgeSeconds > ANALYSIS_STALE_WARNING_SECONDS ? (
-                  <p className="mt-1 text-xs text-amber-300">
-                    {t("analyser.session.staleHeartbeat")}
+                  <Upload className="h-6 w-6 text-muted-foreground mb-2" />
+                  <p className="text-xs text-center text-muted-foreground mb-2">
+                    {selectedFile ? (
+                      <span className="font-semibold text-foreground">{selectedFile.name}</span>
+                    ) : (
+                      t("analyser.session.dropHint")
+                    )}
                   </p>
-                ) : null}
-                {statusMessage && (
-                  <p className={cn(
-                    "mt-2 text-sm transition-colors duration-200",
-                    /fail|error|not found|не удал|ошибк|не найден/i.test(statusMessage)
-                      ? "text-red-400 font-semibold bg-red-950/20 border border-red-900/30 rounded-lg p-2"
-                      : "text-muted-foreground"
-                  )}>
-                    {statusMessage}
-                  </p>
-                )}
-              </div>
-              {selectedRunId ? (
-                <div className="text-sm">
-                  <p className="font-semibold">{t("analyser.session.exports")}</p>
-                  <div className="mt-1 flex flex-wrap gap-3 text-primary">
-                    <a href={exportUrl(selectedRunId, "json")} target="_blank" rel="noreferrer">
-                      JSON
-                    </a>
-                    <a href={exportUrl(selectedRunId, "html")} target="_blank" rel="noreferrer">
-                      HTML
-                    </a>
-                    <a href={exportUrl(selectedRunId, "pdf")} target="_blank" rel="noreferrer">
-                      PDF
-                    </a>
-                  </div>
-                </div>
-              ) : null}
-              {pendingSaveOutputs.length > 0 ? (
-                <Button variant="secondary" size="sm" onClick={() => setSaveDialogOpen(true)}>
-                  {t("analyser.session.saveReady", { n: pendingSaveOutputs.length })}
-                </Button>
-              ) : null}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">{t("analyser.convert.title")}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-xs text-muted-foreground">
-                {t("analyser.convert.intro")}
-              </p>
-
-              <div className="grid grid-cols-2 gap-2">
-                {FORMAT_OPTIONS.map((fmt) => (
-                  <label key={fmt} className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(formatSelection[fmt])}
-                      onChange={(e) =>
-                        setFormatSelection((prev) => ({
-                          ...prev,
-                          [fmt]: e.target.checked
-                        }))
+                  <input
+                    type="file"
+                    accept=".wav,.flac,.mp3,.aac,.ogg,.m4a,.aiff,.aif"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      console.log("[AudioQI Debug] File input changed. File:", file);
+                      setSelectedFile(file);
+                      if (file) {
+                        void handleAutoUpload(file);
                       }
-                      className="h-4 w-4 rounded-[0.25rem] border-input"
-                    />
-                    {fmt.toUpperCase()}
-                  </label>
-                ))}
-              </div>
-
-              <div className="grid gap-2 sm:grid-cols-2">
-                <label className="text-xs text-muted-foreground">
-                  MP3 kbps
-                  <Input
-                    type="number"
-                    min={96}
-                    max={320}
-                    value={mp3BitrateKbps}
-                    onChange={(e) => setMp3BitrateKbps(Number(e.target.value))}
+                    }}
+                    className="hidden"
+                    id="drag-drop-file-input"
                   />
-                </label>
-                <label className="text-xs text-muted-foreground">
-                  AAC kbps
-                  <Input
-                    type="number"
-                    min={96}
-                    max={320}
-                    value={aacBitrateKbps}
-                    onChange={(e) => setAacBitrateKbps(Number(e.target.value))}
+                  <Button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      (e.currentTarget.ownerDocument ?? document).getElementById("drag-drop-file-input")?.click();
+                    }}
+                    variant="secondary"
+                    size="sm"
+                  >
+                    {t("analyser.session.browse")}
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={() => void onUpload()} disabled={!selectedFile || isBusy}>
+                    {t("analyser.session.upload")}
+                  </Button>
+                  <Button variant="secondary" onClick={() => void onAnalyze()} disabled={!selectedRunId || isBusy}>
+                    {t("analyser.session.analyze")}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={openVisualizer}
+                    disabled={!selectedRunId}
+                    title={t("analyser.session.visualTitle")}
+                  >
+                    <Waves className="mr-2 h-4 w-4" />
+                    {t("analyser.session.visual")}
+                  </Button>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={useGpu}
+                    onChange={(e) => setUseGpu(e.target.checked)}
+                    className="h-4 w-4 rounded-[0.25rem] border-input"
                   />
+                  <Cpu className="h-4 w-4" />
+                  {t("analyser.session.useGpu")}
                 </label>
-              </div>
-
-              <Button
-                variant="secondary"
-                onClick={() => void onConvert()}
-                disabled={!selectedRunId || isConverting || isBusy}
-              >
-                {t("analyser.convert.convertSelected")}
-              </Button>
-
-              <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <Badge variant={conversionStatusVariant[conversionStatus] ?? "outline"}>
-                    {statusWord(t, conversionStatus)}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">{conversionProgress.toFixed(1)}%</span>
-                </div>
-                <Progress value={conversionProgress} />
-                {conversionInfo?.error_message ? (
-                  <p className="mt-2 text-xs text-red-300">{conversionInfo.error_message}</p>
-                ) : null}
-              </div>
-
-              {conversionFiles.length > 0 ? (
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.convert.files")}</p>
-                  <DataTable data={conversionFiles} columns={convertedColumns} />
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">{t("analyser.convert.none")}</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between text-lg">
-                {t("analyser.mastering.title")}
-                <HelpLink section="ai-mastering" label={t("analyser.mastering.helpLabel")} />
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                <p className="text-xs text-muted-foreground">
-                  {t("analyser.mastering.modesIntro")}
-                </p>
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {t("analyser.mastering.preflightIntro")}
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.mastering.suggested")}</p>
-                  <Badge variant={canApplyAiMasteringAdvice ? "default" : "outline"}>
-                    {canApplyAiMasteringAdvice ? recommendationConfidence : t("analyser.mastering.noAdvice")}
-                  </Badge>
-                </div>
-                {canApplyAiMasteringAdvice ? (
-                  <div className="space-y-2">
-                    <p className="text-sm">
-                      {t("analyser.mastering.mode")} <span className="font-semibold">{recommendedMode?.toUpperCase()}</span> |{" "}
-                      {t("analyser.mastering.preset")}{" "}
-                      <span className="font-semibold">{recommendedPreset}</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {t("analyser.mastering.targetsLine", {
-                        lufs: recommendedTargetLufs !== null ? recommendedTargetLufs.toFixed(1) : na,
-                        tp: recommendedTruePeak !== null ? `${recommendedTruePeak.toFixed(1)} dBFS` : na,
-                        variants: recommendedVariants ?? na,
-                        backend: recommendedBackend ?? na,
-                        refine: recommendedRefinePasses ?? na
-                      })}
-                      {recommendationIssueScore !== null
-                        ? t("analyser.mastering.issueScore", { n: recommendationIssueScore.toFixed(0) })
-                        : ""}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {t("analyser.mastering.scorePolicy")}
-                    </p>
-                    {recommendationReasons.length > 0 ? (
-                      <ul className="space-y-1 text-xs text-muted-foreground">
-                        {recommendationReasons.slice(0, 4).map((reason, idx) => (
-                          <li key={`${reason}-${idx}`}>{reason}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                    <Button size="sm" variant="secondary" onClick={onApplyAiMasteringAdvice}>
-                      {t("analyser.mastering.apply")}
-                    </Button>
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    {t("analyser.mastering.analyzeFirst")}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-3 rounded-xl border border-border/70 bg-card/70 p-3">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.mastering.settings")}</p>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{t("analyser.mastering.mode")}</span>
-                    <select
-                      value={masterMode}
-                      onChange={(e) => setMasterMode(e.target.value as (typeof MASTER_MODES)[number])}
-                      className="w-full rounded-xl border border-input bg-input px-3 py-2 text-sm text-foreground"
-                    >
-                      {MASTER_MODES.map((mode) => (
-                        <option key={mode} value={mode}>
-                          {mode.toUpperCase()}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{t("analyser.mastering.preset")}</span>
-                    <select
-                      value={masterPreset}
-                      onChange={(e) => setMasterPreset(e.target.value as (typeof MASTER_PRESETS)[number])}
-                      className="w-full rounded-xl border border-input bg-input px-3 py-2 text-sm text-foreground"
-                    >
-                      {MASTER_PRESETS.map((preset) => (
-                        <option key={preset} value={preset}>
-                          {preset}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{t("analyser.mastering.normProfile")}</span>
-                    <select
-                      value={normalizationProfile}
-                      onChange={(e) => applyNormalizationProfile(e.target.value as NormalizationProfileId)}
-                      className="w-full rounded-xl border border-input bg-input px-3 py-2 text-sm text-foreground"
-                    >
-                      {NORMALIZATION_PROFILE_OPTIONS.map((profile) => (
-                        <option key={profile.id} value={profile.id}>
-                          {t(`analyser.norm.${profile.id}.label`)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{t("analyser.mastering.profileTargets")}</span>
-                    <div className="rounded-xl border border-border/70 bg-secondary/45 px-3 py-2 text-sm text-foreground">
-                      {selectedNormalizationProfile.targetLufs !== null
-                        ? t("analyser.mastering.profileTargetsValue", {
-                            lufs: selectedNormalizationProfile.targetLufs.toFixed(1),
-                            tp: selectedNormalizationProfile.truePeakDbfs?.toFixed(1) ?? na
-                          })
-                        : t("analyser.mastering.presetTargets")}
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">{t(`analyser.norm.${selectedNormalizationProfile.id}.help`)}</p>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{t("analyser.mastering.backend")}</span>
-                    <select
-                      value={masterBackend}
-                      onChange={(e) => setMasterBackend(e.target.value as (typeof MASTER_BACKENDS)[number])}
-                      className="w-full rounded-xl border border-input bg-input px-3 py-2 text-sm text-foreground"
-                    >
-                      {MASTER_BACKENDS.map((backend) => (
-                        <option key={backend} value={backend}>
-                          {backend}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{t("analyser.mastering.reference")}</span>
-                    {/* Chosen by name: the run ID it needs is not something anyone can read off the page. */}
-                    <select
-                      value={masterReferenceRunId}
-                      onChange={(e) => setMasterReferenceRunId(e.target.value)}
-                      className="w-full rounded-xl border border-input bg-input px-3 py-2 text-sm text-foreground"
-                      aria-label={t("analyser.mastering.referenceAria")}
-                    >
-                      <option value="">{t("analyser.mastering.none")}</option>
-                      {runs
-                        .filter((run) => run.id !== selectedRunId)
-                        .map((run) => (
-                          <option key={run.id} value={run.id}>
-                            {run.filename} · {new Date(run.created_at).toLocaleDateString(locale)}
-                          </option>
-                        ))}
-                      {masterReferenceRunId && !runs.some((run) => run.id === masterReferenceRunId) ? (
-                        <option value={masterReferenceRunId}>{t("analyser.mastering.runShort", { id: masterReferenceRunId.slice(0, 8) })}</option>
-                      ) : null}
-                    </select>
-                  </label>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{t("analyser.mastering.targetLufs")}</span>
-                    <Input
-                      type="number"
-                      step={0.1}
-                      min={-30}
-                      max={-6}
-                      value={masterTargetLufsInput}
-                      onChange={(e) => setMasterTargetLufsInput(e.target.value)}
-                    />
-                  </label>
-                  <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{t("analyser.mastering.truePeak")}</span>
-                    <Input
-                      type="number"
-                      step={0.1}
-                      min={-6}
-                      max={0}
-                      value={masterTruePeakDbfsInput}
-                      onChange={(e) => setMasterTruePeakDbfsInput(e.target.value)}
-                    />
-                  </label>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{t("analyser.mastering.inputGain")}</span>
-                    <Input
-                      type="number"
-                      step={0.5}
-                      min={-12}
-                      max={12}
-                      value={masterInputGainDbInput}
-                      onChange={(e) => setMasterInputGainDbInput(e.target.value)}
-                    />
-                  </label>
-                  <div className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{t("analyser.mastering.gainStaging")}</span>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 rounded-xl border border-border/70 bg-secondary/45 px-3 py-2 text-sm text-foreground">
-                        {masterInputGainSummary}
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => setMasterInputGainDbInput("0")}
-                        disabled={masterInputGainDb === 0}
-                      >
-                        {t("analyser.mastering.reset")}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{t("analyser.mastering.bassMono")}</span>
-                    <select
-                      value={masterBassMonoHz}
-                      onChange={(e) => setMasterBassMonoHz(e.target.value)}
-                      className="w-full rounded-xl border border-input bg-input px-3 py-2 text-sm text-foreground"
-                    >
-                      {BASS_MONO_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.value === ""
-                            ? t("analyser.bassMono.presetDefault")
-                            : option.value === "0"
-                              ? t("analyser.bassMono.off")
-                              : `${option.value} Hz`}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{t("analyser.mastering.stereoWidth")}</span>
-                    <Input
-                      type="number"
-                      step={0.05}
-                      min={0.5}
-                      max={1.5}
-                      placeholder={t("analyser.mastering.widthPlaceholder")}
-                      value={masterStereoWidthInput}
-                      onChange={(e) => setMasterStereoWidthInput(e.target.value)}
-                    />
-                  </label>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{t("analyser.mastering.variants")}</span>
-                    <Input
-                      type="number"
-                      min={2}
-                      max={8}
-                      value={optimizerVariants}
-                      disabled={masterMode !== "v2"}
-                      onChange={(e) => setOptimizerVariants(Number(e.target.value))}
-                    />
-                  </label>
-                  <label className="space-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{t("analyser.mastering.refinePasses")}</span>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={5}
-                      value={maxRefinePasses}
-                      onChange={(e) => setMaxRefinePasses(Number(e.target.value))}
-                    />
-                  </label>
-                </div>
-
-                <p className="text-[11px] text-muted-foreground">
-                  {t("analyser.mastering.backendNotes")}
-                </p>
-              </div>
-
-              <Button
-                variant="secondary"
-                className="w-full"
-                onClick={() => void onMaster()}
-                disabled={!selectedRunId || isMastering || isBusy}
-              >
-                {t("analyser.mastering.run")}
-              </Button>
-
-              <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <Badge variant={masteringStatusVariant[masteringStatus] ?? "outline"}>
-                    {statusWord(t, masteringStatus)}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">{masteringProgress.toFixed(1)}%</span>
-                </div>
-                <Progress value={masteringProgress} />
-                <p className="mt-2 text-xs font-semibold text-primary">
-                  {masteringDetail || `${stageLabel(masteringStage, t)}.`}
-                </p>
-                <p className="mt-2 text-xs text-muted-foreground">{t("analyser.mastering.bestOutput", { id: bestMasterId })}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t("analyser.mastering.backendSelected", { backend: backendSelected })}
-                </p>
-                {bestOutputHash ? (
-                  <p className="mt-1 text-[11px] text-muted-foreground" title={bestOutputHash}>
-                    {t("analyser.mastering.outputHash", { hash: bestOutputHash.slice(0, 12) })}
-                  </p>
-                ) : null}
-                {masteringInfo?.error_message ? (
-                  <p className="mt-2 text-xs text-red-300">{masteringInfo.error_message}</p>
-                ) : null}
-                {(refineAcceptedPasses !== null || refineFinalScore !== null) ? (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t("analyser.mastering.refinement", {
-                      accepted: refineAcceptedPasses !== null ? refineAcceptedPasses.toFixed(0) : "0",
-                      max: refineMaxPasses !== null ? refineMaxPasses.toFixed(0) : "?"
-                    })}
-                    {refineFinalScore !== null ? t("analyser.mastering.finalScore", { n: refineFinalScore.toFixed(0) }) : ""}
-                    {refineRollbackCount !== null ? t("analyser.mastering.rollbacks", { n: refineRollbackCount.toFixed(0) }) : ""}
-                    {refineFallbackApplied ? t("analyser.mastering.stemFallback") : ""}
-                    {refineNonRegressionApplied
-                      ? t("analyser.mastering.nonRegression", {
-                          reason: refineNonRegressionReason || t("analyser.mastering.applied")
-                        })
-                      : ""}
-                  </p>
-                ) : null}
-                {proFeatureEntries.length > 0 ? (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t("analyser.mastering.proModules")}{" "}
-                    {proFeatureEntries
-                      .map(([key, value]) => `${key}:${value ? t("analyser.yes") : t("analyser.no")}`)
-                      .join(" | ")}
-                  </p>
-                ) : null}
-              </div>
-
-              {Object.keys(adaptationInfo).length > 0 ? (
                 <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.mastering.adaptationTitle")}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t("analyser.mastering.sourceScore", {
-                      n: adaptationSourceIssueScore !== null ? adaptationSourceIssueScore.toFixed(0) : na
-                    })}
-                    {adaptationAdjustmentCount !== null
-                      ? t("analyser.mastering.adjustments", { n: adaptationAdjustmentCount.toFixed(0) })
-                      : ""}
-                  </p>
-                  {adaptationAdjustments.length > 0 ? (
-                    <div className="mt-2 space-y-1">
-                      {adaptationAdjustments.slice(0, 6).map((row) => (
-                        <p key={`${row.field}-${row.reason}`} className="text-xs text-muted-foreground">
-                          {row.field}: {row.before !== null ? row.before.toFixed(2) : na} {"->"} {row.after !== null ? row.after.toFixed(2) : na} | {row.reason}
-                        </p>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {t("analyser.mastering.noChanges")}
+                  <div className="mb-2 flex items-center justify-between">
+                    <Badge variant={statusVariant[currentStatus] ?? "outline"}>{statusWord(t, currentStatus)}</Badge>
+                    <span className="text-xs text-muted-foreground">{progress.toFixed(1)}%</span>
+                  </div>
+                  <Progress value={progress} />
+                  <p className="mt-2 text-xs font-semibold text-primary">{analysisTicker}</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{analysisStageMeta}</p>
+                  {analysisStageAgeSeconds !== null &&
+                  (currentStatus === "running" || currentStatus === "queued") &&
+                  analysisStageAgeSeconds > ANALYSIS_STALE_WARNING_SECONDS ? (
+                    <p className="mt-1 text-xs text-amber-300">
+                      {t("analyser.session.staleHeartbeat")}
+                    </p>
+                  ) : null}
+                  {statusMessage && (
+                    <p className={cn(
+                      "mt-2 text-sm transition-colors duration-200",
+                      /fail|error|not found|не удал|ошибк|не найден/i.test(statusMessage)
+                        ? "text-red-400 font-semibold bg-red-950/20 border border-red-900/30 rounded-lg p-2"
+                        : "text-muted-foreground"
+                    )}>
+                      {statusMessage}
                     </p>
                   )}
                 </div>
-              ) : null}
-
-              {Object.keys(masteringSelfCheck).length > 0 ? (
-                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.mastering.selfCheckTitle")}</p>
-                  <p className="mt-1 text-sm">
-                    {t("analyser.mastering.assessment")} <span className="font-semibold">{selfCheckAssessment}</span>
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t("analyser.mastering.issueScoreLabel")}{" "}
-                    {selfCheckScoreBefore !== null ? selfCheckScoreBefore.toFixed(0) : na} {"->"}{" "}
-                    {selfCheckScoreAfter !== null ? selfCheckScoreAfter.toFixed(0) : na}
-                    {selfCheckScoreDelta !== null
-                      ? ` (${selfCheckScoreDelta > 0 ? "+" : ""}${selfCheckScoreDelta.toFixed(0)})`
-                      : ""}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t("analyser.mastering.appliedSettings", {
-                      name: text(appliedSettings.name, masterPreset),
-                      target: appliedTargetLufs !== null ? `${appliedTargetLufs.toFixed(1)} LUFS` : na,
-                      tp: appliedTargetTruePeak !== null ? `${appliedTargetTruePeak.toFixed(1)} dBFS` : na,
-                      norm: appliedNormalizationProfile,
-                      gain:
-                        appliedInputGainDb !== null
-                          ? `${appliedInputGainDb > 0 ? "+" : ""}${appliedInputGainDb.toFixed(1)} dB`
-                          : "0.0 dB"
-                    })}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t("analyser.mastering.stereoStage", {
-                      bass:
-                        appliedBassMonoHz !== null
-                          ? appliedBassMonoHz > 0
-                            ? `${appliedBassMonoHz.toFixed(0)} Hz`
-                            : t("analyser.mastering.off")
-                          : na,
-                      width: appliedStereoWidth !== null ? appliedStereoWidth.toFixed(2) : na
-                    })}
-                  </p>
-                  {inputGainNotes.length > 0 ? (
-                    <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-muted-foreground">
-                      {inputGainNotes.map((note) => (
-                        <li key={note}>{note}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t("analyser.mastering.aiMatch", {
-                      mode: yesNo(aiModeMatch),
-                      preset: yesNo(aiPresetMatch),
-                      target: yesNo(aiTargetLufsMatch),
-                      tp: yesNo(aiTruePeakMatch)
-                    })}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t("analyser.mastering.compliance", {
-                      result: selfCheckCompliancePassed ? t("analyser.mastering.pass") : t("analyser.mastering.reviewRequired")
-                    })}
-                    {selfCheckComplianceLufsDelta !== null
-                      ? t("analyser.mastering.lufsDelta", { n: signed(selfCheckComplianceLufsDelta) })
-                      : ""}
-                    {selfCheckComplianceTruePeakDelta !== null
-                      ? t("analyser.mastering.tpDelta", { n: signed(selfCheckComplianceTruePeakDelta) })
-                      : ""}
-                    {selfCheckComplianceCrestDelta !== null
-                      ? t("analyser.mastering.crestDelta", { n: signed(selfCheckComplianceCrestDelta) })
-                      : ""}
-                  </p>
-                  {selfCheckComplianceFailed.length > 0 ? (
-                    <p className="mt-1 text-xs text-amber-300">
-                      {t("analyser.mastering.complianceIssues", { list: selfCheckComplianceFailed.join(", ") })}
-                    </p>
-                  ) : null}
-                  {postCheckRepairAttempted ? (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {t("analyser.mastering.rescue", {
-                        state: postCheckRepairApplied ? t("analyser.mastering.applied") : t("analyser.mastering.rescueAttempted")
-                      })}
-                      {postCheckRepairRound !== null && postCheckRepairRound > 0
-                        ? t("analyser.mastering.round", { n: postCheckRepairRound.toFixed(0) })
-                        : ""}
-                    </p>
-                  ) : null}
-                  {selfCheckResolved.length > 0 ? (
-                    <p className="mt-2 text-xs text-emerald-300">
-                      {t("analyser.mastering.resolved", { list: selfCheckResolved.join(", ") })}
-                    </p>
-                  ) : null}
-                  {selfCheckRemaining.length > 0 ? (
-                    <p className="mt-1 text-xs text-amber-300">
-                      {t("analyser.mastering.remaining", { list: selfCheckRemaining.join(", ") })}
-                    </p>
-                  ) : null}
-                  {selfCheckWorsened.length > 0 ? (
-                    <p className="mt-1 text-xs text-red-300">
-                      {t("analyser.mastering.worsened", { list: selfCheckWorsened.join(", ") })}
-                    </p>
-                  ) : null}
-                  {selfCheckRecommendedFixes.length > 0 ? (
-                    <div className="mt-2 space-y-1">
-                      {selfCheckRecommendedFixes.slice(0, 4).map((row) => (
-                        <p key={`${row.issue}-${row.action}`} className="text-xs text-muted-foreground">
-                          {row.issue}: {row.action}
-                        </p>
-                      ))}
+                {selectedRunId ? (
+                  <div className="text-sm">
+                    <p className="font-semibold">{t("analyser.session.exports")}</p>
+                    <div className="mt-1 flex flex-wrap gap-3 text-primary">
+                      <a href={exportUrl(selectedRunId, "json")} target="_blank" rel="noreferrer">
+                        JSON
+                      </a>
+                      <a href={exportUrl(selectedRunId, "html")} target="_blank" rel="noreferrer">
+                        HTML
+                      </a>
+                      <a href={exportUrl(selectedRunId, "pdf")} target="_blank" rel="noreferrer">
+                        PDF
+                      </a>
                     </div>
+                  </div>
+                ) : null}
+                {pendingSaveOutputs.length > 0 ? (
+                  <Button variant="secondary" size="sm" onClick={() => setSaveDialogOpen(true)}>
+                    {t("analyser.session.saveReady", { n: pendingSaveOutputs.length })}
+                  </Button>
+                ) : null}
+              </CardContent>
+            </Card>
+          </Floatable>
+
+          <Floatable id="analyser-convert" title={t("analyser.convert.title")}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">{t("analyser.convert.title")}<FloatButton className="ml-auto" /></CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  {t("analyser.convert.intro")}
+                </p>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {FORMAT_OPTIONS.map((fmt) => (
+                    <label key={fmt} className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(formatSelection[fmt])}
+                        onChange={(e) =>
+                          setFormatSelection((prev) => ({
+                            ...prev,
+                            [fmt]: e.target.checked
+                          }))
+                        }
+                        className="h-4 w-4 rounded-[0.25rem] border-input"
+                      />
+                      {fmt.toUpperCase()}
+                    </label>
+                  ))}
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="text-xs text-muted-foreground">
+                    MP3 kbps
+                    <Input
+                      type="number"
+                      min={96}
+                      max={320}
+                      value={mp3BitrateKbps}
+                      onChange={(e) => setMp3BitrateKbps(Number(e.target.value))}
+                    />
+                  </label>
+                  <label className="text-xs text-muted-foreground">
+                    AAC kbps
+                    <Input
+                      type="number"
+                      min={96}
+                      max={320}
+                      value={aacBitrateKbps}
+                      onChange={(e) => setAacBitrateKbps(Number(e.target.value))}
+                    />
+                  </label>
+                </div>
+
+                <Button
+                  variant="secondary"
+                  onClick={() => void onConvert()}
+                  disabled={!selectedRunId || isConverting || isBusy}
+                >
+                  {t("analyser.convert.convertSelected")}
+                </Button>
+
+                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <Badge variant={conversionStatusVariant[conversionStatus] ?? "outline"}>
+                      {statusWord(t, conversionStatus)}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{conversionProgress.toFixed(1)}%</span>
+                  </div>
+                  <Progress value={conversionProgress} />
+                  {conversionInfo?.error_message ? (
+                    <p className="mt-2 text-xs text-red-300">{conversionInfo.error_message}</p>
                   ) : null}
                 </div>
-              ) : null}
 
-              {masteringOutputs.length > 0 ? (
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.mastering.outputs")}</p>
-                  <DataTable data={masteringOutputs} columns={masteredColumns} />
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">{t("analyser.mastering.noOutputs")}</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">{t("analyser.history.title")}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <DataTable
-                data={runs}
-                columns={runColumns}
-                onRowClick={(row) => setSelectedRunId(row.id)}
-                rowClassName={(row) => (row.id === selectedRunId ? "bg-secondary/75" : "")}
-              />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Waves className="h-5 w-5 text-primary" /> {t("analyser.playback.title")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <audio
-                ref={audioRef}
-                controls
-                crossOrigin="anonymous"
-                preload="metadata"
-                playsInline
-                className="w-full rounded-lg"
-                src={selectedRunId ? audioUrl(selectedRunId) : undefined}
-                onLoadedMetadata={(e) => {
-                  const loadedDuration = (e.target as HTMLAudioElement).duration;
-                  if (Number.isFinite(loadedDuration) && loadedDuration > 0) {
-                    setDuration(loadedDuration);
-                    // Initialize full-track selection as soon as audio metadata is available.
-                    if (selectedRunId && initializedSelectionRunRef.current !== selectedRunId) {
-                      setSelectionStart(0);
-                      setSelectionEnd(loadedDuration);
-                      initializedSelectionRunRef.current = selectedRunId;
-                      setScrubTime(0);
-                      if (audioRef.current) {
-                        audioRef.current.currentTime = 0;
-                      }
-                    }
-                  }
-                }}
-                onTimeUpdate={(e) => {
-                  const time = (e.target as HTMLAudioElement).currentTime;
-                  if (isLoopSelection && time >= selectionEnd - 0.02) {
-                    (e.target as HTMLAudioElement).currentTime = selectionStart;
-                    scrubTimeRef.current = selectionStart;
-                    setScrubTime(selectionStart);
-                    return;
-                  }
-                  if (Math.abs(time - scrubTimeRef.current) < 0.025) {
-                    return;
-                  }
-                  scrubTimeRef.current = time;
-                  setScrubTime(time);
-                }}
-                onPlay={handleAudioPlay}
-                onPause={() => setIsPlaying(false)}
-                onEnded={() => setIsPlaying(false)}
-                onError={() => setStatusMessage(t("analyser.msg.audioLoadFailed"))}
-              />
-              <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.playback.playhead")}</p>
-                <input
-                  type="range"
-                  min={0}
-                  max={duration}
-                  step={0.01}
-                  value={scrubTime}
-                  onChange={(e) => {
-                    const time = Number(e.target.value);
-                    setScrubTime(time);
-                    if (audioRef.current) {
-                      audioRef.current.currentTime = time;
-                    }
-                  }}
-                  className="mt-2 w-full accent-[hsl(var(--primary))]"
-                />
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {scrubTime.toFixed(2)}s / {duration.toFixed(2)}s
-                </p>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span>{t("analyser.playback.rate", { rate: playbackRate.toFixed(2) })}</span>
-                  <span>|</span>
-                  <span>{isLoopSelection ? t("analyser.playback.loopOn") : t("analyser.playback.loopOff")}</span>
-                  <span>|</span>
-                  <span>{eqEnabled ? t("analyser.playback.eqOn") : t("analyser.playback.eqOff")}</span>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.playback.segment")}</p>
-                  <Button size="sm" variant="ghost" onClick={() => applySelectionRange(0, duration)}>
-                    {t("analyser.playback.fullTrack")}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t("analyser.playback.segmentLine", {
-                    start: selectionStart.toFixed(2),
-                    end: selectionEnd.toFixed(2),
-                    length: selectedSegmentLength.toFixed(2)
-                  })}
-                </p>
-                <label className="mt-3 block text-xs text-muted-foreground">
-                  {t("analyser.playback.leftMarker")}
-                  <input
-                    type="range"
-                    min={0}
-                    max={duration}
-                    step={0.01}
-                    value={selectionStart}
-                    onChange={(e) => applySelectionRange(Number(e.target.value), selectionEnd)}
-                    className="mt-1 w-full accent-[hsl(var(--primary))]"
-                  />
-                </label>
-                <label className="mt-3 block text-xs text-muted-foreground">
-                  {t("analyser.playback.rightMarker")}
-                  <input
-                    type="range"
-                    min={0}
-                    max={duration}
-                    step={0.01}
-                    value={selectionEnd}
-                    onChange={(e) => applySelectionRange(selectionStart, Number(e.target.value))}
-                    className="mt-1 w-full accent-[hsl(var(--accent))]"
-                  />
-                </label>
-              </div>
-
-              <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.playback.markers")}</p>
-                {allMarkers.length > 0 ? (
-                  <div className="mt-2 flex max-h-28 flex-wrap gap-2 overflow-y-auto">
-                    {allMarkers.map((marker, idx) => (
-                      <button
-                        key={`${marker.type}-${marker.start_seconds}-${idx}`}
-                        onClick={() => zoomToMarker(marker)}
-                        className="rounded-full border border-border/70 bg-card px-2 py-1 text-[11px] text-foreground transition hover:border-primary/70"
-                        title={marker.message ?? marker.type}
-                      >
-                        {marker.type} @ {marker.start_seconds.toFixed(2)}s
-                      </button>
-                    ))}
+                {conversionFiles.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.convert.files")}</p>
+                    <DataTable data={conversionFiles} columns={convertedColumns} />
                   </div>
                 ) : (
-                  <p className="mt-2 text-xs text-muted-foreground">{t("analyser.playback.noMarkers")}</p>
+                  <p className="text-xs text-muted-foreground">{t("analyser.convert.none")}</p>
                 )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+              </CardContent>
+            </Card>
+          </Floatable>
 
-        <div className="space-y-4 lg:col-span-9">
-          <section className="grid gap-3 xl:grid-cols-4">
-            <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                {t("analyser.tiles.activeRun")}
-              </p>
-              <p className="mt-2 truncate display-font text-lg font-semibold text-foreground">
-                {selectedRunFilename}
-              </p>
-              {selectedRunId ? (
-                <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                  <span className="truncate font-mono" title={selectedRunId}>
-                    {t("analyser.tiles.runId", { id: selectedRunId })}
-                  </span>
-                  <button
-                    type="button"
-                    className="shrink-0 rounded p-1 hover:bg-white/10 hover:text-foreground"
-                    title={t("analyser.tiles.copyRunId")}
-                    aria-label={t("analyser.tiles.copyRunId")}
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(selectedRunId).then(() => {
-                        setRunIdCopied(true);
-                        window.setTimeout(() => setRunIdCopied(false), 1500);
-                      });
-                    }}
-                  >
-                    {runIdCopied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-                  </button>
+          <Floatable id="analyser-mastering" title={t("analyser.mastering.title")}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  {t("analyser.mastering.title")}
+                  <HelpLink section="ai-mastering" label={t("analyser.mastering.helpLabel")} className="ml-auto" />
+                  <FloatButton />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                  <p className="text-xs text-muted-foreground">
+                    {t("analyser.mastering.modesIntro")}
+                  </p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {t("analyser.mastering.preflightIntro")}
+                  </p>
                 </div>
-              ) : (
-                <p className="mt-1 text-xs text-muted-foreground">{t("analyser.tiles.uploadToCreate")}</p>
-              )}
-            </div>
 
-            <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                {t("analyser.tiles.analysisState")}
-              </p>
-              <p className="mt-2 display-font text-lg font-semibold text-foreground">
-                {stageLabel(analysisStage, t)}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">{analysisTicker}</p>
-              <p className="mt-2 text-xs text-primary">{t("analyser.tiles.complete", { pct: progress.toFixed(1) })}</p>
-            </div>
+                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.mastering.suggested")}</p>
+                    <Badge variant={canApplyAiMasteringAdvice ? "default" : "outline"}>
+                      {canApplyAiMasteringAdvice ? recommendationConfidence : t("analyser.mastering.noAdvice")}
+                    </Badge>
+                  </div>
+                  {canApplyAiMasteringAdvice ? (
+                    <div className="space-y-2">
+                      <p className="text-sm">
+                        {t("analyser.mastering.mode")} <span className="font-semibold">{recommendedMode?.toUpperCase()}</span> |{" "}
+                        {t("analyser.mastering.preset")}{" "}
+                        <span className="font-semibold">{recommendedPreset}</span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t("analyser.mastering.targetsLine", {
+                          lufs: recommendedTargetLufs !== null ? recommendedTargetLufs.toFixed(1) : na,
+                          tp: recommendedTruePeak !== null ? `${recommendedTruePeak.toFixed(1)} dBFS` : na,
+                          variants: recommendedVariants ?? na,
+                          backend: recommendedBackend ?? na,
+                          refine: recommendedRefinePasses ?? na
+                        })}
+                        {recommendationIssueScore !== null
+                          ? t("analyser.mastering.issueScore", { n: recommendationIssueScore.toFixed(0) })
+                          : ""}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t("analyser.mastering.scorePolicy")}
+                      </p>
+                      {recommendationReasons.length > 0 ? (
+                        <ul className="space-y-1 text-xs text-muted-foreground">
+                          {recommendationReasons.slice(0, 4).map((reason, idx) => (
+                            <li key={`${reason}-${idx}`}>{reason}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      <Button size="sm" variant="secondary" onClick={onApplyAiMasteringAdvice}>
+                        {t("analyser.mastering.apply")}
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {t("analyser.mastering.analyzeFirst")}
+                    </p>
+                  )}
+                </div>
 
-            <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                {t("analyser.tiles.reviewAssets")}
-              </p>
-              <p className="mt-2 display-font text-lg font-semibold text-foreground">
-                {t("analyser.tiles.chartsLoaded", {
-                  loaded: loadedChartNames.length,
-                  total: availableChartNames.length || ALL_CHARTS.length
-                })}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t("analyser.tiles.markersLine", { markers: allMarkers.length, attention: highlightedMarkerCount })}
-              </p>
-              <p className="mt-2 text-xs text-muted-foreground">
-                {t("analyser.tiles.selectionWindow", { length: selectedSegmentLength.toFixed(2) })}
-              </p>
-            </div>
+                <div className="space-y-3 rounded-xl border border-border/70 bg-card/70 p-3">
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.mastering.settings")}</p>
 
-            <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                {t("analyser.tiles.strategy")}
-              </p>
-              <p className="mt-2 display-font text-lg font-semibold text-foreground">
-                {masteringRecommendationSummary}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t("analyser.tiles.backendProfile", { backend: masterBackend, profile: normalizationProfile })}
-              </p>
-              <p className="mt-2 text-xs text-muted-foreground">
-                {masteringOutputs.length > 0
-                  ? tp("analyser.tiles.masteredReady", masteringOutputs.length)
-                  : t("analyser.tiles.noMastered")}
-              </p>
-            </div>
-          </section>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">{t("analyser.overview.title")}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
-                  <AudioReviewStrip
-                    figure={charts.waveform as Record<string, unknown> | undefined}
-                    duration={duration}
-                    selectionStart={selectionStart}
-                    selectionEnd={selectionEnd}
-                    scrubTime={scrubTime}
-                    markers={allMarkers}
-                    onScrub={scrubToTime}
-                  />
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Button size="sm" variant="secondary" onClick={() => void togglePlayback()} disabled={!selectedRunId}>
-                      {isPlaying ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-                      {isPlaying ? t("analyser.overview.pause") : t("analyser.overview.play")}
-                    </Button>
-                    <Button size="sm" variant="secondary" onClick={() => seekBySeconds(-5)} disabled={!selectedRunId}>
-                      <SkipBack className="mr-2 h-4 w-4" />
-                      -5s
-                    </Button>
-                    <Button size="sm" variant="secondary" onClick={() => seekBySeconds(5)} disabled={!selectedRunId}>
-                      <SkipForward className="mr-2 h-4 w-4" />
-                      +5s
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => scrubToTime(selectionStart)} disabled={!selectedRunId}>
-                      <RotateCcw className="mr-2 h-4 w-4" />
-                      {t("analyser.overview.selectionStart")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={isLoopSelection ? "default" : "ghost"}
-                      onClick={() => setIsLoopSelection((value) => !value)}
-                      disabled={!selectedRunId}
-                    >
-                      <Repeat className="mr-2 h-4 w-4" />
-                      {t("analyser.overview.loopSelection")}
-                    </Button>
-                    <label className="inline-flex items-center gap-2 rounded-xl border border-border/70 bg-secondary/45 px-3 py-2 text-sm text-foreground">
-                      {t("analyser.overview.speed")}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{t("analyser.mastering.mode")}</span>
                       <select
-                        value={playbackRate}
-                        onChange={(event) => setPlaybackRate(Number(event.target.value))}
-                        className="bg-transparent text-sm text-foreground outline-hidden"
+                        value={masterMode}
+                        onChange={(e) => setMasterMode(e.target.value as (typeof MASTER_MODES)[number])}
+                        className="w-full rounded-xl border border-input bg-input px-3 py-2 text-sm text-foreground"
                       >
-                        {[0.75, 1, 1.25, 1.5].map((rate) => (
-                          <option key={rate} value={rate} className="bg-slate-950 text-foreground">
-                            {rate.toFixed(2)}x
+                        {MASTER_MODES.map((mode) => (
+                          <option key={mode} value={mode}>
+                            {mode.toUpperCase()}
                           </option>
                         ))}
                       </select>
                     </label>
-                    <Button size="sm" variant="ghost" onClick={markSelectionStartAtScrub} disabled={!selectedRunId}>
-                      {t("analyser.overview.setStart", { time: scrubTime.toFixed(2) })}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={markSelectionEndAtScrub} disabled={!selectedRunId}>
-                      {t("analyser.overview.setEnd", { time: scrubTime.toFixed(2) })}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={resetReviewSelection} disabled={!selectedRunId}>
-                      {t("analyser.overview.resetRange")}
-                    </Button>
+
+                    <label className="space-y-1 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{t("analyser.mastering.preset")}</span>
+                      <select
+                        value={masterPreset}
+                        onChange={(e) => setMasterPreset(e.target.value as (typeof MASTER_PRESETS)[number])}
+                        className="w-full rounded-xl border border-input bg-input px-3 py-2 text-sm text-foreground"
+                      >
+                        {MASTER_PRESETS.map((preset) => (
+                          <option key={preset} value={preset}>
+                            {preset}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{t("analyser.mastering.normProfile")}</span>
+                      <select
+                        value={normalizationProfile}
+                        onChange={(e) => applyNormalizationProfile(e.target.value as NormalizationProfileId)}
+                        className="w-full rounded-xl border border-input bg-input px-3 py-2 text-sm text-foreground"
+                      >
+                        {NORMALIZATION_PROFILE_OPTIONS.map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {t(`analyser.norm.${profile.id}.label`)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{t("analyser.mastering.profileTargets")}</span>
+                      <div className="rounded-xl border border-border/70 bg-secondary/45 px-3 py-2 text-sm text-foreground">
+                        {selectedNormalizationProfile.targetLufs !== null
+                          ? t("analyser.mastering.profileTargetsValue", {
+                              lufs: selectedNormalizationProfile.targetLufs.toFixed(1),
+                              tp: selectedNormalizationProfile.truePeakDbfs?.toFixed(1) ?? na
+                            })
+                          : t("analyser.mastering.presetTargets")}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">{t(`analyser.norm.${selectedNormalizationProfile.id}.help`)}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{t("analyser.mastering.backend")}</span>
+                      <select
+                        value={masterBackend}
+                        onChange={(e) => setMasterBackend(e.target.value as (typeof MASTER_BACKENDS)[number])}
+                        className="w-full rounded-xl border border-input bg-input px-3 py-2 text-sm text-foreground"
+                      >
+                        {MASTER_BACKENDS.map((backend) => (
+                          <option key={backend} value={backend}>
+                            {backend}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="space-y-1 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{t("analyser.mastering.reference")}</span>
+                      {/* Chosen by name: the run ID it needs is not something anyone can read off the page. */}
+                      <select
+                        value={masterReferenceRunId}
+                        onChange={(e) => setMasterReferenceRunId(e.target.value)}
+                        className="w-full rounded-xl border border-input bg-input px-3 py-2 text-sm text-foreground"
+                        aria-label={t("analyser.mastering.referenceAria")}
+                      >
+                        <option value="">{t("analyser.mastering.none")}</option>
+                        {runs
+                          .filter((run) => run.id !== selectedRunId)
+                          .map((run) => (
+                            <option key={run.id} value={run.id}>
+                              {run.filename} · {new Date(run.created_at).toLocaleDateString(locale)}
+                            </option>
+                          ))}
+                        {masterReferenceRunId && !runs.some((run) => run.id === masterReferenceRunId) ? (
+                          <option value={masterReferenceRunId}>{t("analyser.mastering.runShort", { id: masterReferenceRunId.slice(0, 8) })}</option>
+                        ) : null}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{t("analyser.mastering.targetLufs")}</span>
+                      <Input
+                        type="number"
+                        step={0.1}
+                        min={-30}
+                        max={-6}
+                        value={masterTargetLufsInput}
+                        onChange={(e) => setMasterTargetLufsInput(e.target.value)}
+                      />
+                    </label>
+                    <label className="space-y-1 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{t("analyser.mastering.truePeak")}</span>
+                      <Input
+                        type="number"
+                        step={0.1}
+                        min={-6}
+                        max={0}
+                        value={masterTruePeakDbfsInput}
+                        onChange={(e) => setMasterTruePeakDbfsInput(e.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{t("analyser.mastering.inputGain")}</span>
+                      <Input
+                        type="number"
+                        step={0.5}
+                        min={-12}
+                        max={12}
+                        value={masterInputGainDbInput}
+                        onChange={(e) => setMasterInputGainDbInput(e.target.value)}
+                      />
+                    </label>
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{t("analyser.mastering.gainStaging")}</span>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 rounded-xl border border-border/70 bg-secondary/45 px-3 py-2 text-sm text-foreground">
+                          {masterInputGainSummary}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setMasterInputGainDbInput("0")}
+                          disabled={masterInputGainDb === 0}
+                        >
+                          {t("analyser.mastering.reset")}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{t("analyser.mastering.bassMono")}</span>
+                      <select
+                        value={masterBassMonoHz}
+                        onChange={(e) => setMasterBassMonoHz(e.target.value)}
+                        className="w-full rounded-xl border border-input bg-input px-3 py-2 text-sm text-foreground"
+                      >
+                        {BASS_MONO_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.value === ""
+                              ? t("analyser.bassMono.presetDefault")
+                              : option.value === "0"
+                                ? t("analyser.bassMono.off")
+                                : `${option.value} Hz`}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{t("analyser.mastering.stereoWidth")}</span>
+                      <Input
+                        type="number"
+                        step={0.05}
+                        min={0.5}
+                        max={1.5}
+                        placeholder={t("analyser.mastering.widthPlaceholder")}
+                        value={masterStereoWidthInput}
+                        onChange={(e) => setMasterStereoWidthInput(e.target.value)}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{t("analyser.mastering.variants")}</span>
+                      <Input
+                        type="number"
+                        min={2}
+                        max={8}
+                        value={optimizerVariants}
+                        disabled={masterMode !== "v2"}
+                        onChange={(e) => setOptimizerVariants(Number(e.target.value))}
+                      />
+                    </label>
+                    <label className="space-y-1 text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{t("analyser.mastering.refinePasses")}</span>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={5}
+                        value={maxRefinePasses}
+                        onChange={(e) => setMaxRefinePasses(Number(e.target.value))}
+                      />
+                    </label>
+                  </div>
+
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("analyser.mastering.backendNotes")}
+                  </p>
                 </div>
 
-                <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t("analyser.overview.readiness")}</p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                      <p className="text-xs text-muted-foreground">{t("analyser.overview.loudness")}</p>
-                      <p className="mt-1 text-base font-semibold">{loudnessReadiness}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {t("analyser.overview.loudnessLine", {
-                          lufs: integratedLufs.toFixed(2),
-                          target: loudnessTargetForReadiness.toFixed(1)
-                        })}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                      <p className="text-xs text-muted-foreground">{t("analyser.overview.truePeak")}</p>
-                      <p className="mt-1 text-base font-semibold">{peakReadiness}</p>
-                      <p className="text-xs text-muted-foreground">{t("analyser.overview.peakLine", { tp: truePeakDbfs.toFixed(2) })}</p>
-                    </div>
-                    <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                      <p className="text-xs text-muted-foreground">{t("analyser.overview.markerLoad")}</p>
-                      <p className="mt-1 text-base font-semibold">{markerReadiness}</p>
-                      <p className="text-xs text-muted-foreground">{tp("analyser.overview.markerLine", highlightedMarkerCount)}</p>
-                    </div>
-                    <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                      <p className="text-xs text-muted-foreground">{t("analyser.overview.dynamics")}</p>
-                      <p className="mt-1 text-base font-semibold">{dynamicsReadiness}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {t("analyser.overview.dynamicsLine", { crest: crestFactorDb.toFixed(2), lra: loudnessRangeLu.toFixed(1) })}
-                        {loudnessRangeLu < 3 ? t("analyser.overview.flatSections") : ""}
-                      </p>
-                    </div>
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => void onMaster()}
+                  disabled={!selectedRunId || isMastering || isBusy}
+                >
+                  {t("analyser.mastering.run")}
+                </Button>
+
+                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <Badge variant={masteringStatusVariant[masteringStatus] ?? "outline"}>
+                      {statusWord(t, masteringStatus)}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{masteringProgress.toFixed(1)}%</span>
                   </div>
+                  <Progress value={masteringProgress} />
+                  <p className="mt-2 text-xs font-semibold text-primary">
+                    {masteringDetail || `${stageLabel(masteringStage, t)}.`}
+                  </p>
+                  <p className="mt-2 text-xs text-muted-foreground">{t("analyser.mastering.bestOutput", { id: bestMasterId })}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t("analyser.mastering.backendSelected", { backend: backendSelected })}
+                  </p>
+                  {bestOutputHash ? (
+                    <p className="mt-1 text-[11px] text-muted-foreground" title={bestOutputHash}>
+                      {t("analyser.mastering.outputHash", { hash: bestOutputHash.slice(0, 12) })}
+                    </p>
+                  ) : null}
+                  {masteringInfo?.error_message ? (
+                    <p className="mt-2 text-xs text-red-300">{masteringInfo.error_message}</p>
+                  ) : null}
+                  {(refineAcceptedPasses !== null || refineFinalScore !== null) ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("analyser.mastering.refinement", {
+                        accepted: refineAcceptedPasses !== null ? refineAcceptedPasses.toFixed(0) : "0",
+                        max: refineMaxPasses !== null ? refineMaxPasses.toFixed(0) : "?"
+                      })}
+                      {refineFinalScore !== null ? t("analyser.mastering.finalScore", { n: refineFinalScore.toFixed(0) }) : ""}
+                      {refineRollbackCount !== null ? t("analyser.mastering.rollbacks", { n: refineRollbackCount.toFixed(0) }) : ""}
+                      {refineFallbackApplied ? t("analyser.mastering.stemFallback") : ""}
+                      {refineNonRegressionApplied
+                        ? t("analyser.mastering.nonRegression", {
+                            reason: refineNonRegressionReason || t("analyser.mastering.applied")
+                          })
+                        : ""}
+                    </p>
+                  ) : null}
+                  {proFeatureEntries.length > 0 ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("analyser.mastering.proModules")}{" "}
+                      {proFeatureEntries
+                        .map(([key, value]) => `${key}:${value ? t("analyser.yes") : t("analyser.no")}`)
+                        .join(" | ")}
+                    </p>
+                  ) : null}
                 </div>
 
-                <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
-                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <SlidersHorizontal className="h-4 w-4 text-primary" />
-                    {t("analyser.overview.manualEq")}
-                    {eqEnabled ? (
-                      <Badge variant="default">{t("analyser.overview.live")}</Badge>
+                {Object.keys(adaptationInfo).length > 0 ? (
+                  <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.mastering.adaptationTitle")}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("analyser.mastering.sourceScore", {
+                        n: adaptationSourceIssueScore !== null ? adaptationSourceIssueScore.toFixed(0) : na
+                      })}
+                      {adaptationAdjustmentCount !== null
+                        ? t("analyser.mastering.adjustments", { n: adaptationAdjustmentCount.toFixed(0) })
+                        : ""}
+                    </p>
+                    {adaptationAdjustments.length > 0 ? (
+                      <div className="mt-2 space-y-1">
+                        {adaptationAdjustments.slice(0, 6).map((row) => (
+                          <p key={`${row.field}-${row.reason}`} className="text-xs text-muted-foreground">
+                            {row.field}: {row.before !== null ? row.before.toFixed(2) : na} {"->"} {row.after !== null ? row.after.toFixed(2) : na} | {row.reason}
+                          </p>
+                        ))}
+                      </div>
                     ) : (
-                      <Badge variant="outline">{t("analyser.overview.bypass")}</Badge>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {t("analyser.mastering.noChanges")}
+                      </p>
                     )}
                   </div>
-                  <EqualizerPanel
-                    enabled={eqEnabled}
-                    bands={[...EQ_BANDS]}
-                    gains={eqGains}
-                    exporting={isEqExporting}
-                    onToggle={(enabled) => {
-                      setEqEnabled(enabled);
-                        if (enabled) {
-                          void ensurePlaybackGraph(true);
-                        } else {
-                          applyEqGains(eqFiltersRef.current, eqGains, false);
+                ) : null}
+
+                {Object.keys(masteringSelfCheck).length > 0 ? (
+                  <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.mastering.selfCheckTitle")}</p>
+                    <p className="mt-1 text-sm">
+                      {t("analyser.mastering.assessment")} <span className="font-semibold">{selfCheckAssessment}</span>
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("analyser.mastering.issueScoreLabel")}{" "}
+                      {selfCheckScoreBefore !== null ? selfCheckScoreBefore.toFixed(0) : na} {"->"}{" "}
+                      {selfCheckScoreAfter !== null ? selfCheckScoreAfter.toFixed(0) : na}
+                      {selfCheckScoreDelta !== null
+                        ? ` (${selfCheckScoreDelta > 0 ? "+" : ""}${selfCheckScoreDelta.toFixed(0)})`
+                        : ""}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("analyser.mastering.appliedSettings", {
+                        name: text(appliedSettings.name, masterPreset),
+                        target: appliedTargetLufs !== null ? `${appliedTargetLufs.toFixed(1)} LUFS` : na,
+                        tp: appliedTargetTruePeak !== null ? `${appliedTargetTruePeak.toFixed(1)} dBFS` : na,
+                        norm: appliedNormalizationProfile,
+                        gain:
+                          appliedInputGainDb !== null
+                            ? `${appliedInputGainDb > 0 ? "+" : ""}${appliedInputGainDb.toFixed(1)} dB`
+                            : "0.0 dB"
+                      })}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("analyser.mastering.stereoStage", {
+                        bass:
+                          appliedBassMonoHz !== null
+                            ? appliedBassMonoHz > 0
+                              ? `${appliedBassMonoHz.toFixed(0)} Hz`
+                              : t("analyser.mastering.off")
+                            : na,
+                        width: appliedStereoWidth !== null ? appliedStereoWidth.toFixed(2) : na
+                      })}
+                    </p>
+                    {inputGainNotes.length > 0 ? (
+                      <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] text-muted-foreground">
+                        {inputGainNotes.map((note) => (
+                          <li key={note}>{note}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("analyser.mastering.aiMatch", {
+                        mode: yesNo(aiModeMatch),
+                        preset: yesNo(aiPresetMatch),
+                        target: yesNo(aiTargetLufsMatch),
+                        tp: yesNo(aiTruePeakMatch)
+                      })}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("analyser.mastering.compliance", {
+                        result: selfCheckCompliancePassed ? t("analyser.mastering.pass") : t("analyser.mastering.reviewRequired")
+                      })}
+                      {selfCheckComplianceLufsDelta !== null
+                        ? t("analyser.mastering.lufsDelta", { n: signed(selfCheckComplianceLufsDelta) })
+                        : ""}
+                      {selfCheckComplianceTruePeakDelta !== null
+                        ? t("analyser.mastering.tpDelta", { n: signed(selfCheckComplianceTruePeakDelta) })
+                        : ""}
+                      {selfCheckComplianceCrestDelta !== null
+                        ? t("analyser.mastering.crestDelta", { n: signed(selfCheckComplianceCrestDelta) })
+                        : ""}
+                    </p>
+                    {selfCheckComplianceFailed.length > 0 ? (
+                      <p className="mt-1 text-xs text-amber-300">
+                        {t("analyser.mastering.complianceIssues", { list: selfCheckComplianceFailed.join(", ") })}
+                      </p>
+                    ) : null}
+                    {postCheckRepairAttempted ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {t("analyser.mastering.rescue", {
+                          state: postCheckRepairApplied ? t("analyser.mastering.applied") : t("analyser.mastering.rescueAttempted")
+                        })}
+                        {postCheckRepairRound !== null && postCheckRepairRound > 0
+                          ? t("analyser.mastering.round", { n: postCheckRepairRound.toFixed(0) })
+                          : ""}
+                      </p>
+                    ) : null}
+                    {selfCheckResolved.length > 0 ? (
+                      <p className="mt-2 text-xs text-emerald-300">
+                        {t("analyser.mastering.resolved", { list: selfCheckResolved.join(", ") })}
+                      </p>
+                    ) : null}
+                    {selfCheckRemaining.length > 0 ? (
+                      <p className="mt-1 text-xs text-amber-300">
+                        {t("analyser.mastering.remaining", { list: selfCheckRemaining.join(", ") })}
+                      </p>
+                    ) : null}
+                    {selfCheckWorsened.length > 0 ? (
+                      <p className="mt-1 text-xs text-red-300">
+                        {t("analyser.mastering.worsened", { list: selfCheckWorsened.join(", ") })}
+                      </p>
+                    ) : null}
+                    {selfCheckRecommendedFixes.length > 0 ? (
+                      <div className="mt-2 space-y-1">
+                        {selfCheckRecommendedFixes.slice(0, 4).map((row) => (
+                          <p key={`${row.issue}-${row.action}`} className="text-xs text-muted-foreground">
+                            {row.issue}: {row.action}
+                          </p>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {masteringOutputs.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.mastering.outputs")}</p>
+                    <DataTable data={masteringOutputs} columns={masteredColumns} />
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">{t("analyser.mastering.noOutputs")}</p>
+                )}
+              </CardContent>
+            </Card>
+          </Floatable>
+
+          <Floatable id="analyser-history" title={t("analyser.history.title")}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">{t("analyser.history.title")}<FloatButton className="ml-auto" /></CardTitle>
+              </CardHeader>
+              <CardContent>
+                <DataTable
+                  data={runs}
+                  columns={runColumns}
+                  onRowClick={(row) => setSelectedRunId(row.id)}
+                  rowClassName={(row) => (row.id === selectedRunId ? "bg-secondary/75" : "")}
+                />
+              </CardContent>
+            </Card>
+          </Floatable>
+
+          <Floatable id="analyser-playback" title={t("analyser.playback.title")}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Waves className="h-5 w-5 text-primary" /> {t("analyser.playback.title")}
+                  <FloatButton className="ml-auto" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <audio
+                  ref={audioRef}
+                  controls
+                  crossOrigin="anonymous"
+                  preload="metadata"
+                  playsInline
+                  className="w-full rounded-lg"
+                  src={selectedRunId ? audioUrl(selectedRunId) : undefined}
+                  onLoadedMetadata={(e) => {
+                    const loadedDuration = (e.target as HTMLAudioElement).duration;
+                    if (Number.isFinite(loadedDuration) && loadedDuration > 0) {
+                      setDuration(loadedDuration);
+                      // Initialize full-track selection as soon as audio metadata is available.
+                      if (selectedRunId && initializedSelectionRunRef.current !== selectedRunId) {
+                        setSelectionStart(0);
+                        setSelectionEnd(loadedDuration);
+                        initializedSelectionRunRef.current = selectedRunId;
+                        setScrubTime(0);
+                        if (audioRef.current) {
+                          audioRef.current.currentTime = 0;
                         }
+                      }
+                    }
+                  }}
+                  onTimeUpdate={(e) => {
+                    const time = (e.target as HTMLAudioElement).currentTime;
+                    if (isLoopSelection && time >= selectionEnd - 0.02) {
+                      (e.target as HTMLAudioElement).currentTime = selectionStart;
+                      scrubTimeRef.current = selectionStart;
+                      setScrubTime(selectionStart);
+                      return;
+                    }
+                    if (Math.abs(time - scrubTimeRef.current) < 0.025) {
+                      return;
+                    }
+                    scrubTimeRef.current = time;
+                    setScrubTime(time);
+                  }}
+                  onPlay={handleAudioPlay}
+                  onPause={() => setIsPlaying(false)}
+                  onEnded={() => setIsPlaying(false)}
+                  onError={() => setStatusMessage(t("analyser.msg.audioLoadFailed"))}
+                />
+                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.playback.playhead")}</p>
+                  <input
+                    type="range"
+                    min={0}
+                    max={duration}
+                    step={0.01}
+                    value={scrubTime}
+                    onChange={(e) => {
+                      const time = Number(e.target.value);
+                      setScrubTime(time);
+                      if (audioRef.current) {
+                        audioRef.current.currentTime = time;
+                      }
                     }}
-                    onGainChange={(index, gain) => {
-                      setEqGains((current) => current.map((value, itemIndex) => (itemIndex === index ? gain : value)));
-                    }}
-                    onReset={() => setEqGains([...DEFAULT_EQ_GAINS])}
-                    onExport={() => void exportEqWav()}
+                    className="mt-2 w-full accent-[hsl(var(--primary))]"
                   />
-                  <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                    <Download className="h-3.5 w-3.5" />
-                    {t("analyser.overview.eqExportNote")}
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {scrubTime.toFixed(2)}s / {duration.toFixed(2)}s
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span>{t("analyser.playback.rate", { rate: playbackRate.toFixed(2) })}</span>
+                    <span>|</span>
+                    <span>{isLoopSelection ? t("analyser.playback.loopOn") : t("analyser.playback.loopOff")}</span>
+                    <span>|</span>
+                    <span>{eqEnabled ? t("analyser.playback.eqOn") : t("analyser.playback.eqOff")}</span>
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t("analyser.overview.guidanceTitle")}</p>
-                  <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                    <p>{t("analyser.overview.guidance1")}</p>
-                    <p>{t("analyser.overview.guidance2")}</p>
-                    <p>{t("analyser.overview.guidance3")}</p>
-                    <p>{t("analyser.overview.guidance4")}</p>
+                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.playback.segment")}</p>
+                    <Button size="sm" variant="ghost" onClick={() => applySelectionRange(0, duration)}>
+                      {t("analyser.playback.fullTrack")}
+                    </Button>
                   </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                {t("analyser.file.title")}
-                <span
-                  title={t("analyser.file.titleHelp")}
-                  className="inline-flex cursor-help rounded-full bg-secondary/80 p-1 text-muted-foreground"
-                >
-                  <CircleHelp className="h-4 w-4" />
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.formatHelp")}>
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.formatCodec")}</p>
-                  <p className="mt-1 text-sm font-semibold">
-                    {text(metadata.format, na)} / {text(metadata.codec, na)}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t("analyser.file.compression")} <span className="font-medium">{compressionType}</span>
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.freqHelp")}>
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.freqRange")}</p>
-                  <p className="mt-1 text-sm font-semibold">{hzRange(theoLowHz, theoHighHz)}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t("analyser.file.estimatedContent")}{" "}
-                    {estLowHz !== null && estHighHz !== null ? hzRange(estLowHz, estHighHz) : na}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.dynHelp")}>
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.dynSnapshot")}</p>
-                  <p className="mt-1 text-sm font-semibold">
-                    {t("analyser.file.crest", { n: metricNumber(metrics, ["dynamics", "crest_factor_db"], 0).toFixed(2) })}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t("analyser.file.lra", { n: loudnessRangeLu.toFixed(2) })}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.signalHelp")}>
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.signal")}</p>
-                  <p className="mt-1 text-sm font-semibold">
-                    {t("analyser.file.channels", {
-                      rate: num(metadata.sample_rate, metricNumber(metrics, ["technical", "sample_rate"], 0)).toLocaleString(locale),
-                      ch: num(metadata.channels, metricNumber(metrics, ["technical", "channels"], 0))
+                  <p className="text-xs text-muted-foreground">
+                    {t("analyser.playback.segmentLine", {
+                      start: selectionStart.toFixed(2),
+                      end: selectionEnd.toFixed(2),
+                      length: selectedSegmentLength.toFixed(2)
                     })}
                   </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {bitrateKbps > 0 ? t("analyser.file.kbps", { n: bitrateKbps.toFixed(0) }) : t("analyser.file.bitrateNa")} |{" "}
-                    {bitDepthLabel}
-                  </p>
+                  <label className="mt-3 block text-xs text-muted-foreground">
+                    {t("analyser.playback.leftMarker")}
+                    <input
+                      type="range"
+                      min={0}
+                      max={duration}
+                      step={0.01}
+                      value={selectionStart}
+                      onChange={(e) => applySelectionRange(Number(e.target.value), selectionEnd)}
+                      className="mt-1 w-full accent-[hsl(var(--primary))]"
+                    />
+                  </label>
+                  <label className="mt-3 block text-xs text-muted-foreground">
+                    {t("analyser.playback.rightMarker")}
+                    <input
+                      type="range"
+                      min={0}
+                      max={duration}
+                      step={0.01}
+                      value={selectionEnd}
+                      onChange={(e) => applySelectionRange(selectionStart, Number(e.target.value))}
+                      className="mt-1 w-full accent-[hsl(var(--accent))]"
+                    />
+                  </label>
                 </div>
-                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.lossHelp")}>
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.lossEstimate")}</p>
-                  <p className="mt-1 text-sm font-semibold">
-                    {/* Runs analysed before the audible-band fix carry only the old Nyquist-based figure. */}
-                    {lossPct !== null && lossHz !== null ? hz(lossHz) : na}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {lossPct !== null
-                      ? t("analyser.file.lossOfBand", {
-                          pct: lossPct.toFixed(1),
-                          band: lossReferenceHz !== null ? hz(lossReferenceHz) : t("analyser.file.audible")
-                        })
-                      : na}
-                  </p>
+
+                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.playback.markers")}</p>
+                  {allMarkers.length > 0 ? (
+                    <div className="mt-2 flex max-h-28 flex-wrap gap-2 overflow-y-auto">
+                      {allMarkers.map((marker, idx) => (
+                        <button
+                          key={`${marker.type}-${marker.start_seconds}-${idx}`}
+                          onClick={() => zoomToMarker(marker)}
+                          className="rounded-full border border-border/70 bg-card px-2 py-1 text-[11px] text-foreground transition hover:border-primary/70"
+                          title={marker.message ?? marker.type}
+                        >
+                          {marker.type} @ {marker.start_seconds.toFixed(2)}s
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-muted-foreground">{t("analyser.playback.noMarkers")}</p>
+                  )}
                 </div>
-                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.rangeHelp")}>
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.rangeDetail")}</p>
-                  <p className="mt-1 text-sm font-semibold">
-                    {t("analyser.file.peakToNoise", { value: dynamicSpan !== null ? `${dynamicSpan.toFixed(2)} dB` : na })}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t("analyser.file.peakToLufs", { value: peakToLoudness !== null ? `${peakToLoudness.toFixed(2)} dB` : na })}
-                  </p>
-                </div>
+              </CardContent>
+            </Card>
+          </Floatable>
+        </div>
+
+        <div className="space-y-4 lg:col-span-9">
+          <Floatable id="analyser-summary" title={t("detach.titles.summary")} corner>
+            <section className="grid gap-3 xl:grid-cols-4">
+              <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  {t("analyser.tiles.activeRun")}
+                </p>
+                <p className="mt-2 truncate display-font text-lg font-semibold text-foreground">
+                  {selectedRunFilename}
+                </p>
+                {selectedRunId ? (
+                  <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                    <span className="truncate font-mono" title={selectedRunId}>
+                      {t("analyser.tiles.runId", { id: selectedRunId })}
+                    </span>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded p-1 hover:bg-white/10 hover:text-foreground"
+                      title={t("analyser.tiles.copyRunId")}
+                      aria-label={t("analyser.tiles.copyRunId")}
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(selectedRunId).then(() => {
+                          setRunIdCopied(true);
+                          window.setTimeout(() => setRunIdCopied(false), 1500);
+                        });
+                      }}
+                    >
+                      {runIdCopied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-1 text-xs text-muted-foreground">{t("analyser.tiles.uploadToCreate")}</p>
+                )}
               </div>
 
-              <div className="rounded-xl border border-border/80 bg-card/70 p-3">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.compressionAssessment")}</p>
-                <p className="mt-1 text-sm text-foreground">{text(compression.assessment, t("analyser.file.noAssessment"))}</p>
+              <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  {t("analyser.tiles.analysisState")}
+                </p>
+                <p className="mt-2 display-font text-lg font-semibold text-foreground">
+                  {stageLabel(analysisStage, t)}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{analysisTicker}</p>
+                <p className="mt-2 text-xs text-primary">{t("analyser.tiles.complete", { pct: progress.toFixed(1) })}</p>
               </div>
 
-              {unavailableHints.length > 0 ? (
+              <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  {t("analyser.tiles.reviewAssets")}
+                </p>
+                <p className="mt-2 display-font text-lg font-semibold text-foreground">
+                  {t("analyser.tiles.chartsLoaded", {
+                    loaded: loadedChartNames.length,
+                    total: availableChartNames.length || ALL_CHARTS.length
+                  })}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("analyser.tiles.markersLine", { markers: allMarkers.length, attention: highlightedMarkerCount })}
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {t("analyser.tiles.selectionWindow", { length: selectedSegmentLength.toFixed(2) })}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  {t("analyser.tiles.strategy")}
+                </p>
+                <p className="mt-2 display-font text-lg font-semibold text-foreground">
+                  {masteringRecommendationSummary}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("analyser.tiles.backendProfile", { backend: masterBackend, profile: normalizationProfile })}
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {masteringOutputs.length > 0
+                    ? tp("analyser.tiles.masteredReady", masteringOutputs.length)
+                    : t("analyser.tiles.noMastered")}
+                </p>
+              </div>
+            </section>
+          </Floatable>
+
+          <Floatable id="analyser-overview" title={t("analyser.overview.title")}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">{t("analyser.overview.title")}<FloatButton className="ml-auto" /></CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
+                    <AudioReviewStrip
+                      figure={charts.waveform as Record<string, unknown> | undefined}
+                      duration={duration}
+                      selectionStart={selectionStart}
+                      selectionEnd={selectionEnd}
+                      scrubTime={scrubTime}
+                      markers={allMarkers}
+                      onScrub={scrubToTime}
+                    />
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button size="sm" variant="secondary" onClick={() => void togglePlayback()} disabled={!selectedRunId}>
+                        {isPlaying ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
+                        {isPlaying ? t("analyser.overview.pause") : t("analyser.overview.play")}
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => seekBySeconds(-5)} disabled={!selectedRunId}>
+                        <SkipBack className="mr-2 h-4 w-4" />
+                        -5s
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => seekBySeconds(5)} disabled={!selectedRunId}>
+                        <SkipForward className="mr-2 h-4 w-4" />
+                        +5s
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => scrubToTime(selectionStart)} disabled={!selectedRunId}>
+                        <RotateCcw className="mr-2 h-4 w-4" />
+                        {t("analyser.overview.selectionStart")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={isLoopSelection ? "default" : "ghost"}
+                        onClick={() => setIsLoopSelection((value) => !value)}
+                        disabled={!selectedRunId}
+                      >
+                        <Repeat className="mr-2 h-4 w-4" />
+                        {t("analyser.overview.loopSelection")}
+                      </Button>
+                      <label className="inline-flex items-center gap-2 rounded-xl border border-border/70 bg-secondary/45 px-3 py-2 text-sm text-foreground">
+                        {t("analyser.overview.speed")}
+                        <select
+                          value={playbackRate}
+                          onChange={(event) => setPlaybackRate(Number(event.target.value))}
+                          className="bg-transparent text-sm text-foreground outline-hidden"
+                        >
+                          {[0.75, 1, 1.25, 1.5].map((rate) => (
+                            <option key={rate} value={rate} className="bg-slate-950 text-foreground">
+                              {rate.toFixed(2)}x
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <Button size="sm" variant="ghost" onClick={markSelectionStartAtScrub} disabled={!selectedRunId}>
+                        {t("analyser.overview.setStart", { time: scrubTime.toFixed(2) })}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={markSelectionEndAtScrub} disabled={!selectedRunId}>
+                        {t("analyser.overview.setEnd", { time: scrubTime.toFixed(2) })}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={resetReviewSelection} disabled={!selectedRunId}>
+                        {t("analyser.overview.resetRange")}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t("analyser.overview.readiness")}</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                        <p className="text-xs text-muted-foreground">{t("analyser.overview.loudness")}</p>
+                        <p className="mt-1 text-base font-semibold">{loudnessReadiness}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {t("analyser.overview.loudnessLine", {
+                            lufs: integratedLufs.toFixed(2),
+                            target: loudnessTargetForReadiness.toFixed(1)
+                          })}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                        <p className="text-xs text-muted-foreground">{t("analyser.overview.truePeak")}</p>
+                        <p className="mt-1 text-base font-semibold">{peakReadiness}</p>
+                        <p className="text-xs text-muted-foreground">{t("analyser.overview.peakLine", { tp: truePeakDbfs.toFixed(2) })}</p>
+                      </div>
+                      <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                        <p className="text-xs text-muted-foreground">{t("analyser.overview.markerLoad")}</p>
+                        <p className="mt-1 text-base font-semibold">{markerReadiness}</p>
+                        <p className="text-xs text-muted-foreground">{tp("analyser.overview.markerLine", highlightedMarkerCount)}</p>
+                      </div>
+                      <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                        <p className="text-xs text-muted-foreground">{t("analyser.overview.dynamics")}</p>
+                        <p className="mt-1 text-base font-semibold">{dynamicsReadiness}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {t("analyser.overview.dynamicsLine", { crest: crestFactorDb.toFixed(2), lra: loudnessRangeLu.toFixed(1) })}
+                          {loudnessRangeLu < 3 ? t("analyser.overview.flatSections") : ""}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
+                    <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <SlidersHorizontal className="h-4 w-4 text-primary" />
+                      {t("analyser.overview.manualEq")}
+                      {eqEnabled ? (
+                        <Badge variant="default">{t("analyser.overview.live")}</Badge>
+                      ) : (
+                        <Badge variant="outline">{t("analyser.overview.bypass")}</Badge>
+                      )}
+                    </div>
+                    <EqualizerPanel
+                      enabled={eqEnabled}
+                      bands={[...EQ_BANDS]}
+                      gains={eqGains}
+                      exporting={isEqExporting}
+                      onToggle={(enabled) => {
+                        setEqEnabled(enabled);
+                          if (enabled) {
+                            void ensurePlaybackGraph(true);
+                          } else {
+                            applyEqGains(eqFiltersRef.current, eqGains, false);
+                          }
+                      }}
+                      onGainChange={(index, gain) => {
+                        setEqGains((current) => current.map((value, itemIndex) => (itemIndex === index ? gain : value)));
+                      }}
+                      onReset={() => setEqGains([...DEFAULT_EQ_GAINS])}
+                      onExport={() => void exportEqWav()}
+                    />
+                    <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                      <Download className="h-3.5 w-3.5" />
+                      {t("analyser.overview.eqExportNote")}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border/80 bg-card/70 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t("analyser.overview.guidanceTitle")}</p>
+                    <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                      <p>{t("analyser.overview.guidance1")}</p>
+                      <p>{t("analyser.overview.guidance2")}</p>
+                      <p>{t("analyser.overview.guidance3")}</p>
+                      <p>{t("analyser.overview.guidance4")}</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </Floatable>
+
+          <Floatable id="analyser-file" title={t("analyser.file.title")}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  {t("analyser.file.title")}
+                  <span
+                    title={t("analyser.file.titleHelp")}
+                    className="inline-flex cursor-help rounded-full bg-secondary/80 p-1 text-muted-foreground"
+                  >
+                    <CircleHelp className="h-4 w-4" />
+                  </span>
+                  <FloatButton className="ml-auto" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.formatHelp")}>
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.formatCodec")}</p>
+                    <p className="mt-1 text-sm font-semibold">
+                      {text(metadata.format, na)} / {text(metadata.codec, na)}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("analyser.file.compression")} <span className="font-medium">{compressionType}</span>
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.freqHelp")}>
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.freqRange")}</p>
+                    <p className="mt-1 text-sm font-semibold">{hzRange(theoLowHz, theoHighHz)}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("analyser.file.estimatedContent")}{" "}
+                      {estLowHz !== null && estHighHz !== null ? hzRange(estLowHz, estHighHz) : na}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.dynHelp")}>
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.dynSnapshot")}</p>
+                    <p className="mt-1 text-sm font-semibold">
+                      {t("analyser.file.crest", { n: metricNumber(metrics, ["dynamics", "crest_factor_db"], 0).toFixed(2) })}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("analyser.file.lra", { n: loudnessRangeLu.toFixed(2) })}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.signalHelp")}>
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.signal")}</p>
+                    <p className="mt-1 text-sm font-semibold">
+                      {t("analyser.file.channels", {
+                        rate: num(metadata.sample_rate, metricNumber(metrics, ["technical", "sample_rate"], 0)).toLocaleString(locale),
+                        ch: num(metadata.channels, metricNumber(metrics, ["technical", "channels"], 0))
+                      })}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {bitrateKbps > 0 ? t("analyser.file.kbps", { n: bitrateKbps.toFixed(0) }) : t("analyser.file.bitrateNa")} |{" "}
+                      {bitDepthLabel}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.lossHelp")}>
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.lossEstimate")}</p>
+                    <p className="mt-1 text-sm font-semibold">
+                      {/* Runs analysed before the audible-band fix carry only the old Nyquist-based figure. */}
+                      {lossPct !== null && lossHz !== null ? hz(lossHz) : na}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {lossPct !== null
+                        ? t("analyser.file.lossOfBand", {
+                            pct: lossPct.toFixed(1),
+                            band: lossReferenceHz !== null ? hz(lossReferenceHz) : t("analyser.file.audible")
+                          })
+                        : na}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/70 bg-secondary/45 p-3" title={t("analyser.file.rangeHelp")}>
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.rangeDetail")}</p>
+                    <p className="mt-1 text-sm font-semibold">
+                      {t("analyser.file.peakToNoise", { value: dynamicSpan !== null ? `${dynamicSpan.toFixed(2)} dB` : na })}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("analyser.file.peakToLufs", { value: peakToLoudness !== null ? `${peakToLoudness.toFixed(2)} dB` : na })}
+                    </p>
+                  </div>
+                </div>
+
                 <div className="rounded-xl border border-border/80 bg-card/70 p-3">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.whyNa")}</p>
-                  <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                    {unavailableHints.map((hint, idx) => (
-                      <li key={`${hint}-${idx}`}>{hint}</li>
-                    ))}
-                  </ul>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.compressionAssessment")}</p>
+                  <p className="mt-1 text-sm text-foreground">{text(compression.assessment, t("analyser.file.noAssessment"))}</p>
                 </div>
-              ) : null}
 
-              <div className="rounded-xl border border-border/80 bg-card/70 p-3">
-                <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.metadataTags")}</p>
-                {suppressedTagCount > 0 ? (
-                  <p className="mb-3 text-xs text-muted-foreground">
-                    {tp("analyser.file.hiddenTags", suppressedTagCount)}
-                    {suppressedTagKeys.length > 0
-                      ? ` (${suppressedTagKeys.slice(0, 3).join(", ")}${suppressedTagKeys.length > 3 ? ", ..." : ""})`
-                      : ""}
-                    .
-                  </p>
+                {unavailableHints.length > 0 ? (
+                  <div className="rounded-xl border border-border/80 bg-card/70 p-3">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.whyNa")}</p>
+                    <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                      {unavailableHints.map((hint, idx) => (
+                        <li key={`${hint}-${idx}`}>{hint}</li>
+                      ))}
+                    </ul>
+                  </div>
                 ) : null}
-                {tagEntries.length > 0 ? (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {tagEntries.map(([key, value]) => (
-                      <div key={key} className="rounded-lg bg-secondary/45 p-2">
-                        <p className="text-[11px] font-semibold uppercase text-muted-foreground">{key}</p>
-                        <p className="text-sm">{text(value, na)}</p>
+
+                <div className="rounded-xl border border-border/80 bg-card/70 p-3">
+                  <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">{t("analyser.file.metadataTags")}</p>
+                  {suppressedTagCount > 0 ? (
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      {tp("analyser.file.hiddenTags", suppressedTagCount)}
+                      {suppressedTagKeys.length > 0
+                        ? ` (${suppressedTagKeys.slice(0, 3).join(", ")}${suppressedTagKeys.length > 3 ? ", ..." : ""})`
+                        : ""}
+                      .
+                    </p>
+                  ) : null}
+                  {tagEntries.length > 0 ? (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {tagEntries.map(([key, value]) => (
+                        <div key={key} className="rounded-lg bg-secondary/45 p-2">
+                          <p className="text-[11px] font-semibold uppercase text-muted-foreground">{key}</p>
+                          <p className="text-sm">{text(value, na)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">{t("analyser.file.noTags")}</p>
+                  )}
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-xs font-semibold text-primary">{t("analyser.file.rawJson")}</summary>
+                    <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-slate-900/95 p-3 text-xs text-slate-100">
+                      {JSON.stringify(metadata, null, 2)}
+                    </pre>
+                  </details>
+                </div>
+
+                <div className="rounded-xl border border-border/80 bg-card/70 p-3">
+                  <details>
+                    <summary className="cursor-pointer text-xs font-semibold uppercase text-primary">
+                      {t("analyser.guide.title")}
+                    </summary>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {t("analyser.guide.intro")}
+                    </p>
+
+                    <div className="mt-3 overflow-x-auto rounded-lg border border-border/70">
+                      <table className="w-full min-w-[700px] text-left text-sm">
+                        <thead className="bg-secondary/60 text-xs uppercase text-muted-foreground">
+                          <tr>
+                            <th className="px-3 py-2">{t("analyser.guide.element")}</th>
+                            <th className="px-3 py-2">{t("analyser.guide.whatItTells")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ELEMENT_GUIDE_ROWS.map((row) => (
+                            <tr key={row} className="border-t border-border/60">
+                              <td className="px-3 py-2 font-medium text-foreground">{t(`analyser.guide.rows.${row}.element`)}</td>
+                              <td className="px-3 py-2 text-muted-foreground">{t(`analyser.guide.rows.${row}.meaning`)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="mt-4 overflow-x-auto rounded-lg border border-border/70">
+                      <table className="w-full min-w-[700px] text-left text-sm">
+                        <thead className="bg-secondary/60 text-xs uppercase text-muted-foreground">
+                          <tr>
+                            <th className="px-3 py-2">{t("analyser.guide.graph")}</th>
+                            <th className="px-3 py-2">{t("analyser.guide.howToRead")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ALL_CHARTS.map((chart) => (
+                            <tr key={chart.key} className="border-t border-border/60">
+                              <td className="px-3 py-2 font-medium text-foreground">{chartTitle(t, chart.key)}</td>
+                              <td className="px-3 py-2 text-muted-foreground">{chartHelp(t, chart.key)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                </div>
+              </CardContent>
+            </Card>
+          </Floatable>
+
+          <Floatable id="analyser-loudness" title={t("detach.titles.loudness")} corner>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div title={t("analyser.kpi.integratedHelp")}>
+                <KpiTile
+                  label={t("analyser.kpi.integrated")}
+                  value={`${integratedLufs.toFixed(2)}`}
+                />
+              </div>
+              <div title={t("analyser.kpi.truePeakHelp")}>
+                <KpiTile
+                  label={t("analyser.kpi.truePeak")}
+                  value={`${truePeakDbfs.toFixed(2)}`}
+                />
+              </div>
+              <div title={t("analyser.kpi.crestHelp")}>
+                <KpiTile
+                  label={t("analyser.kpi.crest")}
+                  value={`${crestFactorDb.toFixed(2)}`}
+                />
+              </div>
+              <div title={t("analyser.kpi.noiseHelp")}>
+                <KpiTile
+                  label={t("analyser.kpi.noise")}
+                  value={noiseFloorDbfs !== null ? noiseFloorDbfs.toFixed(2) : na}
+                  hint={
+                    noiseFloorDbfs !== null
+                      ? undefined
+                      : noiseFloorStatus === "stale"
+                        ? t("analyser.kpi.reanalyze")
+                        : noiseFloorStatus === "digital_silence"
+                          ? t("analyser.kpi.digitalSilence")
+                          : t("analyser.kpi.masked")
+                  }
+                />
+              </div>
+            </div>
+          </Floatable>
+
+          <Floatable id="analyser-recs" title={t("analyser.recs.title")}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">{t("analyser.recs.title")}<FloatButton className="ml-auto" /></CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {masteringRecommendations.length > 0 ? (
+                  <div className="space-y-2">
+                    {masteringRecommendations.map((rec, idx) => (
+                      <div key={`${rec.issue}-${idx}`} className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                        <div className="mb-1 flex items-center gap-2">
+                          <Badge variant={markerSeverityVariant[rec.priority.toLowerCase()] ?? "outline"}>
+                            {severityWord(t, rec.priority.toLowerCase())}
+                          </Badge>
+                          <p className="text-sm font-semibold">{rec.issue}</p>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{rec.action}</p>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">{t("analyser.file.noTags")}</p>
+                  <p className="text-sm text-muted-foreground">{t("analyser.recs.none")}</p>
                 )}
-                <details className="mt-3">
-                  <summary className="cursor-pointer text-xs font-semibold text-primary">{t("analyser.file.rawJson")}</summary>
-                  <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-slate-900/95 p-3 text-xs text-slate-100">
-                    {JSON.stringify(metadata, null, 2)}
-                  </pre>
-                </details>
-              </div>
+              </CardContent>
+            </Card>
+          </Floatable>
 
-              <div className="rounded-xl border border-border/80 bg-card/70 p-3">
-                <details>
-                  <summary className="cursor-pointer text-xs font-semibold uppercase text-primary">
-                    {t("analyser.guide.title")}
-                  </summary>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    {t("analyser.guide.intro")}
-                  </p>
-
-                  <div className="mt-3 overflow-x-auto rounded-lg border border-border/70">
-                    <table className="w-full min-w-[700px] text-left text-sm">
-                      <thead className="bg-secondary/60 text-xs uppercase text-muted-foreground">
-                        <tr>
-                          <th className="px-3 py-2">{t("analyser.guide.element")}</th>
-                          <th className="px-3 py-2">{t("analyser.guide.whatItTells")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {ELEMENT_GUIDE_ROWS.map((row) => (
-                          <tr key={row} className="border-t border-border/60">
-                            <td className="px-3 py-2 font-medium text-foreground">{t(`analyser.guide.rows.${row}.element`)}</td>
-                            <td className="px-3 py-2 text-muted-foreground">{t(`analyser.guide.rows.${row}.meaning`)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="mt-4 overflow-x-auto rounded-lg border border-border/70">
-                    <table className="w-full min-w-[700px] text-left text-sm">
-                      <thead className="bg-secondary/60 text-xs uppercase text-muted-foreground">
-                        <tr>
-                          <th className="px-3 py-2">{t("analyser.guide.graph")}</th>
-                          <th className="px-3 py-2">{t("analyser.guide.howToRead")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {ALL_CHARTS.map((chart) => (
-                          <tr key={chart.key} className="border-t border-border/60">
-                            <td className="px-3 py-2 font-medium text-foreground">{chartTitle(t, chart.key)}</td>
-                            <td className="px-3 py-2 text-muted-foreground">{chartHelp(t, chart.key)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </details>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div title={t("analyser.kpi.integratedHelp")}>
-              <KpiTile
-                label={t("analyser.kpi.integrated")}
-                value={`${integratedLufs.toFixed(2)}`}
-              />
-            </div>
-            <div title={t("analyser.kpi.truePeakHelp")}>
-              <KpiTile
-                label={t("analyser.kpi.truePeak")}
-                value={`${truePeakDbfs.toFixed(2)}`}
-              />
-            </div>
-            <div title={t("analyser.kpi.crestHelp")}>
-              <KpiTile
-                label={t("analyser.kpi.crest")}
-                value={`${crestFactorDb.toFixed(2)}`}
-              />
-            </div>
-            <div title={t("analyser.kpi.noiseHelp")}>
-              <KpiTile
-                label={t("analyser.kpi.noise")}
-                value={noiseFloorDbfs !== null ? noiseFloorDbfs.toFixed(2) : na}
-                hint={
-                  noiseFloorDbfs !== null
-                    ? undefined
-                    : noiseFloorStatus === "stale"
-                      ? t("analyser.kpi.reanalyze")
-                      : noiseFloorStatus === "digital_silence"
-                        ? t("analyser.kpi.digitalSilence")
-                        : t("analyser.kpi.masked")
-                }
-              />
-            </div>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">{t("analyser.recs.title")}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {masteringRecommendations.length > 0 ? (
-                <div className="space-y-2">
-                  {masteringRecommendations.map((rec, idx) => (
-                    <div key={`${rec.issue}-${idx}`} className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                      <div className="mb-1 flex items-center gap-2">
-                        <Badge variant={markerSeverityVariant[rec.priority.toLowerCase()] ?? "outline"}>
-                          {severityWord(t, rec.priority.toLowerCase())}
-                        </Badge>
-                        <p className="text-sm font-semibold">{rec.issue}</p>
-                      </div>
-                      <p className="text-sm text-muted-foreground">{rec.action}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">{t("analyser.recs.none")}</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">{t("analyser.markers.title")}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {warnings.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {warnings.map((warning, idx) => (
-                    <span
-                      key={`${warning}-${idx}`}
-                      className="inline-flex items-center gap-1 rounded-full bg-red-500/20 px-3 py-1 text-xs text-red-300"
-                    >
-                      <AlertTriangle className="h-3.5 w-3.5" />
-                      {warning}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-              <p className="text-xs text-muted-foreground">
-                {t("analyser.markers.hint")}
-              </p>
-              <DataTable
-                data={markerRows}
-                columns={markerColumns}
-                onRowClick={(marker) => zoomToMarker(marker)}
-                rowClassName={(marker) =>
-                  selectionStart <= marker.end_seconds && selectionEnd >= marker.start_seconds
-                    ? "bg-secondary/80"
-                    : ""
-                }
-              />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">{t("analyser.chartStudio.title")}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                {CHART_GROUPS.map((group) => {
-                  const active = group.id === activeChartGroup;
-                  return (
-                    <button
-                      key={group.id}
-                      type="button"
-                      onClick={() => setActiveChartGroup(group.id)}
-                      className={
-                        active
-                          ? "rounded-full border border-primary/60 bg-primary/15 px-3 py-1.5 text-xs font-semibold text-primary"
-                          : "rounded-full border border-border/70 bg-secondary/45 px-3 py-1.5 text-xs font-semibold text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
-                      }
-                    >
-                      {t(`analyser.groups.${group.id}.label`)}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr]">
-                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.chartStudio.viewFocus")}</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">{t(`analyser.groups.${activeChartGroupConfig.id}.label`)}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{t(`analyser.groups.${activeChartGroupConfig.id}.description`)}</p>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {tp("analyser.chartStudio.showing", visibleCharts.length)}{" "}
-                    {t("analyser.chartStudio.loadedOf", {
-                      loaded: loadedChartNames.length,
-                      total: availableChartNames.length || ALL_CHARTS.length
-                    })}
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.chartStudio.quickJump")}</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {visibleCharts.map((chart) => (
-                      <button
-                        key={chart.key}
-                        type="button"
-                        onClick={() => scrollToChart(chart.key)}
-                        className="rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-foreground transition hover:border-primary/50 hover:text-primary"
+          <Floatable id="analyser-markers" title={t("analyser.markers.title")}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">{t("analyser.markers.title")}<FloatButton className="ml-auto" /></CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {warnings.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {warnings.map((warning, idx) => (
+                      <span
+                        key={`${warning}-${idx}`}
+                        className="inline-flex items-center gap-1 rounded-full bg-red-500/20 px-3 py-1 text-xs text-red-300"
                       >
-                        {chartTitle(t, chart.key)}
-                      </button>
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {warning}
+                      </span>
                     ))}
                   </div>
+                ) : null}
+                <p className="text-xs text-muted-foreground">
+                  {t("analyser.markers.hint")}
+                </p>
+                <DataTable
+                  data={markerRows}
+                  columns={markerColumns}
+                  onRowClick={(marker) => zoomToMarker(marker)}
+                  rowClassName={(marker) =>
+                    selectionStart <= marker.end_seconds && selectionEnd >= marker.start_seconds
+                      ? "bg-secondary/80"
+                      : ""
+                  }
+                />
+              </CardContent>
+            </Card>
+          </Floatable>
+
+          <Floatable id="analyser-chart-studio" title={t("analyser.chartStudio.title")}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">{t("analyser.chartStudio.title")}<FloatButton className="ml-auto" /></CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  {CHART_GROUPS.map((group) => {
+                    const active = group.id === activeChartGroup;
+                    return (
+                      <button
+                        key={group.id}
+                        type="button"
+                        onClick={() => setActiveChartGroup(group.id)}
+                        className={
+                          active
+                            ? "rounded-full border border-primary/60 bg-primary/15 px-3 py-1.5 text-xs font-semibold text-primary"
+                            : "rounded-full border border-border/70 bg-secondary/45 px-3 py-1.5 text-xs font-semibold text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
+                        }
+                      >
+                        {t(`analyser.groups.${group.id}.label`)}
+                      </button>
+                    );
+                  })}
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+
+                <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr]">
+                  <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.chartStudio.viewFocus")}</p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">{t(`analyser.groups.${activeChartGroupConfig.id}.label`)}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{t(`analyser.groups.${activeChartGroupConfig.id}.description`)}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {tp("analyser.chartStudio.showing", visibleCharts.length)}{" "}
+                      {t("analyser.chartStudio.loadedOf", {
+                        loaded: loadedChartNames.length,
+                        total: availableChartNames.length || ALL_CHARTS.length
+                      })}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-border/70 bg-secondary/45 p-3">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">{t("analyser.chartStudio.quickJump")}</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {visibleCharts.map((chart) => (
+                        <button
+                          key={chart.key}
+                          type="button"
+                          onClick={() => scrollToChart(chart.key)}
+                          className="rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-foreground transition hover:border-primary/50 hover:text-primary"
+                        >
+                          {chartTitle(t, chart.key)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </Floatable>
 
           {chartsPop.detached ? <DetachedPlaceholder state={chartsPop} label={t("analyser.popout.charts")} /> : null}
           {chartsPop.render(

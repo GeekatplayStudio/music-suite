@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { GenerateStudio } from "@/components/generation/generate-studio";
+import { GenerateStudio, type Tab } from "@/components/generation/generate-studio";
 import type { Incoming } from "@/lib/handoff";
 
 export const metadata: Metadata = {
@@ -8,8 +8,11 @@ export const metadata: Metadata = {
 };
 
 type GeneratePageProps = {
-  searchParams: Promise<{ project?: string; run?: string; from?: string; asset?: string; name?: string }>;
+  searchParams: Promise<{ project?: string; run?: string; from?: string; asset?: string; name?: string; tab?: string }>;
 };
+
+/** The studio's tabs, for ?tab= (a tab opened in a window of its own). */
+const STUDIO_TABS: readonly Tab[] = ["create", "live", "album", "history", "settings"];
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -27,5 +30,6 @@ export default async function GeneratePage({ searchParams }: GeneratePageProps) 
     : from && asset
       ? { kind: "clip", projectId: from, assetId: asset, name }
       : null;
-  return <GenerateStudio projectId={projectId} start={start} />;
+  const initialTab = STUDIO_TABS.find((entry) => entry === params.tab) ?? "create";
+  return <GenerateStudio projectId={projectId} start={start} initialTab={initialTab} />;
 }

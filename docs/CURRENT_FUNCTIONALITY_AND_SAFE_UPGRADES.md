@@ -47,6 +47,12 @@ This document records what the application already does well, which upgrades are
 - Synth Studio (`/synth`): sound design and playing with the built-in synth or instrument plugins.
 - Songs move between the analyser, the AI Song Studio and the editor in one or two clicks, always added and never replacing work.
 
+### Interface: languages, themes and windows (November 2026)
+
+- Six interface languages (English, Spanish, German, French, Russian, Ukrainian), including backend messages, engine form fields, chart labels and the analyser's advice; the user manual and first-project guide in each.
+- Six colour themes, including Light.
+- Every major panel floats in a window of its own on request, remembers its place and monitor, and the language and colours menu docks them all or reopens the last layout. Workspaces and studio tabs open as windows of their own. Plan: `docs/INTERFACE_ROADMAP.md`.
+
 ### Stability work already in place
 
 - Production-safe Next.js not-found route.

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Check, Cpu, Download, HardDrive, Loader2, Music2, Piano, Scissors, Trash2 } from "lucide-react";
 
 import { addonsApi, formatBytes, type AddonsOverview } from "@/lib/addons/api";
+import { FloatButton, Floatable } from "@/components/detachable";
 import { editorApi } from "@/lib/editor/api";
 import type { InstrumentOffer } from "@/lib/editor/types";
 import { generationApi, type Overview } from "@/lib/generation/api";
@@ -187,358 +188,372 @@ export function ModelsPage() {
       ) : null}
 
       {addons ? (
-        <section className="glass rounded-2xl border border-white/10 p-4" aria-label={t("models.computer.heading")}>
-          <h2 className="display-font flex items-center gap-2 text-sm font-semibold text-slate-200">
-            <Cpu className="h-4 w-4 text-cyan-300" aria-hidden /> {t("models.computer.heading")}
-          </h2>
-          <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
-            <div className="rounded-xl bg-slate-900/70 p-3">
-              <dt className="text-xs text-slate-400">{t("models.computer.gpu")}</dt>
-              <dd className="font-semibold text-slate-100">
-                {addons.gpu
-                  ? `${addons.gpu.name}${addons.gpu.memory_gb ? ` · ${addons.gpu.memory_gb} GB` : ""}`
-                  : t("models.computer.gpuNone")}
-              </dd>
-            </div>
-            <div className="rounded-xl bg-slate-900/70 p-3">
-              <dt className="text-xs text-slate-400">{t("models.computer.torch")}</dt>
-              <dd className="font-semibold text-slate-100">
-                {addons.torch.installed
-                  ? `${addons.torch.version}${addons.torch.cuda ? t("models.computer.usingGpu") : ""}`
-                  : plan?.device === "cuda"
-                    ? t("models.computer.willUseCuda", { build: plan.build })
-                    : plan?.device === "mps"
-                      ? t("models.computer.willUseMps")
-                      : t("models.computer.willUseCpu")}
-              </dd>
-              {plan?.note ? <p className="mt-1 text-xs text-amber-200">{plan.note}</p> : null}
-            </div>
-          </dl>
-        </section>
+        <Floatable id="models-computer" title={t("models.computer.heading")}>
+          <section className="glass rounded-2xl border border-white/10 p-4" aria-label={t("models.computer.heading")}>
+            <h2 className="display-font flex items-center gap-2 text-sm font-semibold text-slate-200">
+              <Cpu className="h-4 w-4 text-cyan-300" aria-hidden /> {t("models.computer.heading")}
+              <FloatButton className="ml-auto" />
+            </h2>
+            <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+              <div className="rounded-xl bg-slate-900/70 p-3">
+                <dt className="text-xs text-slate-400">{t("models.computer.gpu")}</dt>
+                <dd className="font-semibold text-slate-100">
+                  {addons.gpu
+                    ? `${addons.gpu.name}${addons.gpu.memory_gb ? ` · ${addons.gpu.memory_gb} GB` : ""}`
+                    : t("models.computer.gpuNone")}
+                </dd>
+              </div>
+              <div className="rounded-xl bg-slate-900/70 p-3">
+                <dt className="text-xs text-slate-400">{t("models.computer.torch")}</dt>
+                <dd className="font-semibold text-slate-100">
+                  {addons.torch.installed
+                    ? `${addons.torch.version}${addons.torch.cuda ? t("models.computer.usingGpu") : ""}`
+                    : plan?.device === "cuda"
+                      ? t("models.computer.willUseCuda", { build: plan.build })
+                      : plan?.device === "mps"
+                        ? t("models.computer.willUseMps")
+                        : t("models.computer.willUseCpu")}
+                </dd>
+                {plan?.note ? <p className="mt-1 text-xs text-amber-200">{plan.note}</p> : null}
+              </div>
+            </dl>
+          </section>
+        </Floatable>
       ) : null}
 
       <LocalDownloads settings onChanged={async () => { await refresh(); }} only={["mega53", "sam-audio"]} />
       {notes ? (
-        <section className="glass space-y-3 rounded-2xl border border-white/10 p-4" aria-label={notes.label}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="display-font text-base font-semibold text-slate-100">{notes.label}</h2>
-              <p className="mt-1 text-sm text-slate-400">{notes.summary}</p>
-            </div>
-            <Status ok={notes.installed}>{notes.installed ? t("common.installed") : t("common.notInstalled")}</Status>
-          </div>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-slate-300">
-            {notes.unlocks.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-          {install?.running && install.pack === "notes" ? (
-            <Progress percent={install.percent} detail={install.detail} label={t("models.installProgress")} />
-          ) : (
-            <div className="flex flex-wrap items-center gap-3">
-              {!notes.installed ? (
-                <button
-                  type="button"
-                  className={primary}
-                  disabled={busy}
-                  onClick={() => void run(() => addonsApi.installPack("notes", []), t("models.installFailed"))}
-                >
-                  <Download className="h-4 w-4" aria-hidden /> {t("models.notes.install")}
-                </button>
-              ) : null}
-              <p className="text-xs text-slate-400">{notes.installed ? t("models.readyReload") : notes.download_note}</p>
-            </div>
-          )}
-          {addons?.whole_mix ? (
-            <div className="space-y-2 rounded-xl border border-white/10 bg-slate-950/40 p-3" aria-label="MuScriptor">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <h3 className="text-sm font-semibold text-slate-100">{t("models.muscriptor.title")}</h3>
-                  <p className="mt-1 text-xs leading-snug text-slate-400">
-                    {t("models.muscriptor.bodyBefore")} <strong className="text-slate-200">{t("models.muscriptor.nonCommercial")}</strong>{" "}
-                    {t("models.muscriptor.bodyAfter")}
-                  </p>
-                </div>
-                <Status ok={addons.whole_mix.status === "ready"}>
-                  {addons.whole_mix.status === "ready"
-                    ? addons.whole_mix.size
-                      ? t("models.muscriptor.readySize", { size: addons.whole_mix.size })
-                      : t("models.muscriptor.ready")
-                    : addons.whole_mix.status === "needs-access"
-                      ? t("models.muscriptor.needsSignIn")
-                      : t("common.notInstalled")}
-                </Status>
+        <Floatable id="models-notes" title={notes.label}>
+          <section className="glass space-y-3 rounded-2xl border border-white/10 p-4" aria-label={notes.label}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="display-font flex items-center gap-2 text-base font-semibold text-slate-100">{notes.label}<FloatButton /></h2>
+                <p className="mt-1 text-sm text-slate-400">{notes.summary}</p>
               </div>
-              {addons.whole_mix.status === "ready" ? (
-                <p className="text-xs text-slate-400">
-                  {addons.whole_mix.downloaded.length
-                    ? t("models.muscriptor.downloadedList", { list: addons.whole_mix.downloaded.join(", ") })
-                    : t("models.muscriptor.signedIn")}{" "}
-                  {t("models.muscriptor.sizeHint")}
-                </p>
-              ) : (
-                <ol className="list-decimal space-y-1 pl-5 text-xs text-slate-300">
-                  {addons.whole_mix.status === "not-installed" ? (
-                    <li>
-                      {t("models.muscriptor.stepCode")}{" "}
-                      <code className="rounded bg-black/40 px-1">.venv\Scripts\python -m pip install git+https://github.com/muscriptor/muscriptor.git</code>
-                    </li>
-                  ) : null}
-                  <li>
-                    {t("models.muscriptor.stepTerms")}{" "}
-                    <a className="text-cyan-300 underline" href="https://huggingface.co/MuScriptor/muscriptor-large" target="_blank" rel="noreferrer">
-                      muscriptor-large
-                    </a>
-                    .
-                  </li>
-                  <li>
-                    {t("models.muscriptor.stepSignIn")} <code className="rounded bg-black/40 px-1">.venv\Scripts\hf auth login</code>.{" "}
-                    {t("models.muscriptor.stepSignInAfter")}
-                  </li>
-                  <li>{t("models.muscriptor.stepRestart")}</li>
-                </ol>
-              )}
+              <Status ok={notes.installed}>{notes.installed ? t("common.installed") : t("common.notInstalled")}</Status>
             </div>
-          ) : null}
-        </section>
-      ) : null}
-      {stems ? (
-        <section className="glass space-y-3 rounded-2xl border border-white/10 p-4" aria-label={stems.label}>
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <h2 className="display-font flex items-center gap-2 text-base font-semibold text-slate-100">
-                <Scissors className="h-4 w-4 text-cyan-300" aria-hidden /> {stems.label}
-              </h2>
-              <p className="mt-1 text-sm text-slate-400">{stems.summary}</p>
-            </div>
-            <Status ok={stems.installed}>{stems.installed ? t("common.installed") : t("common.notInstalled")}</Status>
-          </div>
-          <ul className="grid gap-1 text-sm text-slate-300 sm:grid-cols-2">
-            {stems.unlocks.map((line) => (
-              <li key={line} className="flex gap-2">
-                <Check className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" aria-hidden /> {line}
-              </li>
-            ))}
-          </ul>
-
-          <fieldset className="space-y-2" disabled={busy}>
-            <legend className="text-xs font-semibold text-slate-300">{t("models.stems.legend")}</legend>
-            {models.map((model) => (
-              <div key={model.file} className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-900/70 px-3 py-2">
-                <label className="flex min-w-0 flex-1 items-center gap-3 text-sm">
-                  <input
-                    type="checkbox"
-                    className="accent-cyan-400"
-                    checked={model.downloaded || selected.has(model.file)}
-                    disabled={model.downloaded}
-                    onChange={() => toggle(model.file)}
-                  />
-                  <span className="min-w-0">
-                    <span className="font-semibold text-slate-100">{model.label}</span>
-                    <span className="block text-xs text-slate-400">{model.used_for}</span>
-                  </span>
-                </label>
-                {model.downloaded ? (
-                  <Status ok>{t("common.downloaded")}</Status>
-                ) : stems.installed ? (
+            <ul className="list-disc space-y-1 pl-5 text-sm text-slate-300">
+              {notes.unlocks.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            {install?.running && install.pack === "notes" ? (
+              <Progress percent={install.percent} detail={install.detail} label={t("models.installProgress")} />
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                {!notes.installed ? (
                   <button
                     type="button"
-                    className={quiet}
-                    onClick={() => void run(() => addonsApi.downloadModel(model.file), t("models.stems.downloadFailed"))}
+                    className={primary}
+                    disabled={busy}
+                    onClick={() => void run(() => addonsApi.installPack("notes", []), t("models.installFailed"))}
                   >
-                    <Download className="h-3.5 w-3.5" aria-hidden /> {t("common.download")}
+                    <Download className="h-4 w-4" aria-hidden /> {t("models.notes.install")}
                   </button>
                 ) : null}
+                <p className="text-xs text-slate-400">{notes.installed ? t("models.readyReload") : notes.download_note}</p>
               </div>
-            ))}
-            <p className="text-xs text-slate-400">
-              {t("models.stems.onDemand")}
-              {addons && addons.models_bytes > 0 ? t("models.stems.downloadedSoFar", { size: formatBytes(addons.models_bytes) }) : ""}
-            </p>
-          </fieldset>
+            )}
+            {addons?.whole_mix ? (
+              <div className="space-y-2 rounded-xl border border-white/10 bg-slate-950/40 p-3" aria-label="MuScriptor">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-slate-100">{t("models.muscriptor.title")}</h3>
+                    <p className="mt-1 text-xs leading-snug text-slate-400">
+                      {t("models.muscriptor.bodyBefore")} <strong className="text-slate-200">{t("models.muscriptor.nonCommercial")}</strong>{" "}
+                      {t("models.muscriptor.bodyAfter")}
+                    </p>
+                  </div>
+                  <Status ok={addons.whole_mix.status === "ready"}>
+                    {addons.whole_mix.status === "ready"
+                      ? addons.whole_mix.size
+                        ? t("models.muscriptor.readySize", { size: addons.whole_mix.size })
+                        : t("models.muscriptor.ready")
+                      : addons.whole_mix.status === "needs-access"
+                        ? t("models.muscriptor.needsSignIn")
+                        : t("common.notInstalled")}
+                  </Status>
+                </div>
+                {addons.whole_mix.status === "ready" ? (
+                  <p className="text-xs text-slate-400">
+                    {addons.whole_mix.downloaded.length
+                      ? t("models.muscriptor.downloadedList", { list: addons.whole_mix.downloaded.join(", ") })
+                      : t("models.muscriptor.signedIn")}{" "}
+                    {t("models.muscriptor.sizeHint")}
+                  </p>
+                ) : (
+                  <ol className="list-decimal space-y-1 pl-5 text-xs text-slate-300">
+                    {addons.whole_mix.status === "not-installed" ? (
+                      <li>
+                        {t("models.muscriptor.stepCode")}{" "}
+                        <code className="rounded bg-black/40 px-1">.venv\Scripts\python -m pip install git+https://github.com/muscriptor/muscriptor.git</code>
+                      </li>
+                    ) : null}
+                    <li>
+                      {t("models.muscriptor.stepTerms")}{" "}
+                      <a className="text-cyan-300 underline" href="https://huggingface.co/MuScriptor/muscriptor-large" target="_blank" rel="noreferrer">
+                        muscriptor-large
+                      </a>
+                      .
+                    </li>
+                    <li>
+                      {t("models.muscriptor.stepSignIn")} <code className="rounded bg-black/40 px-1">.venv\Scripts\hf auth login</code>.{" "}
+                      {t("models.muscriptor.stepSignInAfter")}
+                    </li>
+                    <li>{t("models.muscriptor.stepRestart")}</li>
+                  </ol>
+                )}
+              </div>
+            ) : null}
+          </section>
+        </Floatable>
+      ) : null}
+      {stems ? (
+        <Floatable id="models-stems" title={stems.label}>
+          <section className="glass space-y-3 rounded-2xl border border-white/10 p-4" aria-label={stems.label}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h2 className="display-font flex items-center gap-2 text-base font-semibold text-slate-100">
+                  <Scissors className="h-4 w-4 text-cyan-300" aria-hidden /> {stems.label}
+                  <FloatButton />
+                </h2>
+                <p className="mt-1 text-sm text-slate-400">{stems.summary}</p>
+              </div>
+              <Status ok={stems.installed}>{stems.installed ? t("common.installed") : t("common.notInstalled")}</Status>
+            </div>
+            <ul className="grid gap-1 text-sm text-slate-300 sm:grid-cols-2">
+              {stems.unlocks.map((line) => (
+                <li key={line} className="flex gap-2">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" aria-hidden /> {line}
+                </li>
+              ))}
+            </ul>
 
-          {install?.running && stemsInstalling ? (
-            <Progress percent={install.percent} detail={install.detail} label={t("models.installProgress")} />
-          ) : (
-            <div className="flex flex-wrap items-center gap-3">
-              {!stems.installed ? (
-                <button
-                  type="button"
-                  className={primary}
-                  disabled={busy}
-                  onClick={() =>
-                    void run(
-                      () => addonsApi.installPack("stems", [...selected].filter((f) => !models.find((m) => m.file === f)?.downloaded)),
-                      t("models.installFailed")
-                    )
-                  }
-                >
-                  <Download className="h-4 w-4" aria-hidden /> {t("models.stems.install")}
-                </button>
-              ) : null}
-              <p className="text-xs text-slate-400">{stems.installed ? t("models.readyReload") : stems.download_note}</p>
-              {addons && addons.models_bytes > 0 ? (
-                confirmDelete ? (
-                  <span className="flex gap-2">
+            <fieldset className="space-y-2" disabled={busy}>
+              <legend className="text-xs font-semibold text-slate-300">{t("models.stems.legend")}</legend>
+              {models.map((model) => (
+                <div key={model.file} className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-900/70 px-3 py-2">
+                  <label className="flex min-w-0 flex-1 items-center gap-3 text-sm">
+                    <input
+                      type="checkbox"
+                      className="accent-cyan-400"
+                      checked={model.downloaded || selected.has(model.file)}
+                      disabled={model.downloaded}
+                      onChange={() => toggle(model.file)}
+                    />
+                    <span className="min-w-0">
+                      <span className="font-semibold text-slate-100">{model.label}</span>
+                      <span className="block text-xs text-slate-400">{model.used_for}</span>
+                    </span>
+                  </label>
+                  {model.downloaded ? (
+                    <Status ok>{t("common.downloaded")}</Status>
+                  ) : stems.installed ? (
                     <button
                       type="button"
-                      className={cn(quiet, "bg-rose-600 hover:bg-rose-500")}
-                      onClick={() => {
-                        setConfirmDelete(false);
-                        void run(() => addonsApi.deleteModels(), t("models.stems.deleteFailed"));
-                      }}
+                      className={quiet}
+                      onClick={() => void run(() => addonsApi.downloadModel(model.file), t("models.stems.downloadFailed"))}
                     >
-                      {t("models.stems.deleteSize", { size: formatBytes(addons.models_bytes) })}
+                      <Download className="h-3.5 w-3.5" aria-hidden /> {t("common.download")}
                     </button>
-                    <button type="button" className={quiet} onClick={() => setConfirmDelete(false)}>
-                      {t("common.keep")}
-                    </button>
-                  </span>
-                ) : (
-                  <button type="button" className={quiet} disabled={busy} onClick={() => setConfirmDelete(true)}>
-                    <Trash2 className="h-3.5 w-3.5" aria-hidden /> {t("models.stems.deleteModels")}
+                  ) : null}
+                </div>
+              ))}
+              <p className="text-xs text-slate-400">
+                {t("models.stems.onDemand")}
+                {addons && addons.models_bytes > 0 ? t("models.stems.downloadedSoFar", { size: formatBytes(addons.models_bytes) }) : ""}
+              </p>
+            </fieldset>
+
+            {install?.running && stemsInstalling ? (
+              <Progress percent={install.percent} detail={install.detail} label={t("models.installProgress")} />
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                {!stems.installed ? (
+                  <button
+                    type="button"
+                    className={primary}
+                    disabled={busy}
+                    onClick={() =>
+                      void run(
+                        () => addonsApi.installPack("stems", [...selected].filter((f) => !models.find((m) => m.file === f)?.downloaded)),
+                        t("models.installFailed")
+                      )
+                    }
+                  >
+                    <Download className="h-4 w-4" aria-hidden /> {t("models.stems.install")}
                   </button>
-                )
-              ) : null}
-            </div>
-          )}
-          {install?.error && !install.running ? (
-            <p role="alert" className="whitespace-pre-wrap rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
-              {install.error}
-            </p>
-          ) : null}
-          {install && install.log.length ? (
-            <details className="rounded-lg bg-black/30 px-3 py-2 text-xs text-slate-400">
-              <summary className="cursor-pointer font-semibold text-slate-300">{t("models.stems.log")}</summary>
-              <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap">{install.log.join("\n")}</pre>
-            </details>
-          ) : null}
-        </section>
+                ) : null}
+                <p className="text-xs text-slate-400">{stems.installed ? t("models.readyReload") : stems.download_note}</p>
+                {addons && addons.models_bytes > 0 ? (
+                  confirmDelete ? (
+                    <span className="flex gap-2">
+                      <button
+                        type="button"
+                        className={cn(quiet, "bg-rose-600 hover:bg-rose-500")}
+                        onClick={() => {
+                          setConfirmDelete(false);
+                          void run(() => addonsApi.deleteModels(), t("models.stems.deleteFailed"));
+                        }}
+                      >
+                        {t("models.stems.deleteSize", { size: formatBytes(addons.models_bytes) })}
+                      </button>
+                      <button type="button" className={quiet} onClick={() => setConfirmDelete(false)}>
+                        {t("common.keep")}
+                      </button>
+                    </span>
+                  ) : (
+                    <button type="button" className={quiet} disabled={busy} onClick={() => setConfirmDelete(true)}>
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden /> {t("models.stems.deleteModels")}
+                    </button>
+                  )
+                ) : null}
+              </div>
+            )}
+            {install?.error && !install.running ? (
+              <p role="alert" className="whitespace-pre-wrap rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                {install.error}
+              </p>
+            ) : null}
+            {install && install.log.length ? (
+              <details className="rounded-lg bg-black/30 px-3 py-2 text-xs text-slate-400">
+                <summary className="cursor-pointer font-semibold text-slate-300">{t("models.stems.log")}</summary>
+                <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap">{install.log.join("\n")}</pre>
+              </details>
+            ) : null}
+          </section>
+        </Floatable>
       ) : null}
 
       {music ? (
-        <section className="glass space-y-3 rounded-2xl border border-white/10 p-4" aria-label={t("models.music.label")}>
-          <h2 className="display-font flex items-center gap-2 text-base font-semibold text-slate-100">
-            <Music2 className="h-4 w-4 text-cyan-300" aria-hidden /> {t("models.music.heading")}
-          </h2>
-          {music.setup.running ? (
-            <Progress percent={music.setup.percent} detail={music.setup.detail} label={t("models.music.progress")} />
-          ) : null}
-          {music.setup.error && !music.setup.running ? (
-            <p role="alert" className="whitespace-pre-wrap rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
-              {music.setup.error}
-            </p>
-          ) : null}
-          {[
-            {
-              label: t("models.music.engine"),
-              note: `${t("models.music.engineNote", { gb: music.setup.download_gb ?? 5.3 })}${engineHardware(music.engine, Boolean(addons?.gpu), t)}`,
-              ok: music.engine.installed,
-              action: () => generationApi.startSetup(false)
-            },
-            {
-              label: t("models.music.editing"),
-              note: t("models.music.editingNote", { gb: music.setup.editing_download_gb ?? 2.4 }),
-              ok: Boolean(music.engine.editing_ready),
-              action: () => generationApi.startSetup(false, true),
-              needsEngine: true
-            },
-            {
-              label: t("models.music.xl"),
-              note: t("models.music.xlNote", { gb: music.setup.quality_download_gb ?? 4.9 }),
-              ok: Boolean(music.engine.quality_ready),
-              action: () => generationApi.startSetup(false, false, true),
-              needsEngine: true
-            },
-            {
-              label: t("models.music.writer", { model: music.writer.model }),
-              note: music.writer.available ? t("models.music.writerReady") : t("models.music.writerMissing"),
-              ok: music.writer.model_installed,
-              action: () => generationApi.startSetup(true),
-              disabled: !music.writer.available
-            }
-          ].map((row) => (
-            <div key={row.label} className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-900/70 px-3 py-2">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-slate-100">{row.label}</p>
-                <p className="text-xs text-slate-400">{row.note}</p>
-              </div>
-              {row.ok ? (
-                <Status ok>{t("common.installed")}</Status>
-              ) : (
-                <button
-                  type="button"
-                  className={quiet}
-                  disabled={busy || row.disabled || (row.needsEngine && !music.engine.installed)}
-                  onClick={() => void run(row.action, t("models.installFailed"))}
-                >
-                  <Download className="h-3.5 w-3.5" aria-hidden /> {t("common.install")}
-                </button>
-              )}
-            </div>
-          ))}
-          <p className="text-xs text-slate-400">
-            {t("models.music.settingsBefore")}{" "}
-            <Link href="/generate" className="font-semibold text-cyan-300 underline-offset-2 hover:underline">
-              {t("models.music.settingsLink")}
-            </Link>
-            .
-          </p>
-        </section>
-      ) : null}
-
-      {instruments.length ? (
-        <section className="glass space-y-3 rounded-2xl border border-white/10 p-4" aria-label={t("models.instruments.label")}>
-          <h2 className="display-font flex items-center gap-2 text-base font-semibold text-slate-100">
-            <Piano className="h-4 w-4 text-cyan-300" aria-hidden /> {t("models.instruments.heading")}
-          </h2>
-          <p className="text-sm text-slate-400">{t("models.instruments.intro")}</p>
-          {instruments.map((item) => (
-            <div key={item.id} className="space-y-2 rounded-xl bg-slate-900/70 px-3 py-2">
-              <div className="flex flex-wrap items-center gap-3">
+        <Floatable id="models-music" title={t("models.music.heading")}>
+          <section className="glass space-y-3 rounded-2xl border border-white/10 p-4" aria-label={t("models.music.label")}>
+            <h2 className="display-font flex items-center gap-2 text-base font-semibold text-slate-100">
+              <Music2 className="h-4 w-4 text-cyan-300" aria-hidden /> {t("models.music.heading")}
+              <FloatButton className="ml-auto" />
+            </h2>
+            {music.setup.running ? (
+              <Progress percent={music.setup.percent} detail={music.setup.detail} label={t("models.music.progress")} />
+            ) : null}
+            {music.setup.error && !music.setup.running ? (
+              <p role="alert" className="whitespace-pre-wrap rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                {music.setup.error}
+              </p>
+            ) : null}
+            {[
+              {
+                label: t("models.music.engine"),
+                note: `${t("models.music.engineNote", { gb: music.setup.download_gb ?? 5.3 })}${engineHardware(music.engine, Boolean(addons?.gpu), t)}`,
+                ok: music.engine.installed,
+                action: () => generationApi.startSetup(false)
+              },
+              {
+                label: t("models.music.editing"),
+                note: t("models.music.editingNote", { gb: music.setup.editing_download_gb ?? 2.4 }),
+                ok: Boolean(music.engine.editing_ready),
+                action: () => generationApi.startSetup(false, true),
+                needsEngine: true
+              },
+              {
+                label: t("models.music.xl"),
+                note: t("models.music.xlNote", { gb: music.setup.quality_download_gb ?? 4.9 }),
+                ok: Boolean(music.engine.quality_ready),
+                action: () => generationApi.startSetup(false, false, true),
+                needsEngine: true
+              },
+              {
+                label: t("models.music.writer", { model: music.writer.model }),
+                note: music.writer.available ? t("models.music.writerReady") : t("models.music.writerMissing"),
+                ok: music.writer.model_installed,
+                action: () => generationApi.startSetup(true),
+                disabled: !music.writer.available
+              }
+            ].map((row) => (
+              <div key={row.label} className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-900/70 px-3 py-2">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-slate-100">
-                    {item.name} {item.version} <span className="font-normal text-slate-400">· {item.license}</span>
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    {item.summary} {item.installed ? "" : t("models.instruments.download", { size: formatBytes(item.download_bytes) })}
-                  </p>
+                  <p className="text-sm font-semibold text-slate-100">{row.label}</p>
+                  <p className="text-xs text-slate-400">{row.note}</p>
                 </div>
-                {item.installed && !item.running ? (
+                {row.ok ? (
                   <Status ok>{t("common.installed")}</Status>
-                ) : !item.supported ? (
-                  <Status ok={false}>{t("models.instruments.platformOnly")}</Status>
-                ) : item.running ? null : (
+                ) : (
                   <button
                     type="button"
                     className={quiet}
-                    disabled={busy}
-                    onClick={() => void run(() => editorApi.installInstrument(item.id), t("models.installFailed"))}
+                    disabled={busy || row.disabled || (row.needsEngine && !music.engine.installed)}
+                    onClick={() => void run(row.action, t("models.installFailed"))}
                   >
                     <Download className="h-3.5 w-3.5" aria-hidden /> {t("common.install")}
                   </button>
                 )}
               </div>
-              {item.running ? <Progress percent={item.percent} detail={item.detail} label={t("models.instruments.progress", { name: item.name })} /> : null}
-              {item.error && !item.running ? (
-                <p role="alert" className="rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
-                  {item.error}
-                </p>
-              ) : null}
-            </div>
-          ))}
-          <p className="text-xs text-slate-400">
-            {t("models.instruments.useBefore")}{" "}
-            <Link href="/editor" className="font-semibold text-cyan-300 underline-offset-2 hover:underline">
-              {t("common.workspaces.editor")}
-            </Link>{" "}
-            {t("models.instruments.useMiddle")}{" "}
-            <Link href="/synth" className="font-semibold text-cyan-300 underline-offset-2 hover:underline">
-              {t("common.workspaces.synth")}
-            </Link>
-            .
-          </p>
-        </section>
+            ))}
+            <p className="text-xs text-slate-400">
+              {t("models.music.settingsBefore")}{" "}
+              <Link href="/generate" className="font-semibold text-cyan-300 underline-offset-2 hover:underline">
+                {t("models.music.settingsLink")}
+              </Link>
+              .
+            </p>
+          </section>
+        </Floatable>
+      ) : null}
+
+      {instruments.length ? (
+        <Floatable id="models-instruments" title={t("models.instruments.heading")}>
+          <section className="glass space-y-3 rounded-2xl border border-white/10 p-4" aria-label={t("models.instruments.label")}>
+            <h2 className="display-font flex items-center gap-2 text-base font-semibold text-slate-100">
+              <Piano className="h-4 w-4 text-cyan-300" aria-hidden /> {t("models.instruments.heading")}
+              <FloatButton className="ml-auto" />
+            </h2>
+            <p className="text-sm text-slate-400">{t("models.instruments.intro")}</p>
+            {instruments.map((item) => (
+              <div key={item.id} className="space-y-2 rounded-xl bg-slate-900/70 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-slate-100">
+                      {item.name} {item.version} <span className="font-normal text-slate-400">· {item.license}</span>
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {item.summary} {item.installed ? "" : t("models.instruments.download", { size: formatBytes(item.download_bytes) })}
+                    </p>
+                  </div>
+                  {item.installed && !item.running ? (
+                    <Status ok>{t("common.installed")}</Status>
+                  ) : !item.supported ? (
+                    <Status ok={false}>{t("models.instruments.platformOnly")}</Status>
+                  ) : item.running ? null : (
+                    <button
+                      type="button"
+                      className={quiet}
+                      disabled={busy}
+                      onClick={() => void run(() => editorApi.installInstrument(item.id), t("models.installFailed"))}
+                    >
+                      <Download className="h-3.5 w-3.5" aria-hidden /> {t("common.install")}
+                    </button>
+                  )}
+                </div>
+                {item.running ? <Progress percent={item.percent} detail={item.detail} label={t("models.instruments.progress", { name: item.name })} /> : null}
+                {item.error && !item.running ? (
+                  <p role="alert" className="rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                    {item.error}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+            <p className="text-xs text-slate-400">
+              {t("models.instruments.useBefore")}{" "}
+              <Link href="/editor" className="font-semibold text-cyan-300 underline-offset-2 hover:underline">
+                {t("common.workspaces.editor")}
+              </Link>{" "}
+              {t("models.instruments.useMiddle")}{" "}
+              <Link href="/synth" className="font-semibold text-cyan-300 underline-offset-2 hover:underline">
+                {t("common.workspaces.synth")}
+              </Link>
+              .
+            </p>
+          </section>
+        </Floatable>
       ) : null}
 
       <section className="rounded-2xl border border-dashed border-white/15 p-4 text-xs text-slate-400" aria-label={t("models.terminal.heading")}>

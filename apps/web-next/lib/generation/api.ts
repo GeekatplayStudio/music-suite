@@ -1,5 +1,8 @@
 import type { Job } from "@/lib/editor/types";
-import { localizeServerFields, localizeServerText } from "@/lib/i18n/server-messages";
+import { localizeServerFields, localizeServerText, serverMessagesReady } from "@/lib/i18n/server-messages";
+
+/** Text fields of a provider's form description that are shown to the user. */
+const SCHEMA_TEXT = ["label", "help", "group", "groups", "placeholder", "title", "unit", "description"] as const;
 
 const BASE = "/suite-api";
 
@@ -204,7 +207,7 @@ export interface HistoryRecord {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, { ...init, cache: "no-store" });
+    res = (await Promise.all([fetch(`${BASE}${path}`, { ...init, cache: "no-store" }), serverMessagesReady()]))[0];
   } catch {
     throw new Error(localizeServerText("Could not reach the Music Suite API. Restart Music Suite with its start launcher."));
   }
@@ -220,7 +223,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   const body = (await res.json()) as T;
   // History keeps the fields a song was made with, which can be sent again as they are.
-  return path.startsWith("/generation/history") ? body : localizeServerFields(body);
+  if (path.startsWith("/generation/history")) return body;
+  // The engines describe their own forms: their labels, help and group names are shown in the
+  // interface language too (values sent back to the engine are left alone).
+  return path.startsWith("/generation/providers") ? localizeServerFields(body, SCHEMA_TEXT) : localizeServerFields(body);
 }
 
 function json(body: unknown): RequestInit {

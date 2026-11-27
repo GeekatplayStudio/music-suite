@@ -21,7 +21,23 @@ export const charts = {
   },
   plot: {
     renderError: "Chart drawing error: {message}",
-    noData: "Chart data unavailable for this run."
+    noData: "Chart data unavailable for this run.",
+    /** Plotly's own toolbar and hints (its English text is the key it looks up). */
+    toolbar: {
+      zoom: "Zoom",
+      pan: "Pan",
+      zoomIn: "Zoom in",
+      zoomOut: "Zoom out",
+      autoscale: "Autoscale",
+      resetAxes: "Reset axes",
+      download: "Download plot as a PNG",
+      spikes: "Toggle Spike Lines",
+      closest: "Show closest data on hover",
+      compare: "Compare data on hover",
+      boxSelect: "Box Select",
+      lasso: "Lasso Select",
+      doubleClick: "Double-click to zoom back out"
+    }
   },
   equalizer: {
     title: "Optional Equalizer",

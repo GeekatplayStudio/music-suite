@@ -1,6 +1,6 @@
 # Ваша первая песня в Music Suite, шаг за шагом
 
-*English: [FIRST_PROJECT.md](FIRST_PROJECT.md)*
+*[English](FIRST_PROJECT.md) · [Español](FIRST_PROJECT.es.md) · [Deutsch](FIRST_PROJECT.de.md) · [Français](FIRST_PROJECT.fr.md) · **Русский** · [Українська](FIRST_PROJECT.uk.md)*
 
 От мелодии, которую вы сыграли на клавиатуре (или напели, или загрузили), до готовой,
 очищенной песни с вашим текстом. На каждом шаге указано, какую кнопку нажать. В первый раз

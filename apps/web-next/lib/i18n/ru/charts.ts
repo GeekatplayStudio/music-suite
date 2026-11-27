@@ -22,7 +22,23 @@ export const charts: Dictionary["charts"] = {
   },
   plot: {
     renderError: "Ошибка отрисовки графика: {message}",
-    noData: "Для этого анализа нет данных графика."
+    noData: "Для этого анализа нет данных графика.",
+    /** Plotly's own toolbar and hints (its English text is the key it looks up). */
+    toolbar: {
+      zoom: "Масштаб",
+      pan: "Сдвиг",
+      zoomIn: "Приблизить",
+      zoomOut: "Отдалить",
+      autoscale: "Автомасштаб",
+      resetAxes: "Сбросить оси",
+      download: "Скачать график как PNG",
+      spikes: "Линии-указатели",
+      closest: "Ближайшие данные при наведении",
+      compare: "Сравнивать данные при наведении",
+      boxSelect: "Выделение рамкой",
+      lasso: "Выделение лассо",
+      doubleClick: "Двойной щелчок — вернуть масштаб"
+    }
   },
   equalizer: {
     title: "Эквалайзер (по желанию)",

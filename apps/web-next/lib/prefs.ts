@@ -7,7 +7,11 @@
 
 export const LOCALES = [
   { id: "en", label: "English" },
-  { id: "ru", label: "Русский" }
+  { id: "es", label: "Español" },
+  { id: "de", label: "Deutsch" },
+  { id: "fr", label: "Français" },
+  { id: "ru", label: "Русский" },
+  { id: "uk", label: "Українська" }
 ] as const;
 export type Locale = (typeof LOCALES)[number]["id"];
 export const DEFAULT_LOCALE: Locale = "en";

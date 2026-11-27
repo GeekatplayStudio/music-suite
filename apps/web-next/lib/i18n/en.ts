@@ -7,6 +7,7 @@
  */
 
 import { common } from "./en/common";
+import { windows } from "./en/windows";
 import { analyser } from "./en/analyser";
 import { charts } from "./en/charts";
 import { editor } from "./en/editor";
@@ -21,4 +22,4 @@ import { sessions } from "./en/sessions";
 import { source } from "./en/source";
 import { studio } from "./en/studio";
 
-export const en = { common, prefs, models, sessions, studio, source, detach, analyser, charts, editor, inspector, editorTools, synth, studioTabs };
+export const en = { common, prefs, models, sessions, studio, source, detach, analyser, charts, editor, inspector, editorTools, synth, studioTabs, windows };

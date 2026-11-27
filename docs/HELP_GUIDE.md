@@ -4,6 +4,13 @@
 
 > For using the app, read the [user manual](USER_MANUAL.md) instead (also in the app under **Help**). This guide is a technical reference and parts of it are out of date.
 
+## 0) Interface: languages, colours and windows
+
+- **Languages:** English, Spanish, German, French, Russian and Ukrainian, chosen with the **language and colours** button in every workspace header (saved in a cookie, so pages render in that language from the first frame). Backend messages, the AI engines' form fields, chart labels and the analyser's advice are translated in the browser; the user manual and first-project guide exist in every language (`docs/USER_MANUAL.<locale>.md`, `docs/FIRST_PROJECT.<locale>.md`), and Help shows the one for the interface language.
+- **Colour themes:** Midnight cyan, Amber studio, Violet night, Forest, Magenta and Light, from the same button.
+- **Floating panels:** every major panel can float in a window of its own (the box-with-arrow button in its title): the analyser's cards, Visual AI and charts; the editor's tracks and timeline, inspector, piano roll and on-screen piano; the AI Song Studio's sections and tabs; Synth Studio's panels; the Models & engines sections. Each window remembers its place (and its monitor, where the browser allows window placement). **Panels on this page** in the language and colours menu floats or docks each panel, docks them all, reopens the last floating layout, and can reopen it whenever the page opens (needs pop-ups allowed for Music Suite).
+- **Workspace and tab windows:** **Open in a new window** in the same menu opens any workspace as its own window; the window button beside the AI Song Studio's and Synth Studio's tabs opens that tab (`?tab=`). Two editor windows on the same session warn each other.
+
 ## 1) Session Control
 
 - `Upload`: stores source audio and metadata.

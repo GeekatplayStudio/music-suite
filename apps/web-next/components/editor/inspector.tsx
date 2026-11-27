@@ -12,6 +12,7 @@ import { AiEditSection } from "@/components/generation/ai-edit-section";
 import { FACTORY_PRESETS, loadUserPresets, normalizePatch, type Patch } from "@/lib/editor/synth";
 import { generationApi, type ProviderInfo } from "@/lib/generation/api";
 import { editorApi } from "@/lib/editor/api";
+import { viewOf } from "@/lib/windows";
 import { type I18n, type MessageKey, useI18n } from "@/lib/i18n";
 import type { Favourite, ProcessStep } from "@/lib/editor/favourites";
 import { type WamCatalogueEntry, isAllowedWamUrl, loadWamCatalogue, wamConsent } from "@/lib/editor/wam";
@@ -1942,6 +1943,8 @@ function PhaseScope({ getScope }: { getScope: () => { left: Float32Array; right:
   const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
+    // Drawn in the window this panel is in (it can float on another monitor).
+    const view = viewOf(canvasRef.current);
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
@@ -2000,10 +2003,10 @@ function PhaseScope({ getScope }: { getScope: () => { left: Float32Array; right:
         const x = size / 2 + (held * size) / 2;
         ctx.fillRect(Math.min(x, size / 2), size + 5, Math.abs(x - size / 2), 4);
       }
-      frame = requestAnimationFrame(draw);
+      frame = view.requestAnimationFrame(draw);
     };
-    frame = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(frame);
+    frame = view.requestAnimationFrame(draw);
+    return () => view.cancelAnimationFrame(frame);
   }, [getScope]);
   return (
     <div className="flex items-end gap-3">
@@ -2040,6 +2043,8 @@ function LevelBar({ label, getLevel }: { label: string; getLevel: () => number }
     levelRef.current = getLevel;
   });
   useEffect(() => {
+    // Drawn in the window this panel is in (it can float on another monitor).
+    const view = viewOf(barRef.current);
     let frame = 0;
     let held = 0;
     const draw = () => {
@@ -2050,10 +2055,10 @@ function LevelBar({ label, getLevel }: { label: string; getLevel: () => number }
         barRef.current.style.transform = `scaleX(${shown.toFixed(3)})`;
         barRef.current.style.backgroundColor = held >= 0.999 ? "#f43f5e" : held > 0.7 ? "#fbbf24" : "#34d399";
       }
-      frame = requestAnimationFrame(draw);
+      frame = view.requestAnimationFrame(draw);
     };
-    frame = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(frame);
+    frame = view.requestAnimationFrame(draw);
+    return () => view.cancelAnimationFrame(frame);
   }, []);
   return (
     <div className="h-1.5 overflow-hidden rounded-full bg-slate-950" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={1} aria-valuenow={0}>
@@ -2086,6 +2091,8 @@ function EqDisplay({
     source.current = { getSpectrum, getResponse };
   });
   useEffect(() => {
+    // Drawn in the window this panel is in (it can float on another monitor).
+    const view = viewOf(canvasRef.current);
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
@@ -2144,10 +2151,10 @@ function EqDisplay({
       ctx.fillText("100", xOf(100) + 3, EQ_H - 3);
       ctx.fillText("1k", xOf(1000) + 3, EQ_H - 3);
       ctx.fillText("10k", xOf(10000) + 3, EQ_H - 3);
-      frame = requestAnimationFrame(draw);
+      frame = view.requestAnimationFrame(draw);
     };
-    frame = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(frame);
+    frame = view.requestAnimationFrame(draw);
+    return () => view.cancelAnimationFrame(frame);
   }, [trackId, signature, t]);
   return (
     <canvas

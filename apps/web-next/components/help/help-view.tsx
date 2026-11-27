@@ -17,7 +17,7 @@ const quiet =
 function target(href: string): { href: string; external: boolean } {
   if (href.startsWith("#") || href.startsWith("/")) return { href, external: false };
   // Links between the manual's own files on GitHub become sections of this page.
-  const local = /USER_MANUAL(?:\.ru)?\.md(#.*)?$/.exec(href);
+  const local = /USER_MANUAL(?:\.[a-z]{2})?\.md(#.*)?$/.exec(href);
   if (local) return { href: local[1] ?? "#", external: false };
   return { href, external: /^https?:/.test(href) };
 }

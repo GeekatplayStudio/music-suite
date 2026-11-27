@@ -12,7 +12,7 @@ import type {
   ProjectState,
   ProjectSummary
 } from "@/lib/editor/types";
-import { localizeServerFields, localizeServerText } from "@/lib/i18n/server-messages";
+import { localizeServerFields, localizeServerText, serverMessagesReady } from "@/lib/i18n/server-messages";
 
 const BASE = "/suite-api/editor";
 
@@ -29,7 +29,7 @@ const PROJECT_DATA = /^\/projects(\/[^/]+)?(\/state|\/rename)?$/;
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, { ...init, cache: "no-store" });
+    res = (await Promise.all([fetch(`${BASE}${path}`, { ...init, cache: "no-store" }), serverMessagesReady()]))[0];
   } catch {
     throw new Error(localizeServerText("Could not reach the Music Suite API. Restart Music Suite with its start launcher."));
   }
@@ -119,7 +119,7 @@ export const editorApi = {
   encode: async (wav: Blob, format: "mp3" | "flac"): Promise<Blob> => {
     const form = new FormData();
     form.append("file", new File([wav], "mix.wav", { type: "audio/wav" }));
-    const res = await fetch(`${BASE}/export/${format}`, { method: "POST", body: form, cache: "no-store" });
+    const res = (await Promise.all([fetch(`${BASE}/export/${format}`, { method: "POST", body: form, cache: "no-store" }), serverMessagesReady()]))[0];
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
       throw new Error(localizeServerText(typeof body?.detail === "string" ? body.detail : `Encoding failed (${res.status})`));

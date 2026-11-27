@@ -2,6 +2,7 @@
 
 import type { Dictionary } from "./index";
 import { common } from "./ru/common";
+import { windows } from "./ru/windows";
 import { analyser } from "./ru/analyser";
 import { charts } from "./ru/charts";
 import { editor } from "./ru/editor";
@@ -16,4 +17,4 @@ import { sessions } from "./ru/sessions";
 import { source } from "./ru/source";
 import { studio } from "./ru/studio";
 
-export const ru: Dictionary = { common, prefs, models, sessions, studio, source, detach, analyser, charts, editor, inspector, editorTools, synth, studioTabs };
+export const ru: Dictionary = { common, prefs, models, sessions, studio, source, detach, analyser, charts, editor, inspector, editorTools, synth, studioTabs, windows };
