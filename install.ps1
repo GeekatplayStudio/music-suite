@@ -388,7 +388,62 @@ function Find-SupportedPython {
     return $null
 }
 
+# Music Suite's own Python, inside its folder (.tools\python), the way ComfyUI's portable build
+# carries one: nothing is installed on Windows, no administrator, no PATH change, and it does
+# not matter whether, or which, Python the computer has. It is python.org's own build, which
+# python.org publishes as a NuGet package (a zip with a full Python, venv and pip included).
+# The version is pinned; the download must match a fixed SHA-256 fingerprint (the packages
+# nuget.org lists with these SHA-512 hashes) and python.exe must be signed by the Python
+# Software Foundation.
+$portablePythonVersion = "3.12.10"
+$portablePythonPackages = @{
+    x64 = @{ Id = "python"; Sha256 = "0EB85C2DFCCCCF1B17352DE4C397F69194035B7D37149EACC16F1147D93DE3B8" }
+    arm64 = @{ Id = "pythonarm64"; Sha256 = "E397423B13B1F1DB294CD822B13A695B9F95193F2DC4572FF30DD5CD83B99C37" }
+}
+$portablePythonDir = Join-Path $toolsRoot "python"
+
+function Install-PortablePython {
+    $python = Join-Path $portablePythonDir "python.exe"
+    if ((Test-Path -LiteralPath $python) -and (Test-PythonVersion $python @("-I"))) { return $python }
+    $package = $portablePythonPackages[(Get-WindowsArchitecture)]
+    $name = "Python $portablePythonVersion"
+    $archive = Join-Path ([IO.Path]::GetTempPath()) "music-suite-python-$PID.zip"
+    $stage = Join-Path $toolsRoot ".python-stage-$PID"
+    New-Item -ItemType Directory -Path $toolsRoot -Force | Out-Null
+    try {
+        $url = "https://api.nuget.org/v3-flatcontainer/$($package.Id)/$portablePythonVersion/$($package.Id).$portablePythonVersion.nupkg"
+        Invoke-TrustedDownload $url $archive $name
+        Assert-FileSha256 $archive $package.Sha256 $name
+        Expand-Archive -LiteralPath $archive -DestinationPath $stage -Force
+        $tools = Join-Path $stage "tools"
+        $staged = Join-Path $tools "python.exe"
+        if (-not (Test-Path -LiteralPath $staged)) { throw "The verified $name package did not contain python.exe." }
+        $signature = Get-AuthenticodeSignature -LiteralPath $staged
+        if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notlike "*Python Software Foundation*") {
+            throw "$name did not carry a valid Python Software Foundation signature. Nothing was installed."
+        }
+        if (Test-Path -LiteralPath $portablePythonDir) { Remove-Item -LiteralPath $portablePythonDir -Recurse -Force }
+        Move-Item -LiteralPath $tools -Destination $portablePythonDir
+        if (-not (Test-PythonVersion $python @("-I"))) { throw "$name was unpacked but does not run." }
+        Write-Host "$name is ready inside Music Suite (nothing was installed on Windows)." -ForegroundColor Green
+        return $python
+    } finally {
+        Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Find-SystemPython {
+    # Music Suite's own Python first: it behaves the same on every computer. A Python already
+    # on the computer is used only when that download is impossible (nuget.org blocked).
+    try {
+        $portable = Install-PortablePython
+        return [PSCustomObject]@{ Executable = $portable; PrefixArgs = @("-I") }
+    } catch {
+        Write-Host "Music Suite's own Python could not be set up: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "Looking for a Python 3.$minPythonMinor or newer on this computer instead..." -ForegroundColor Yellow
+    }
+
     $found = Find-SupportedPython
     if ($found) { return $found }
 
@@ -400,7 +455,9 @@ function Find-SystemPython {
     Install-PythonDirect
     $found = Find-SupportedPython
     if ($found) { return $found }
-    throw "Python 3.$minPythonMinor could not be found after installation. Restart Windows, then run install.bat again."
+    throw ("Python 3.$minPythonMinor could not be set up. Music Suite downloads its own Python from api.nuget.org " +
+        "(or, failing that, from python.org); check that this computer can reach them (a VPN, proxy or antivirus web " +
+        "filter can block it), then run install.bat again.")
 }
 
 # Node 20 is end-of-life and the current toolchain needs 22.13 or newer.
@@ -449,7 +506,7 @@ try {
     Write-Host "============================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "The installer checks every required library and installs anything missing:"
-    Write-Host "  - Python 3.12+, FFmpeg, Node.js and pnpm/npm"
+    Write-Host "  - Python 3.12 (its own copy inside this folder), FFmpeg, Node.js and pnpm/npm"
     Write-Host "  - Music Suite Python libraries and the optimized web app"
     Write-Host "  - Troubleshooting log: $installLogPath"
     Write-Host ""
@@ -544,7 +601,9 @@ try {
 
     $venvPython = Join-Path $root ".venv\Scripts\python.exe"
     if ((Test-Path -LiteralPath $venvPython) -and -not (Test-PythonVersion $venvPython)) {
-        Write-Host "The existing virtual environment uses a Python older than 3.$minPythonMinor; recreating it..."
+        # Too old, or its Python is gone: the Music Suite folder was moved or renamed (the
+        # environment records where its Python lives) or the Python it was made from was removed.
+        Write-Host "The Python environment (.venv) cannot run here or is older than 3.$minPythonMinor; recreating it..."
         Remove-Item -LiteralPath (Join-Path $root ".venv") -Recurse -Force
     }
     if (-not (Test-Path -LiteralPath $venvPython)) {
@@ -727,4 +786,5 @@ try {
     if ($transcriptStarted) { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null }
     Pop-Location
 }
+if (-not $CoreOnly) { Wait-IfOwnWindow "install.ps1" }
 if ($script:installFailed) { exit 1 }

@@ -323,3 +323,22 @@ function Add-PathFolder {
         $env:Path = "$Folder;$env:Path"
     }
 }
+
+function Wait-IfOwnWindow([string]$ScriptName) {
+    <#
+        .SYNOPSIS
+        Keep the window open when a script was started on its own.
+
+        Right-clicking install.ps1 or start.ps1 and choosing "Run with PowerShell" runs it in a
+        window that closes the moment the script ends, taking the explanation of what went
+        wrong with it: to the person it looks as if the installer "just closed". The .bat files
+        keep their own window open (they set MUSIC_SUITE_LAUNCHER), and a script run from a
+        PowerShell window someone opened needs no pause, so this waits only when the script's
+        name is on this PowerShell's own command line.
+    #>
+    if ($env:MUSIC_SUITE_LAUNCHER -eq "bat") { return }
+    if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) { return }
+    if ([Environment]::CommandLine -notmatch [regex]::Escape($ScriptName)) { return }
+    Write-Host ""
+    try { Read-Host "Press Enter to close this window" | Out-Null } catch {}
+}

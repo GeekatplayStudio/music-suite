@@ -350,7 +350,7 @@ Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (ab
 ## Requirements
 
 - Windows 10/11 or a current macOS release
-- Python 3.12 or newer (librosa 1.0 and numpy 2.5 need it). The installer sets up 3.12 when it finds nothing newer, and recreates a virtual environment built on an older Python
+- Python 3.12 or newer (librosa 1.0 and numpy 2.5 need it). On Windows nothing needs to be installed: like ComfyUI's portable build, the installer keeps its own Python 3.12 inside the Music Suite folder (python.org's official build, checksum- and signature-checked), and recreates a virtual environment built on an older Python or a moved folder. On macOS the installer sets up 3.12 when it finds nothing newer
 - Node.js 22.13 or newer; the current LTS is recommended, and the installer replaces older versions
 - pnpm (recommended) or npm
 - FFmpeg and ffprobe (the Windows installer downloads a private, checksum-verified copy when needed)
@@ -386,7 +386,7 @@ No programming experience is needed.
 
 <img src="docs/images/install-windows-choice.png" alt="Windows installer asking whether to perform a complete installation" width="900">
 
-The installer checks Python, FFmpeg, Node.js, Git, the Python libraries, and the web libraries. Missing tools are installed automatically. If Windows Package Manager (`winget`) is absent or broken, the core installer safely falls back to official downloads: checksum-verified portable FFmpeg, Node.js and Git packages, plus the digitally signed Python installer. A complete installation also adds Ollama, CMake, and Microsoft C++ build tools when needed. It is safe to run `install.bat` again: already-installed tools and models are detected and reused.
+The installer checks Python, FFmpeg, Node.js, Git, the Python libraries, and the web libraries. Missing tools are installed automatically. Python needs nothing on the computer: Music Suite downloads its own copy of python.org's official Python 3.12 into its folder (verified by checksum and the Python Software Foundation's signature; nothing is installed on Windows and no administrator is needed). If Windows Package Manager (`winget`) is absent or broken, the core installer safely falls back to official downloads: checksum-verified portable FFmpeg, Node.js and Git packages. A complete installation also adds Ollama, CMake, and Microsoft C++ build tools when needed. It is safe to run `install.bat` again: already-installed tools and models are detected and reused.
 
 4. Wait for the green **Music Suite is installed!** message. If one optional model could not download, the message tells you where to retry it inside the app.
 5. Double-click **`start.bat`**. Your browser opens Music Suite. Keep its command window open while using the app.

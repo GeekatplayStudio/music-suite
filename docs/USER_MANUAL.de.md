@@ -62,11 +62,11 @@ Beim ersten Mal erklärt eine Meldung, dass jedes zusätzliche Fenster mehr Arbe
 <a id="installing-windows"></a>
 ### Installation (Windows)
 
-1. Doppelklicke im Music-Suite-Ordner auf **install.bat**.
+1. Doppelklicke im Music-Suite-Ordner auf **install.bat**. Entpacke zuerst die heruntergeladene ZIP-Datei (Rechtsklick ▸ **Alle extrahieren...**): Direkt aus der ZIP gestartet, hält es an und sagt das.
 2. Es fragt **Complete install? [y/N]**:
    - **Enter (Standard):** die App mit allem, was sie zum Laufen braucht. Etwa 10 GB freier Speicher reichen locker.
    - **y (Komplett):** zusätzlich die lokale KI-Musik-Engine und ihre Modelle, der Songtext-Schreiber (Ollama), KI-Stem-Trennung mit allen Modellen und der Synth Surge XT. Etwa 30 GB Downloads; halte 45 GB frei.
-3. Es arbeitet fünf Schritte ab: Werkzeuge (Python, FFmpeg, Node.js, Git), die Python-Umgebung, die Web-App (der langsamste Schritt), optionale Teile und eine abschließende Prüfung. Jedes Werkzeug kommt aus seiner offiziellen Quelle und wird vor der Verwendung geprüft.
+3. Es arbeitet fünf Schritte ab: Werkzeuge (Python, FFmpeg, Node.js, Git), die Python-Umgebung, die Web-App (der langsamste Schritt), optionale Teile und eine abschließende Prüfung. Jedes Werkzeug kommt aus seiner offiziellen Quelle und wird vor der Verwendung geprüft. Python muss nicht auf dem Computer sein: Wie die portable Version von ComfyUI bringt Music Suite ein eigenes Python in seinem Ordner mit, daher wird in Windows nichts installiert und kein Administratorkennwort abgefragt.
 4. Wenn **Music Suite is installed!** erscheint, doppelklicke auf **start.bat**.
 
 Was ausgelassen wurde, kannst du später unter [Modelle & Engines](#models-and-engines) und in den Einstellungen des KI-Song-Studios nachinstallieren. Installer-Optionen findest du in `docs/WINDOWS_INSTALL_GUIDE.md`.

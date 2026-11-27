@@ -239,3 +239,32 @@ def test_windows_ai_tool_installs_use_only_the_winget_source() -> None:
     cmake_command = setup[setup.index('"Kitware.CMake"') : setup.index('"Kitware.CMake"') + 300]
     assert '"--source"' in cmake_command
     assert '"winget"' in cmake_command
+
+
+def test_windows_install_needs_no_python_on_the_computer() -> None:
+    """Like ComfyUI's portable build: Music Suite brings its own Python, so a computer without
+    one (or with a broken one) installs the same way. The download is pinned and verified."""
+    windows = Path("install.ps1").read_text(encoding="utf-8")
+    assert "function Install-PortablePython" in windows
+    assert '$portablePythonVersion = "3.12.10"' in windows
+    assert "api.nuget.org/v3-flatcontainer" in windows
+    # Fixed fingerprints for both Windows architectures, checked before anything is unpacked.
+    assert "0EB85C2DFCCCCF1B17352DE4C397F69194035B7D37149EACC16F1147D93DE3B8" in windows
+    assert "E397423B13B1F1DB294CD822B13A695B9F95193F2DC4572FF30DD5CD83B99C37" in windows
+    assert "Assert-FileSha256 $archive $package.Sha256 $name" in windows
+    # The portable Python comes first; a system Python is only the fallback.
+    body = windows.split("function Find-SystemPython", 1)[1]
+    assert body.index("Install-PortablePython") < body.index("Find-SupportedPython")
+
+
+def test_windows_launchers_never_vanish_without_an_explanation() -> None:
+    """Run from inside the ZIP, or started as a bare .ps1, the window must not just close."""
+    for name in ("install", "start", "stop"):
+        launcher = Path(f"{name}.bat").read_text(encoding="utf-8")
+        assert f'if not exist "%~dp0{name}.ps1"' in launcher
+        assert "Extract All" in launcher
+        assert "set MUSIC_SUITE_LAUNCHER=bat" in launcher
+    shared = Path("scripts/install-state.ps1").read_text(encoding="utf-8")
+    assert "function Wait-IfOwnWindow" in shared
+    assert 'Wait-IfOwnWindow "install.ps1"' in Path("install.ps1").read_text(encoding="utf-8")
+    assert 'Wait-IfOwnWindow "start.ps1"' in Path("start.ps1").read_text(encoding="utf-8")

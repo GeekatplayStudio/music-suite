@@ -49,7 +49,17 @@ The FFmpeg website primarily publishes source code and links to several Windows 
 
 The installer first tries Windows Package Manager. If `winget` is missing or fails, it downloads the Windows Essentials ZIP linked by the official FFmpeg project, verifies the publisher's SHA-256 checksum, and keeps FFmpeg inside the Music Suite `.tools` folder. `start.bat` finds it automatically; no PATH editing is needed.
 
-The same fallback approach is used for Node.js and Git. Python is downloaded from python.org and its Windows digital signature is checked before it runs.
+The same fallback approach is used for Node.js and Git.
+
+## Python comes with Music Suite
+
+You do not need Python on the computer, and an existing one is left alone. Like ComfyUI's portable build, Music Suite keeps its own Python 3.12 inside its folder (`.tools\python`): the installer downloads python.org's official build (published as a package on `api.nuget.org`, about 14 MB), checks it against a fixed SHA-256 fingerprint and the Python Software Foundation's signature, and unpacks it. Nothing is installed on Windows, no administrator password is asked, and PATH is not changed. Only when that download is impossible does the installer use a Python 3.12 or newer already on the computer, or install one from python.org.
+
+If you move or rename the Music Suite folder, run `install.bat` once more (or just `start.bat`): it notices that the app's Python environment points to the old place and rebuilds it.
+
+## If the installer window closes straight away
+
+Double-click `install.bat` in the **extracted** folder. Opened straight from the ZIP, it now says so and asks you to extract the ZIP first (right-click ▸ **Extract All...**). If you start `install.ps1` with **Run with PowerShell**, its window now stays open until you press Enter, so any error can be read. The full record of every install is in `logs\install.log`.
 
 ## If `winget` reports certificate error `0x8a15005e`
 
@@ -74,7 +84,7 @@ Do not disable certificate validation. A certificate mismatch can also be caused
 
 1. Keep the extracted folder in a normal writable location such as `Documents\Music Suite`; do not use the ZIP preview, `Program Files`, or a read-only network folder.
 2. Check that the Windows clock, date, and time zone are correct.
-3. Temporarily disconnect a VPN or ask the network administrator whether HTTPS downloads from these official services are allowed: `github.com`, `api.github.com`, `python.org`, `nodejs.org`, `gyan.dev`, `pypi.org`, `files.pythonhosted.org`, `registry.npmjs.org`, and `huggingface.co`.
+3. Temporarily disconnect a VPN or ask the network administrator whether HTTPS downloads from these official services are allowed: `github.com`, `api.github.com`, `api.nuget.org`, `python.org`, `nodejs.org`, `gyan.dev`, `pypi.org`, `files.pythonhosted.org`, `registry.npmjs.org`, and `huggingface.co`.
 4. Make sure at least 10 GB is free for the standard app, or 45 GB for the complete installation.
 5. Run `install.bat` again. It reuses completed work and retries missing parts.
 

@@ -62,11 +62,11 @@ La première fois, un message explique que chaque fenêtre supplémentaire conso
 <a id="installing-windows"></a>
 ### Installation (Windows)
 
-1. Double-cliquez sur **install.bat** dans le dossier de Music Suite.
+1. Double-cliquez sur **install.bat** dans le dossier de Music Suite. Extrayez d'abord le ZIP téléchargé (clic droit ▸ **Extraire tout...**) : lancé depuis l'intérieur du ZIP, il s'arrête et vous le signale.
 2. Il demande **Complete install? [y/N]** (installation complète ?) :
    - **Entrée (Standard) :** l'application avec tout ce qu'il lui faut pour fonctionner. Environ 10 Go d'espace libre suffisent largement.
    - **y (Complète) :** en plus, le moteur local de musique IA et ses modèles, l'auteur de paroles (Ollama), la séparation de stems par IA avec tous les modèles, et le synthé Surge XT. Environ 30 Go de téléchargements ; prévoyez 45 Go libres.
-3. Il passe par cinq étapes : les outils (Python, FFmpeg, Node.js, Git), l'environnement Python, l'application web (l'étape la plus lente), les éléments facultatifs et une vérification finale. Chaque outil provient de sa source officielle et est vérifié avant d'être utilisé.
+3. Il passe par cinq étapes : les outils (Python, FFmpeg, Node.js, Git), l'environnement Python, l'application web (l'étape la plus lente), les éléments facultatifs et une vérification finale. Chaque outil provient de sa source officielle et est vérifié avant d'être utilisé. Python n'a pas besoin d'être installé : comme la version portable de ComfyUI, Music Suite garde son propre Python dans son dossier, donc rien n'est installé dans Windows et aucun mot de passe administrateur n'est demandé.
 4. Quand il affiche **Music Suite is installed!**, double-cliquez sur **start.bat**.
 
 Tout ce qui n'a pas été installé peut être ajouté plus tard depuis [Modèles et moteurs](#models-and-engines) et les Paramètres du Studio de chansons IA. Voir `docs/WINDOWS_INSTALL_GUIDE.md` pour les options de l'installeur.

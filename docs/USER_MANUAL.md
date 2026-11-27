@@ -62,11 +62,11 @@ The first time, a message explains that each extra window uses more memory, proc
 <a id="installing-windows"></a>
 ### Installing (Windows)
 
-1. Double-click **install.bat** in the Music Suite folder.
+1. Double-click **install.bat** in the Music Suite folder. Extract the downloaded ZIP first (right-click ▸ **Extract All...**): run from inside the ZIP, it stops and says so.
 2. It asks **Complete install? [y/N]**:
    - **Enter (Standard):** the app with everything it needs to run. About 10 GB free space is plenty.
    - **y (Complete):** also the local AI music engine and its models, the lyrics writer (Ollama), AI stem separation with all models, and the Surge XT synth. About 30 GB of downloads; have 45 GB free.
-3. It works through five steps: tools (Python, FFmpeg, Node.js, Git), the Python environment, the web app (the slowest step), optional parts, and a final check. Each tool comes from its official source and is checked before it is used.
+3. It works through five steps: tools (Python, FFmpeg, Node.js, Git), the Python environment, the web app (the slowest step), optional parts, and a final check. Each tool comes from its official source and is checked before it is used. You do not need Python on the computer: like ComfyUI's portable build, Music Suite keeps its own Python inside its folder, so nothing is installed on Windows and no administrator password is asked.
 4. When it says **Music Suite is installed!**, double-click **start.bat**.
 
 Anything left out can be added later from [Models and engines](#models-and-engines) and the AI Song Studio's Settings. See `docs/WINDOWS_INSTALL_GUIDE.md` for installer options.
