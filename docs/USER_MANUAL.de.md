@@ -116,11 +116,12 @@ Updates in der App setzen voraus, dass Music Suite mit Git (als Klon) installier
 | Logs (wenn etwas schiefgeht) | `logs\` (`api.log`, `web.log`, `install.log`) und `data\generation\engine.log` |
 | Schlüssel für Online-Dienste | Windows-Anmeldeinformationsverwaltung ("Music Suite") |
 | Surge XT | `data\plugins\VST3\` (Windows) oder dein eigener VST3-Ordner, wenn du es mit anderen Musikprogrammen teilen wolltest |
-| Eigenes Python, FFmpeg, Node.js und Git von Music Suite | `.tools\` |
+| Eigenes Python, FFmpeg, Node.js, Git und Ollama von Music Suite | `.tools\` |
+| Modelle des Songtext-Schreibers (Ollama) | `data\ollama\models\` oder dort, wo ein schon vorhandenes Ollama sie ablegt |
 | Download-Caches (Bibliotheken, Modelle) | `.cache\` und `data\cache\` |
 | Deine Synth-Sounds, Plugin-Favoriten, MIDI-Einstellungen, Mapper-Presets | Der Speicher deines Browsers: nicht im Music-Suite-Ordner und nicht in Projektdateien enthalten |
 
-**Alles bleibt in diesem Ordner.** Wie ComfyUI Portable installiert Music Suite nichts in Windows: Python, Werkzeuge, Downloads und Caches liegen in seinem Ordner, und wer den Ordner löscht, entfernt es vollständig. Außerhalb liegen nur die Schlüssel für Online-Dienste (Windows-Anmeldeinformationsverwaltung), was dein Browser speichert (siehe oben), Surge XT, wenn du es mit anderen Musikprogrammen teilen wolltest, und – nur bei der vollständigen Installation – Ollama und die Build-Werkzeuge für die KI-Musik-Engine.
+**Alles bleibt in diesem Ordner.** Wie ComfyUI Portable installiert Music Suite nichts in Windows: Python, Werkzeuge, Downloads und Caches liegen in seinem Ordner, und wer den Ordner löscht, entfernt es vollständig. Außerhalb liegen nur die Schlüssel für Online-Dienste (Windows-Anmeldeinformationsverwaltung), was dein Browser speichert (siehe oben), Surge XT, wenn du es mit anderen Musikprogrammen teilen wolltest, und – nur bei der vollständigen Installation – die Build-Werkzeuge für die KI-Musik-Engine.
 
 Um eine Session zu sichern oder umzuziehen, nutze im Editor **Exportieren → Ganzes Projekt** (siehe [Speichern, Projektdateien und Rückgängig](#saving-project-files-and-undo)).
 
@@ -1223,7 +1224,7 @@ Jeder Song, den du erstellt hast, mit den Einstellungen, die ihn erzeugt haben. 
 | Karte | Einstellungen |
 |---|---|
 | Lokale Musik-Engine | **Lokale Engine installieren**, **Hochwertiges Modell laden (4,9 GB)** (bessere Songs, etwa 25 % langsamer), **Bearbeitungsmodell laden (2,4 GB)** (nötig für Extrahieren, Stimme hinzufügen und Aufbauen), **Jetzt entladen** und **Hochwertiges Modell (XL) für neue Songs nutzen** (an). |
-| Text- und Stil-Autor | Verwendet Ollama (von ollama.com) mit dem Modell deiner Wahl; **Herunterladen** holt es (gemma4:12b, etwa 8 GB). Ohne Ollama schreibt der eigene Planer der Musik-Engine einen einfacheren Entwurf. |
+| Text- und Stil-Autor | Verwendet Ollama mit dem Modell deiner Wahl (standardmäßig gemma4:12b, etwa 8 GB). Hat der Rechner kein Ollama, legt **Ollama und gemma4:12b hinzufügen** eine eigene Kopie in den Music-Suite-Ordner (1,6 GB; in Windows wird nichts installiert) und lädt dann das Modell. Music Suite startet es bei Bedarf und beendet es mit sich; ein schon vorhandenes Ollama wird so verwendet, wie es ist, mit seinen Modellen. Auf dem Mac hol dir Ollama von ollama.com. Ohne Ollama schreibt der eigene Planer der Musik-Engine einen einfacheren Entwurf. |
 | Damit dein Rechner reaktionsschnell bleibt | **Nicht starten unter** 5–80 % freiem Speicher (Standard 25 %). **Engine entladen nach** 1–240 Minuten Leerlauf (Standard 10). |
 | Lautheit neuer Songs | **Jeden neuen Song beim Import angleichen** (an), auf eine **Ziel-Lautheit** von −30 bis −6 LUFS (Standard −14), mit Spitzen nie über −1 dBTP. Gilt nicht für KI-Bearbeitungen oder MusicGen. |
 | Online-Dienste | Füge deinen API-Schlüssel ein und drücke **Schlüssel speichern**, um einen Dienst einzuschalten; **Schlüssel entfernen** schaltet ihn aus. Schlüssel werden in der Windows-Anmeldeinformationsverwaltung gespeichert. Jeder hat einen Link **Bedingungen und Preise**. |
@@ -1308,7 +1309,7 @@ Optionale Engines und KI-Modelle. Alles hier läuft auf diesem Computer, und ein
 | Musik-Engine (ACE-Step 1.5) | Komplette Songs mit Gesang, offline, im KI-Song-Studio. Braucht einen C++-Compiler und CMake, die der Installer holt. | Etwa 5,3 GB |
 | Bearbeitungsmodell | Ein Instrument extrahieren, eine Stimme hinzufügen, einen Song um eine Stimme herum bauen. | 2,4 GB |
 | Hochwertiges Modell (XL) | Bessere Songs, etwas langsamer. | 4,9 GB |
-| Texter | Songtexte und Stilbeschreibungen mit Ollama. Braucht laufendes Ollama. | Etwa 8 GB |
+| Texter | Songtexte und Stilbeschreibungen mit Ollama. Hat der Rechner kein Ollama, legt Music Suite zuerst eine eigene Kopie in seinen Ordner (Windows); ein schon installiertes Ollama wird so verwendet, wie es ist. | Etwa 8 GB, dazu 1,6 GB für Ollama |
 | Surge XT | Ein kostenloser Hybrid-Synthesizer mit Tausenden Werks-Sounds, für Instrumentenspuren und das Synth-Studio. Unter Windows bleibt es im Music-Suite-Ordner, wo deine anderen Musikprogramme es nicht sehen, außer du setzt den Haken bei **Auch in meinen anderen Musikprogrammen (DAW) verfügbar machen**. | Etwa 300 MB Download |
 
 Wenn ein Paket fertig ist, lade offene Editor-Seiten neu, um es zu nutzen. **Installationsprotokoll** zeigt, was der Installer getan hat, falls etwas fehlschlägt.

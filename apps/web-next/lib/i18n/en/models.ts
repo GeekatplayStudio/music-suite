@@ -61,7 +61,10 @@ export const models = {
     xlNote: "Better songs, a little slower. {gb} GB.",
     writer: "Lyrics writer ({model})",
     writerReady: "Writes lyrics and style descriptions with Ollama.",
-    writerMissing: "Needs Ollama (ollama.com) running on this computer.",
+    writerMissing: "Needs Ollama from ollama.com on this computer.",
+    writerInstall: "Adds Ollama ({gb} GB) inside Music Suite's folder, then the model (about 8 GB). Nothing is installed on Windows.",
+    writerStopped: "Ollama is installed but did not start. See logs/ollama.log in the Music Suite folder.",
+    writerOwn: "Music Suite's own Ollama {version}, inside its folder.",
     settingsBefore: "Memory limits, loudness and online services are in",
     settingsLink: "AI Song Studio ▸ Settings"
   },

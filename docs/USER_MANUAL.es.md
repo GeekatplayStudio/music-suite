@@ -116,11 +116,12 @@ Las actualizaciones desde la aplicación requieren que Music Suite se haya insta
 | Registros (cuando algo va mal) | `logs\` (`api.log`, `web.log`, `install.log`) y `data\generation\engine.log` |
 | Claves de servicios en línea | Administrador de credenciales de Windows ("Music Suite") |
 | Surge XT | `data\plugins\VST3\` (Windows), o tu propia carpeta VST3 si elegiste compartirlo con otros programas de música |
-| Python, FFmpeg, Node.js y Git propios de Music Suite | `.tools\` |
+| Python, FFmpeg, Node.js, Git y Ollama propios de Music Suite | `.tools\` |
+| Modelos del letrista (Ollama) | `data\ollama\models\`, o donde los guarde un Ollama que ya esté en el equipo |
 | Cachés de descargas (bibliotecas, modelos) | `.cache\` y `data\cache\` |
 | Tus sonidos de sintetizador, plug-ins favoritos, opciones MIDI y presets del mapeador | El almacenamiento de tu navegador: no está en la carpeta de Music Suite y no se incluye en los archivos de proyecto |
 
-**Todo se queda en esta carpeta.** Como ComfyUI Portable, Music Suite no instala nada en Windows: su Python, sus herramientas, descargas y cachés viven en su carpeta, así que borrar la carpeta lo elimina por completo. Lo único que se guarda fuera son las claves de los servicios en línea (Administrador de credenciales de Windows), lo que guarda tu navegador (arriba), Surge XT si elegiste compartirlo con otros programas de música y, solo con la instalación completa, Ollama y las herramientas de compilación del motor de música con IA.
+**Todo se queda en esta carpeta.** Como ComfyUI Portable, Music Suite no instala nada en Windows: su Python, sus herramientas, descargas y cachés viven en su carpeta, así que borrar la carpeta lo elimina por completo. Lo único que se guarda fuera son las claves de los servicios en línea (Administrador de credenciales de Windows), lo que guarda tu navegador (arriba), Surge XT si elegiste compartirlo con otros programas de música y, solo con la instalación completa, las herramientas de compilación del motor de música con IA.
 
 Para hacer una copia de seguridad de una sesión o moverla, usa en el editor **Exportar → Proyecto completo** (consulta [Guardado, archivos de proyecto y deshacer](#saving-project-files-and-undo)).
 
@@ -1223,7 +1224,7 @@ Todas las canciones que has creado, con los ajustes que las crearon. **Usar esto
 | Tarjeta | Ajustes |
 |---|---|
 | Motor de música local | **Instalar motor local**, **Descargar modelo de alta calidad (4.9 GB)** (mejores canciones, alrededor de un 25% más lento), **Descargar modelo de edición (2.4 GB)** (necesario para Extraer, Añadir una parte y Construir), **Descargar de memoria ahora** y **Usar el modelo de alta calidad (XL) para canciones nuevas** (activado). |
-| Escritor de letras y estilo | Usa Ollama (de ollama.com) con el modelo que elijas; **Descargar** lo obtiene (gemma4:12b, unos 8 GB). Sin Ollama, el propio planificador del motor de música escribe un borrador más sencillo. |
+| Escritor de letras y estilo | Usa Ollama con el modelo que elijas (gemma4:12b por defecto, unos 8 GB). Si el equipo no tiene Ollama, **Añadir Ollama y gemma4:12b** pone una copia propia de Music Suite en su carpeta (1,6 GB; no se instala nada en Windows) y después descarga el modelo. Music Suite lo inicia cuando hace falta y lo detiene al cerrarse; un Ollama que ya esté en el equipo se usa tal cual, con sus modelos. En un Mac, descarga Ollama de ollama.com. Sin Ollama, el propio planificador del motor de música escribe un borrador más sencillo. |
 | Mantener tu equipo ágil | **No empezar por debajo de** 5–80% de memoria libre (25% por defecto). **Descargar el motor de memoria tras** 1–240 minutos de inactividad (10 por defecto). |
 | Sonoridad de las canciones nuevas | **Nivelar cada canción nueva al importarla** (activado), a una **Sonoridad objetivo** de −30 a −6 LUFS (−14 por defecto), con picos nunca por encima de −1 dBTP. No se aplica a las ediciones con IA ni a MusicGen. |
 | Servicios en línea | Pega tu clave de API y pulsa **Guardar clave** para activar un servicio; **Quitar clave** lo desactiva. Las claves se guardan en el Administrador de credenciales de Windows. Cada uno tiene un enlace **Condiciones y precios**. |
@@ -1308,7 +1309,7 @@ Motores y modelos de IA opcionales. Todo lo de aquí funciona en este equipo, e 
 | Motor de música (ACE-Step 1.5) | Canciones completas con voz, sin conexión, en el Estudio de canciones IA. Necesita un compilador de C++ y CMake, que el instalador descarga. | Unos 5.3 GB |
 | Modelo de edición | Extraer un instrumento, añadir una parte, construir una canción alrededor de una parte. | 2.4 GB |
 | Modelo de alta calidad (XL) | Mejores canciones, algo más lento. | 4.9 GB |
-| Letrista | Letras y descripciones de estilo con Ollama. Necesita Ollama en marcha. | Unos 8 GB |
+| Letrista | Letras y descripciones de estilo con Ollama. Si el equipo no tiene Ollama, Music Suite añade primero su propia copia a su carpeta (Windows); un Ollama ya instalado se usa tal cual. | Unos 8 GB, más 1,6 GB de Ollama |
 | Surge XT | Un sintetizador híbrido gratuito con miles de sonidos de fábrica, para las pistas de instrumento y el Estudio de síntesis. En Windows se queda dentro de la carpeta de Music Suite, donde tus otros programas de música no lo ven, salvo que marques **Hacerlo disponible también en mis otros programas de música (DAW)**. | Unos 300 MB de descarga |
 
 Cuando termine un paquete, recarga las páginas del editor que tengas abiertas para usarlo. **Registro de instalación** muestra lo que hizo el instalador si algo falla.

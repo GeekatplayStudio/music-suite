@@ -360,7 +360,7 @@ Open **AI Song Studio** from the workspace. It has three tabs.
 **Settings**
 
 - *Local music engine*: install it, see whether it is loaded, or **Unload now** to free its memory.
-- *Lyrics and style writer*: which Ollama model writes lyrics, and a button to download it.
+- *Lyrics and style writer*: which Ollama model writes lyrics, and a button to download it. On Windows without Ollama, the button first adds Music Suite's own copy to its folder (1.6 GB); Music Suite starts and stops it itself.
 - *Keeping your computer responsive*: generation will not start when free memory is below the limit you set, and the engine unloads after the idle time you set.
 - *Loudness of new songs*: each new song is levelled towards −14 LUFS, never above −1 dBTP. Change the target or switch it off.
 - *High-quality model*: **Download high-quality model** adds the larger XL music model (4.9 GB). With it installed, new songs use it unless you untick *Use the high-quality (XL) model*. It is a little slower and uses a little more memory; AI edits keep the standard model.
@@ -446,7 +446,7 @@ Open **Models & engines** from any workspace (or go to `/models`). It shows this
 - **"The local AI music engine is not installed yet"** — press **Install local engine**. It needs about 6 GB of free disk and an internet connection, once.
 - **The install stops with a message about CMake or command line tools** — on macOS run `xcode-select --install`, then press the button again. The message names anything else that is missing.
 - **"Only N% of memory is free"** — close some apps or browser tabs and press Generate again, or lower the limit in Settings.
-- **Lyrics come out short or ignore the idea** — Ollama is not running or its model is not downloaded, so the simpler built-in planner wrote them. Start Ollama and download the model from Settings.
+- **Lyrics come out short or ignore the idea** — Ollama is not running or its model is not downloaded, so the simpler built-in planner wrote them. Download the model (on Windows, together with Ollama itself) from Settings or *Models & engines*; Music Suite starts an installed Ollama by itself.
 - **"rejected the API key" / "no credit left"** — the online service refused the request. Check the key and your balance on the provider's site; **Terms and pricing** in Settings links there.
 - **The song ignores some lyrics or sings them unclearly** — try another seed or a second version; shorter lines and clear section tags help.
 

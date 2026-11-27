@@ -607,7 +607,7 @@ def test_setup_route_rejects_unknown_fields(
     monkeypatch.setattr(
         setup,
         "start_background",
-        lambda writer=False, editing=False, quality=False: (
+        lambda writer=False, editing=False, quality=False, writer_only=False: (
             started.append((writer, editing)) or setup.state()
         ),
     )

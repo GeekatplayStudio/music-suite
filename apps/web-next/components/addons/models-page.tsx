@@ -8,7 +8,7 @@ import { addonsApi, formatBytes, type AddonsOverview } from "@/lib/addons/api";
 import { FloatButton, Floatable } from "@/components/detachable";
 import { editorApi } from "@/lib/editor/api";
 import type { InstrumentOffer } from "@/lib/editor/types";
-import { generationApi, type Overview } from "@/lib/generation/api";
+import { generationApi, type Overview, type WriterStatus } from "@/lib/generation/api";
 import { cn } from "@/lib/utils";
 import { LocalDownloads } from "@/components/generation/local-downloads";
 import { AppPrefs } from "@/components/app-prefs";
@@ -71,6 +71,18 @@ function engineHardware(engine: { installed: boolean; backend?: string }, hasGpu
   if (engine.backend === "cuda") return t("models.hardware.cuda");
   if (engine.backend === "metal") return t("models.hardware.metal");
   return hasGpu ? t("models.hardware.cpuWithGpu") : t("models.hardware.cpu");
+}
+
+/** What the lyrics writer needs, or which Ollama it runs on. */
+function writerNote(writer: WriterStatus, t: I18n["t"]): string {
+  const ollama = writer.ollama;
+  if (writer.available) {
+    const own = ollama?.own ? ` ${t("models.music.writerOwn", { version: ollama.version ?? "" })}` : "";
+    return `${t("models.music.writerReady")}${own}`;
+  }
+  if (ollama?.can_install) return t("models.music.writerInstall", { gb: ollama.download_gb ?? 1.6 });
+  if (ollama?.installed) return t("models.music.writerStopped");
+  return t("models.music.writerMissing");
 }
 
 /** One place to see and install every optional engine and model, all running on this computer. */
@@ -464,10 +476,10 @@ export function ModelsPage() {
               },
               {
                 label: t("models.music.writer", { model: music.writer.model }),
-                note: music.writer.available ? t("models.music.writerReady") : t("models.music.writerMissing"),
+                note: writerNote(music.writer, t),
                 ok: music.writer.model_installed,
-                action: () => generationApi.startSetup(true),
-                disabled: !music.writer.available
+                action: () => generationApi.setupWriter(),
+                disabled: !music.writer.available && !music.writer.ollama?.can_install
               }
             ].map((row) => (
               <div key={row.label} className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-900/70 px-3 py-2">

@@ -23,6 +23,7 @@ from typing import Any
 
 import requests
 
+from audioqi.core import ollama_runtime
 from audioqi.generation import engine, settings
 
 ENGINE_REPO = "https://github.com/ServeurpersoCom/acestep.cpp.git"
@@ -402,18 +403,48 @@ def _download_models(
         done += size
 
 
-def pull_writer_model(report: Report) -> bool:
-    """Fetch the lyrics model if Ollama is installed. Returns False when Ollama is absent."""
-    ollama = shutil.which("ollama")
-    if ollama is None:
-        return False
-    model = str(settings.load()["writer_model"])
-    listed = subprocess.run([ollama, "list"], capture_output=True, text=True, check=False).stdout
-    if any(line.split()[:1] == [model] for line in listed.splitlines()):
-        return True
-    report("writer", 96, f"Downloading the lyrics model ({model}).")
-    _run([ollama, "pull", model], None)
+def pull_writer_model(report: Report, span: tuple[float, float] = (96.0, 99.0)) -> bool:
+    """Make the lyrics writer ready: Ollama, running, with the lyrics model downloaded.
+
+    On Windows a missing Ollama is added as Music Suite's own copy in .tools/ollama (see
+    audioqi/core/ollama_runtime.py), never as a Windows install. Returns False when there is
+    no Ollama and none can be added here (macOS and Linux: ollama.com).
+    """
+    low, high = span
+
+    def part(start: float, end: float) -> ollama_runtime.Progress:
+        def show(share: float, text: str) -> None:
+            report("models", low + (high - low) * (start + (end - start) * share), text)
+
+        return show
+
+    try:
+        if ollama_runtime.executable() is None:
+            if not ollama_runtime.can_install():
+                return False
+            version = ollama_runtime.VERSION
+            report("writer", low, f"Adding Ollama {version} to Music Suite's folder.")
+            ollama_runtime.install(part(0.0, 0.2))
+        if not ollama_runtime.ensure_running():
+            raise SetupError(
+                "Ollama did not start. Another program may be using its port (11434); "
+                "see logs/ollama.log in the Music Suite folder."
+            )
+        model = str(settings.load()["writer_model"])
+        if ollama_runtime.has_model(model):
+            return True
+        report("writer", low + (high - low) * 0.2, f"Downloading the lyrics model ({model}).")
+        ollama_runtime.pull(model, part(0.2, 1.0))
+    except ollama_runtime.OllamaError as exc:
+        raise SetupError(str(exc)) from exc
     return True
+
+
+def install_writer(report: Report) -> None:
+    """Only the lyrics writer: Ollama and its model, without the music engine."""
+    if not pull_writer_model(report, (1.0, 99.0)):
+        raise SetupError("Install Ollama from ollama.com, then come back here.")
+    report("done", 100, "The lyrics writer is ready.")
 
 
 def _present(models: dict[str, tuple[int, str]]) -> bool:
@@ -466,7 +497,7 @@ def install(report: Report, *, writer: bool = False) -> None:
 
 
 def start_background(
-    *, writer: bool = False, editing: bool = False, quality: bool = False
+    *, writer: bool = False, editing: bool = False, quality: bool = False, writer_only: bool = False
 ) -> dict[str, Any]:
     with _LOCK:
         if _STATE["running"]:
@@ -478,7 +509,9 @@ def start_background(
             _set(step=step, percent=round(percent, 1), detail=detail)
 
         try:
-            if quality:
+            if writer_only:
+                install_writer(report)
+            elif quality:
                 install_quality(report)
             elif editing:
                 install_editing(report)
@@ -504,6 +537,14 @@ def start_background(
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    finally:
+        # An Ollama started here for a download is not left running after the installer.
+        ollama_runtime.stop_started()
+
+
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Install the local AI music engine for Music Suite."
     )
@@ -537,7 +578,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             if not pull_writer_model(_console_report()):
                 print(
-                    "Ollama is not installed; the lyrics model was not downloaded.",
+                    "Ollama is not installed (get it from ollama.com); "
+                    "the lyrics model was not downloaded.",
                     file=sys.stderr,
                 )
                 return 1
@@ -591,16 +633,14 @@ def main(argv: list[str] | None = None) -> int:
             settings.update({"setup_declined": True})
             print("Skipped. You can install it any time from AI Song Studio > Settings in the app.")
             return 0
-        ollama = shutil.which("ollama")
-        if ollama and not args.writer:
+        if not args.writer and (ollama_runtime.executable() or ollama_runtime.can_install()):
             model = str(settings.load()["writer_model"])
-            listed = subprocess.run(
-                [ollama, "list"], capture_output=True, text=True, check=False
-            ).stdout
-            if not any(line.split()[:1] == [model] for line in listed.splitlines()):
-                reply = input(
-                    f"Also download the lyrics model {model} with Ollama (about 8 GB)? [Y/n] "
-                )
+            ollama_runtime.ensure_running()
+            if not ollama_runtime.has_model(model):
+                extra = ""
+                if not ollama_runtime.executable():
+                    extra = " and Ollama itself (1.6 GB, into this folder)"
+                reply = input(f"Also download the lyrics model {model} (about 8 GB){extra}? [Y/n] ")
                 args.writer = reply.strip().lower() in ("", "y", "yes")
         want_editing = _ask_editing()
 

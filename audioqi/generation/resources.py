@@ -18,10 +18,11 @@ from pathlib import Path
 
 import requests
 
+from audioqi.core import ollama_runtime
 from audioqi.editor.projects import EditorError
 from audioqi.generation import settings
 
-OLLAMA = "http://127.0.0.1:11434"
+OLLAMA = ollama_runtime.base_url()  # Loopback only; see GUARDRAILS.md.
 GENERATION_LOCK = threading.Lock()
 
 

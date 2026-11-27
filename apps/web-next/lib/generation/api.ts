@@ -155,6 +155,8 @@ export interface WriterStatus {
   model: string;
   model_installed: boolean;
   models: string[];
+  /** The Ollama that runs the model: found on this computer, Music Suite's own copy, or addable. */
+  ollama?: { installed: boolean; own: boolean; version: string | null; can_install: boolean; download_gb: number | null };
 }
 
 export interface Overview {
@@ -311,6 +313,8 @@ export const generationApi = {
     request<GenerationSettings>("/generation/settings", json(patch)),
   startSetup: (writer: boolean, editing = false, quality = false) =>
     request<SetupState>("/generation/setup", json({ writer, editing, quality })),
+  /** Only the lyrics writer: Ollama (Music Suite's own copy on Windows when there is none) and its model. */
+  setupWriter: () => request<SetupState>("/generation/setup", json({ writer_only: true })),
   setupState: () => request<SetupState>("/generation/setup"),
   /** Saves the key in this computer's keychain and switches the service on. The key is never sent back. */
   saveKey: (providerId: string, key: string) =>

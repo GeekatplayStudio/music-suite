@@ -300,9 +300,16 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
           <Status ok>{t("studioTabs.settings.writer.ready", { model: writer.model })}</Status>
         ) : writer.available ? (
           <Status ok={false}>{t("studioTabs.settings.writer.noModel", { model: writer.model })}</Status>
+        ) : writer.ollama?.can_install ? (
+          <Status ok={false}>{t("studioTabs.settings.writer.canInstall", { gb: writer.ollama.download_gb ?? 1.6 })}</Status>
+        ) : writer.ollama?.installed ? (
+          <Status ok={false}>{t("studioTabs.settings.writer.stopped")}</Status>
         ) : (
           <Status ok={false}>{t("studioTabs.settings.writer.noOllama")}</Status>
         )}
+        {writer.available && writer.ollama?.own ? (
+          <p className="text-xs text-slate-400">{t("studioTabs.settings.writer.own", { version: writer.ollama.version ?? "" })}</p>
+        ) : null}
         <div className="flex flex-wrap items-end gap-3">
           {writer.available && writer.models.length ? (
             <label className="space-y-1.5">
@@ -322,10 +329,15 @@ export function SettingsPanel({ overview, onChanged }: { overview: Overview; onC
               </select>
             </label>
           ) : null}
-          {writer.available && !writer.model_installed && !setup.running ? (
-            <button type="button" className={quiet} disabled={working} onClick={() => void run(() => generationApi.startSetup(true))}>
-              <Download className="h-4 w-4" aria-hidden /> {t("studioTabs.settings.writer.download", { model: writer.model })}
-            </button>
+          {(writer.available && !writer.model_installed) || (!writer.available && writer.ollama?.can_install) ? (
+            setup.running ? null : (
+              <button type="button" className={quiet} disabled={working} onClick={() => void run(() => generationApi.setupWriter())}>
+                <Download className="h-4 w-4" aria-hidden />{" "}
+                {writer.available
+                  ? t("studioTabs.settings.writer.download", { model: writer.model })
+                  : t("studioTabs.settings.writer.install", { model: writer.model })}
+              </button>
+            )
           ) : null}
         </div>
         <p className="text-xs text-slate-400">{t("studioTabs.settings.writer.sizeNote")}</p>

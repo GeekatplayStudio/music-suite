@@ -116,11 +116,12 @@ Les mises à jour depuis l'application nécessitent que Music Suite ait été in
 | Journaux (quand quelque chose ne va pas) | `logs\` (`api.log`, `web.log`, `install.log`) et `data\generation\engine.log` |
 | Clés des services en ligne | Gestionnaire d'identification Windows (« Music Suite ») |
 | Surge XT | `data\plugins\VST3\` (Windows), ou votre propre dossier VST3 si vous avez choisi de le partager avec d'autres logiciels de musique |
-| Python, FFmpeg, Node.js et Git propres à Music Suite | `.tools\` |
+| Python, FFmpeg, Node.js, Git et Ollama propres à Music Suite | `.tools\` |
+| Modèles de l'auteur de paroles (Ollama) | `data\ollama\models\`, ou là où un Ollama déjà présent les range |
 | Caches de téléchargement (bibliothèques, modèles) | `.cache\` et `data\cache\` |
 | Vos sons de synthé, plugins favoris, choix MIDI, presets du mapper | Le stockage de votre navigateur : pas dans le dossier de Music Suite, et pas inclus dans les fichiers de projet |
 
-**Tout reste dans ce dossier.** Comme ComfyUI Portable, Music Suite n'installe rien dans Windows : son Python, ses outils, ses téléchargements et ses caches vivent dans son dossier, donc supprimer le dossier le retire entièrement. Seuls sont gardés ailleurs les clés des services en ligne (Gestionnaire d'identification Windows), ce que stocke votre navigateur (ci-dessus), Surge XT si vous avez choisi de le partager avec d'autres logiciels de musique et, uniquement avec l'installation complète, Ollama et les outils de compilation du moteur musical IA.
+**Tout reste dans ce dossier.** Comme ComfyUI Portable, Music Suite n'installe rien dans Windows : son Python, ses outils, ses téléchargements et ses caches vivent dans son dossier, donc supprimer le dossier le retire entièrement. Seuls sont gardés ailleurs les clés des services en ligne (Gestionnaire d'identification Windows), ce que stocke votre navigateur (ci-dessus), Surge XT si vous avez choisi de le partager avec d'autres logiciels de musique et, uniquement avec l'installation complète, les outils de compilation du moteur musical IA.
 
 Pour sauvegarder ou déplacer une session, utilisez **Exporter → Projet entier** dans l'éditeur (voir [Enregistrement, fichiers de projet et annulation](#saving-project-files-and-undo)).
 
@@ -1223,7 +1224,7 @@ Chaque morceau que vous avez créé, avec les réglages qui l'ont produit. **Uti
 | Carte | Réglages |
 |---|---|
 | Moteur musical local | **Installer le moteur local**, **Télécharger le modèle haute qualité (4,9 Go)** (de meilleurs morceaux, environ 25 % plus lent), **Télécharger le modèle d'édition (2,4 Go)** (nécessaire pour Extraire, Ajouter une partie et Construire), **Décharger maintenant**, et **Utiliser le modèle haute qualité (XL) pour les nouveaux morceaux** (activé). |
-| Auteur de paroles et de style | Utilise Ollama (de ollama.com) avec le modèle de votre choix ; **Télécharger** le récupère (gemma4:12b, environ 8 Go). Sans Ollama, le planificateur propre au moteur musical écrit un brouillon plus simple. |
+| Auteur de paroles et de style | Utilise Ollama avec le modèle de votre choix (gemma4:12b par défaut, environ 8 Go). Si l'ordinateur n'a pas Ollama, **Ajouter Ollama et gemma4:12b** place une copie propre à Music Suite dans son dossier (1,6 Go ; rien n'est installé dans Windows), puis télécharge le modèle. Music Suite le démarre au besoin et l'arrête en même temps que lui ; un Ollama déjà présent est utilisé tel quel, avec ses modèles. Sur Mac, téléchargez Ollama sur ollama.com. Sans Ollama, le planificateur propre au moteur musical écrit un brouillon plus simple. |
 | Garder votre ordinateur réactif | **Ne pas démarrer en dessous de** 5–80 % de mémoire libre (25 % par défaut). **Décharger le moteur après** 1–240 minutes d'inactivité (10 par défaut). |
 | Volume des nouveaux morceaux | **Ajuster le niveau de chaque nouveau morceau à l'import** (activé), à un **Volume sonore cible** de −30 à −6 LUFS (−14 par défaut), avec des crêtes jamais au-dessus de −1 dBTP. Non appliqué aux modifications IA ni à MusicGen. |
 | Services en ligne | Collez votre clé d'API puis **Enregistrer la clé** pour activer un service ; **Supprimer la clé** le désactive. Les clés sont conservées dans le Gestionnaire d'identification Windows. Chacun a un lien **Conditions et tarifs**. |
@@ -1308,7 +1309,7 @@ Des moteurs et modèles d'IA facultatifs. Tout ici tourne sur cet ordinateur, et
 | Moteur musical (ACE-Step 1.5) | Des morceaux complets avec voix, hors ligne, dans le Studio de chansons IA. Nécessite un compilateur C++ et CMake, que l'installeur récupère. | Environ 5,3 Go |
 | Modèle d'édition | Extraire un instrument, ajouter une partie, construire un morceau autour d'une partie. | 2,4 Go |
 | Modèle haute qualité (XL) | De meilleurs morceaux, un peu plus lent. | 4,9 Go |
-| Auteur de paroles | Paroles et descriptions de style avec Ollama. Nécessite qu'Ollama tourne. | Environ 8 Go |
+| Auteur de paroles | Paroles et descriptions de style avec Ollama. Si l'ordinateur n'a pas Ollama, Music Suite ajoute d'abord sa propre copie dans son dossier (Windows) ; un Ollama déjà installé est utilisé tel quel. | Environ 8 Go, plus 1,6 Go pour Ollama |
 | Surge XT | Un synthétiseur hybride gratuit avec des milliers de sons d'usine, pour les pistes d'instrument et le Studio de synthèse. Sous Windows, il reste dans le dossier de Music Suite, où vos autres logiciels de musique ne le voient pas, sauf si vous cochez **Le rendre aussi disponible dans mes autres logiciels de musique (DAW)**. | Environ 300 Mo à télécharger |
 
 Quand un pack est terminé, rechargez les pages de l'éditeur ouvertes pour l'utiliser. **Journal d'installation** montre ce que l'installeur a fait si quelque chose échoue.

@@ -136,8 +136,12 @@ def setup_state() -> dict[str, Any]:
 
 @router.post("/setup")
 def start_setup(payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
-    """Build the local engine and fetch its models in the background."""
-    keys = ("writer", "editing", "quality")
+    """Build the local engine and fetch its models in the background.
+
+    ``writer_only`` sets up just the lyrics writer: Ollama (Music Suite's own copy on Windows,
+    when there is none) and its model.
+    """
+    keys = ("writer", "editing", "quality", "writer_only")
     if set(payload) - set(keys) or any(not isinstance(payload.get(k, False), bool) for k in keys):
         raise HTTPException(status_code=422, detail="Unknown field(s) in the setup request.")
     return setup.start_background(**{k: bool(payload.get(k, False)) for k in keys})

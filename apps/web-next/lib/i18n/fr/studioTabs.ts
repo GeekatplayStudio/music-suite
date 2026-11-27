@@ -57,7 +57,13 @@ export const studioTabs: Dictionary["studioTabs"] = {
       ready: "Prêt, avec {model}.",
       noModel: "Ollama tourne, mais le modèle « {model} » n'est pas encore téléchargé (environ 8 Go).",
       noOllama:
-        "Ollama ne tourne pas. Sans lui, le planificateur du moteur musical écrit une ébauche plus simple. Téléchargez Ollama sur ollama.com, lancez-le, puis revenez ici.",
+        "Ollama n'est pas installé. Sans lui, le planificateur du moteur musical écrit une ébauche plus simple. Téléchargez Ollama sur ollama.com, puis revenez ici.",
+      canInstall:
+        "Ollama n'est pas encore installé. Music Suite peut ajouter sa propre copie ({gb} Go) dans son dossier, sans rien installer dans Windows, puis le modèle (environ 8 Go). En attendant, le planificateur du moteur musical écrit une ébauche plus simple.",
+      stopped:
+        "Ollama est installé mais n'a pas démarré. Un autre programme utilise peut-être son port (11434) ; voir logs/ollama.log dans le dossier de Music Suite.",
+      own: "Ollama {version} propre à Music Suite, rangé dans son dossier. Il ne tourne que pendant que Music Suite tourne.",
+      install: "Ajouter Ollama et {model}",
       model: "Modèle",
       notDownloaded: "{model} (non téléchargé)",
       download: "Télécharger {model}",

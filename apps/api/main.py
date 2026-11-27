@@ -154,12 +154,16 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     from audioqi.generation import albums, live
 
     albums.resume_on_startup()  # Albums cut off by a shutdown carry on.
+    from audioqi.core import ollama_runtime
+
+    ollama_runtime.start_in_background()  # The lyrics writer, if it is installed.
     yield
     albums.stop()
     live.shutdown()
     from audioqi.generation.engine import SUPERVISOR
 
     SUPERVISOR.stop()  # Never leave the AI engine running after the API has gone.
+    ollama_runtime.stop_started()  # Nor an Ollama the API started (one already running stays).
 
 
 app = FastAPI(title="Music Suite API", version="1.0.0", lifespan=lifespan)

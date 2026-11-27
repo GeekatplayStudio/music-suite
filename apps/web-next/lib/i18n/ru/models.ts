@@ -62,7 +62,10 @@ export const models: Dictionary["models"] = {
     xlNote: "Песни лучше, работает чуть медленнее. {gb} ГБ.",
     writer: "Автор текстов ({model})",
     writerReady: "Пишет тексты и описания стиля с помощью Ollama.",
-    writerMissing: "Нужна запущенная на этом компьютере Ollama (ollama.com).",
+    writerMissing: "Нужна Ollama с ollama.com на этом компьютере.",
+    writerInstall: "Добавит Ollama ({gb} ГБ) в папку Music Suite, затем модель (около 8 ГБ). В Windows ничего не устанавливается.",
+    writerStopped: "Ollama установлена, но не запустилась. Смотрите logs/ollama.log в папке Music Suite.",
+    writerOwn: "Собственная Ollama {version} в папке Music Suite.",
     settingsBefore: "Ограничения памяти, громкость и онлайн-сервисы находятся в разделе",
     settingsLink: "Студия ИИ-песен ▸ Настройки"
   },

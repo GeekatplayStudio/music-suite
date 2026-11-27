@@ -184,20 +184,6 @@ function Assert-FileSha256([string]$Path, [string]$Expected, [string]$FriendlyNa
     }
 }
 
-function Try-InstallWithWinget([string]$Id, [string]$FriendlyName) {
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Host "Windows Package Manager is unavailable for $FriendlyName." -ForegroundColor Yellow
-        return $false
-    }
-    Write-Host "Installing $FriendlyName via winget..."
-    Invoke-Native { & winget install --id $Id -e --source winget --accept-package-agreements --accept-source-agreements | Out-Host }
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "winget could not install $FriendlyName (exit code $LASTEXITCODE)." -ForegroundColor Yellow
-        return $false
-    }
-    return $true
-}
-
 function Install-PortableFFmpeg {
     $downloadUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
     $checksumUrl = "$downloadUrl.sha256"
@@ -306,18 +292,6 @@ function Install-PortableGit {
 function Assert-LastExitCode([string]$Action) {
     if ($LASTEXITCODE -ne 0) {
         throw "$Action failed (exit code $LASTEXITCODE). Review the messages above and run install.bat again."
-    }
-}
-
-function Refresh-Path {
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
-    Add-BundledToolPaths
-}
-
-function Add-KnownOllamaPath {
-    $ollamaFolder = Join-Path $env:LOCALAPPDATA "Programs\Ollama"
-    if ((Test-Path -LiteralPath (Join-Path $ollamaFolder "ollama.exe")) -and $env:Path -notlike "*$ollamaFolder*") {
-        $env:Path = "$ollamaFolder;$env:Path"
     }
 }
 
@@ -492,8 +466,8 @@ try {
         Write-Host "This enables AI songs, AI editing, XL quality, lyrics, all stem models,"
         Write-Host "and Surge XT. Allow about 30 GB of downloads and at least 45 GB free."
         Write-Host "You can also add these later from Models & engines inside the app."
-        Write-Host "Everything stays inside this folder, except that the complete install adds"
-        Write-Host "Ollama (lyrics writer) and, for the AI music engine, CMake and C++ build tools to Windows."
+        Write-Host "Everything stays inside this folder (the lyrics writer, Ollama, too), except that the"
+        Write-Host "complete install adds CMake and C++ build tools to Windows for the AI music engine."
         Write-Host ""
         $completeInstall = Test-Yes (Read-Host "Complete install? [y/N]")
     }
@@ -527,26 +501,6 @@ try {
     if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { Install-PortableGit }
     # pnpm runs through "corepack pnpm" (Get-PnpmInvocation). "corepack enable" is not used:
     # it writes shortcuts into Node's own folder, which may be a system-wide Node.js.
-
-    if ($completeInstall) {
-        Add-KnownOllamaPath
-        if (-not (Get-Command ollama.exe -ErrorAction SilentlyContinue)) {
-            $null = Try-InstallWithWinget "Ollama.Ollama" "Ollama (local lyrics model runner)"
-            Refresh-Path
-            Add-KnownOllamaPath
-        }
-        if (-not (Get-Command ollama.exe -ErrorAction SilentlyContinue)) {
-            Write-Host "Ollama was installed but is not available in this window yet; the lyrics model can be downloaded later." -ForegroundColor Yellow
-            $completeFailures += "Ollama"
-        } else {
-            Invoke-Native { & ollama.exe list 2>$null | Out-Null }
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host "Starting Ollama for the lyrics-model download..."
-                Start-Process -FilePath (Get-Command ollama.exe).Source -ArgumentList "serve" -WindowStyle Hidden
-                Start-Sleep -Seconds 3
-            }
-        }
-    }
 
     Write-Host "System tools are ready." -ForegroundColor Green
 
@@ -657,7 +611,9 @@ try {
     }
 
     if ($completeInstall) {
-        Write-Host "Downloading the Ollama lyrics model (about 8 GB)..."
+        # Music Suite's own Ollama in .tools\ollama when the computer has none (never a Windows
+        # install), then the model; an Ollama already on the computer is used as it is.
+        Write-Host "Setting up the lyrics writer: Ollama (1.6 GB, into this folder) and its model (about 8 GB)..."
         Invoke-Native { & $venvPython -m audioqi.generation.setup --writer-only }
         if ($LASTEXITCODE -ne 0) {
             Write-Host "The lyrics model was not installed. Run install.bat again to retry." -ForegroundColor Yellow

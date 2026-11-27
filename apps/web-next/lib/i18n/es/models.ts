@@ -63,7 +63,10 @@ export const models: Dictionary["models"] = {
     xlNote: "Mejores canciones, un poco más lento. {gb} GB.",
     writer: "Letrista ({model})",
     writerReady: "Escribe letras y descripciones de estilo con Ollama.",
-    writerMissing: "Necesita Ollama (ollama.com) en ejecución en este equipo.",
+    writerMissing: "Necesita Ollama de ollama.com en este equipo.",
+    writerInstall: "Añade Ollama ({gb} GB) dentro de la carpeta de Music Suite y después el modelo (unos 8 GB). No se instala nada en Windows.",
+    writerStopped: "Ollama está instalado pero no se inició. Consulta logs/ollama.log en la carpeta de Music Suite.",
+    writerOwn: "Ollama {version} propio de Music Suite, dentro de su carpeta.",
     settingsBefore: "Los límites de memoria, la sonoridad y los servicios en línea están en",
     settingsLink: "Estudio de canciones IA ▸ Ajustes"
   },

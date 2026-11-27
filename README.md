@@ -344,7 +344,7 @@ Every engine control is available under *Advanced* (planner sampling, diffusion 
 
 **Online services (optional):** add your own ElevenLabs Music, fal.ai (MiniMax Music, Lyria) or Google Gemini (Lyria 3.5) key under *Settings ▸ Online services* to use them as generators. Only the style text, lyrics and settings are sent; a clip's audio is uploaded only when you tick *Allow uploading* to edit it with ElevenLabs. A cost estimate is shown before every online request. ElevenLabs songs can be planned section by section (*Song plan*, drafted for free), and in the Studio Editor any clip can have a section regenerated or be extended with ElevenLabs. Keys stay in your computer's keychain.
 
-Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (about 8 GB); without Ollama the music engine's own planner writes a simpler draft. Measured on an Apple M5 with 24 GB: the engine peaks at 2.3 GB of memory, or 4.5 GB with its planner. On Windows the engine builds with MinGW (for example WinLibs from winget) or Visual Studio; with MinGW it targets Windows 10 and links its runtime in, so it starts without the compiler on `PATH` (built and started on Windows 11; song quality there not yet compared). Linux builds are untested. Plan and benchmarks: [docs/GENERATION_ROADMAP.md](docs/GENERATION_ROADMAP.md).
+Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (about 8 GB). On Windows, when the computer has no Ollama, Music Suite adds its own copy to its folder (1.6 GB, from *Models & engines* or the complete install), starts it when needed and stops it with the app; an Ollama already installed is used as it is. Without Ollama the music engine's own planner writes a simpler draft. Measured on an Apple M5 with 24 GB: the engine peaks at 2.3 GB of memory, or 4.5 GB with its planner. On Windows the engine builds with MinGW (for example WinLibs from winget) or Visual Studio; with MinGW it targets Windows 10 and links its runtime in, so it starts without the compiler on `PATH` (built and started on Windows 11; song quality there not yet compared). Linux builds are untested. Plan and benchmarks: [docs/GENERATION_ROADMAP.md](docs/GENERATION_ROADMAP.md).
 
 ---
 
@@ -359,7 +359,7 @@ Lyrics are best with [Ollama](https://ollama.com) and the `gemma4:12b` model (ab
 - Optional: ComfyUI with a compatible Torch/CUDA environment (for music generation)
 - Optional: AI stem separation from *Models & engines* (about 3 GB with NVIDIA GPU support, plus 2.2 GB of models)
 - Optional: a graphics card. Not required: everything runs on the processor. An NVIDIA card (or Apple Silicon) makes AI generation and separation several times faster, and most of the extra local generators need NVIDIA
-- Optional, for AI Song Studio: about 6 GB of free disk, CMake and a C++ compiler (the installer adds CMake through Homebrew or winget), and Ollama for the best lyrics
+- Optional, for AI Song Studio: about 6 GB of free disk, CMake and a C++ compiler (the installer adds CMake through Homebrew or winget), and Ollama for the best lyrics (on Windows, a private copy in the Music Suite folder)
 
 ---
 
@@ -387,7 +387,7 @@ No programming experience is needed.
 
 <img src="docs/images/install-windows-choice.png" alt="Windows installer asking whether to perform a complete installation" width="900">
 
-The installer checks Python, FFmpeg, Node.js, Git, the Python libraries, and the web libraries. Missing tools are installed automatically. Python needs nothing on the computer: Music Suite downloads its own copy of python.org's official Python 3.12 into its folder (verified by checksum and the Python Software Foundation's signature; nothing is installed on Windows and no administrator is needed). FFmpeg, Node.js and Git work the same way: checksum-verified portable copies inside the folder, never a Windows install, and download caches stay in the folder too, so deleting it removes Music Suite completely. Only the optional complete installation adds programs to Windows (Ollama, CMake, and Microsoft C++ build tools), and it says so before you choose it. It is safe to run `install.bat` again: already-installed tools and models are detected and reused.
+The installer checks Python, FFmpeg, Node.js, Git, the Python libraries, and the web libraries. Missing tools are installed automatically. Python needs nothing on the computer: Music Suite downloads its own copy of python.org's official Python 3.12 into its folder (verified by checksum and the Python Software Foundation's signature; nothing is installed on Windows and no administrator is needed). FFmpeg, Node.js and Git work the same way: checksum-verified portable copies inside the folder, never a Windows install, and download caches stay in the folder too, so deleting it removes Music Suite completely. Only the optional complete installation adds programs to Windows (CMake and the Microsoft C++ build tools; Ollama stays in the folder too), and it says so before you choose it. It is safe to run `install.bat` again: already-installed tools and models are detected and reused.
 
 4. Wait for the green **Music Suite is installed!** message. If one optional model could not download, the message tells you where to retry it inside the app.
 5. Double-click **`start.bat`**. Your browser opens Music Suite. Keep its command window open while using the app.

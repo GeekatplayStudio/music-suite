@@ -275,8 +275,9 @@ def test_windows_core_install_never_installs_anything_on_windows() -> None:
     live in .cache, and nothing is installed system-wide (winget is only for optional AI tools
     of the complete install, which says so)."""
     windows = Path("install.ps1").read_text(encoding="utf-8")
-    for package in ("Gyan.FFmpeg", "OpenJS.NodeJS", "Git.Git", "Python.Python"):
+    for package in ("Gyan.FFmpeg", "OpenJS.NodeJS", "Git.Git", "Python.Python", "Ollama.Ollama"):
         assert package not in windows
+    assert "winget install" not in windows  # Only setup.py uses it, for CMake and build tools.
     assert "Install-PythonDirect" not in windows
     assert "corepack enable" not in windows.replace('"corepack enable" is not used', "")
     assert "complete install adds" in windows
@@ -289,3 +290,17 @@ def test_windows_core_install_never_installs_anything_on_windows() -> None:
     for script in ("install.ps1", "start.ps1"):
         assert "Set-MusicSuitePortableEnvironment -Root $root" in Path(script).read_text(encoding="utf-8")
     assert ".cache/" in Path(".gitignore").read_text(encoding="utf-8")
+
+
+def test_music_suites_own_ollama_is_stopped_with_it() -> None:
+    """The lyrics writer's Ollama lives in .tools/ollama and never outlives Music Suite; an
+    Ollama installed on the computer is never stopped."""
+    stop = Path("stop.ps1").read_text(encoding="utf-8")
+    assert r'Join-Path $root ".tools\ollama"' in stop
+    assert "$_.ExecutablePath.StartsWith($ownOllama" in stop
+    # Before the "nothing recorded" early return, so a leftover copy is stopped too.
+    assert stop.index("$ownOllama") < stop.index("No recorded Music Suite instance is running")
+    api = Path("apps/api/main.py").read_text(encoding="utf-8")
+    assert "ollama_runtime.start_in_background()" in api and "ollama_runtime.stop_started()" in api
+    windows = Path("install.ps1").read_text(encoding="utf-8")
+    assert "Setting up the lyrics writer" in windows

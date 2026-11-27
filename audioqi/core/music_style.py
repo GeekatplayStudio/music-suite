@@ -28,9 +28,11 @@ from urllib.parse import urlparse
 
 import requests
 
+from audioqi.core import ollama_runtime
+
 logger = logging.getLogger("audioqi.music_style")
 
-DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
+DEFAULT_OLLAMA_URL = ollama_runtime.base_url()
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 
 # Models we would rather use, best first. Anything vision- or embedding-only is

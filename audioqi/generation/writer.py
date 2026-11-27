@@ -1,7 +1,8 @@
 """Writes a song brief (style, lyrics, tempo, key) with a local language model.
 
-Ollama on loopback is used when it is running; otherwise the music engine's own
-planner drafts a simpler brief. The result always goes through ``_clean`` so the
+Ollama on loopback is used when it is running (Music Suite starts it when it is installed, see
+``audioqi/core/ollama_runtime.py``); otherwise the music engine's own planner drafts a simpler
+brief. The result always goes through ``_clean`` so the
 caller only ever sees well-formed, bounded fields.
 """
 
@@ -13,6 +14,7 @@ from typing import Any
 
 import requests
 
+from audioqi.core import ollama_runtime
 from audioqi.editor.projects import EditorError, ParamError
 from audioqi.generation import lyrics_tools, resources, settings
 from audioqi.generation.providers.acestep import KEYS, LANGUAGES, AceStepProvider
@@ -93,10 +95,18 @@ def status() -> dict[str, Any]:
         "model_installed": False,
         "models": [],
     }
+    result["ollama"] = ollama_runtime.info()
     try:
         tags = requests.get(f"{OLLAMA}/api/tags", timeout=2.0).json().get("models", [])
     except (requests.RequestException, ValueError):
-        return result
+        # Installed but not running: Music Suite starts it (its own copy, or the one on the
+        # computer) instead of asking the user to.
+        if not result["ollama"]["installed"] or not ollama_runtime.ensure_running():
+            return result
+        try:
+            tags = requests.get(f"{OLLAMA}/api/tags", timeout=2.0).json().get("models", [])
+        except (requests.RequestException, ValueError):
+            return result
     names = sorted(
         str(item.get("name")) for item in tags if isinstance(item, dict) and item.get("name")
     )

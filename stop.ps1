@@ -19,6 +19,18 @@ function Get-ListenerProcessId([int]$Port) {
     return $null
 }
 
+# Music Suite's own Ollama (the lyrics writer) runs from .tools\ollama: anything running from
+# there belongs to this Music Suite, even when the API that started it was closed some other
+# way. An Ollama installed on the computer is never touched.
+$ownOllama = (Join-Path $root ".tools\ollama") + "\"
+$ollamaIds = @(Get-CimInstance Win32_Process -Filter "Name = 'ollama.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($ownOllama, [StringComparison]::OrdinalIgnoreCase) } |
+    ForEach-Object { [int]$_.ProcessId })
+foreach ($ollamaId in $ollamaIds) { Stop-Process -Id $ollamaId -Force -ErrorAction SilentlyContinue }
+if ($ollamaIds.Count -gt 0) {
+    Write-Host "Stopped Music Suite's own Ollama (process IDs: $($ollamaIds -join ', '))." -ForegroundColor Green
+}
+
 if (-not (Test-Path -LiteralPath $processFile)) {
     Write-Host "No recorded Music Suite instance is running. No processes were changed." -ForegroundColor Yellow
     return

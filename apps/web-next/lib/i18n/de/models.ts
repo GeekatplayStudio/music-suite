@@ -63,7 +63,10 @@ export const models: Dictionary["models"] = {
     xlNote: "Bessere Songs, etwas langsamer. {gb} GB.",
     writer: "Texter ({model})",
     writerReady: "Schreibt Songtexte und Stilbeschreibungen mit Ollama.",
-    writerMissing: "Braucht Ollama (ollama.com), das auf diesem Rechner läuft.",
+    writerMissing: "Braucht Ollama von ollama.com auf diesem Rechner.",
+    writerInstall: "Fügt Ollama ({gb} GB) im Ordner von Music Suite hinzu, danach das Modell (etwa 8 GB). In Windows wird nichts installiert.",
+    writerStopped: "Ollama ist installiert, ist aber nicht gestartet. Siehe logs/ollama.log im Music-Suite-Ordner.",
+    writerOwn: "Music Suites eigenes Ollama {version}, in seinem Ordner.",
     settingsBefore: "Speichergrenzen, Lautheit und Online-Dienste findest du unter",
     settingsLink: "KI-Song-Studio ▸ Einstellungen"
   },

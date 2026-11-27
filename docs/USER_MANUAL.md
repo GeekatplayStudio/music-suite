@@ -116,11 +116,12 @@ In-app updates need Music Suite to have been installed with Git (a clone), not f
 | Logs (when something goes wrong) | `logs\` (`api.log`, `web.log`, `install.log`) and `data\generation\engine.log` |
 | Online service keys | Windows Credential Manager ("Music Suite") |
 | Surge XT | `data\plugins\VST3\` (Windows), or your own VST3 folder if you chose to share it with other music programs |
-| Music Suite's own Python, FFmpeg, Node.js and Git | `.tools\` |
+| Music Suite's own Python, FFmpeg, Node.js, Git and Ollama | `.tools\` |
+| Lyrics writer models (Ollama) | `data\ollama\models\`, or where an Ollama already on the computer keeps them |
 | Download caches (libraries, models) | `.cache\` and `data\cache\` |
 | Your synth sounds, plugin favourites, MIDI choices, mapper presets | Your browser's storage: not in the Music Suite folder, and not included in project files |
 
-**Everything stays in this folder.** Like ComfyUI Portable, Music Suite installs nothing on Windows: its Python, tools, downloads and caches all live in its folder, so deleting the folder removes it completely. The only things kept elsewhere are the online service keys (Windows Credential Manager), what your browser stores (above), Surge XT if you chose to share it with other music programs, and, with the complete install only, Ollama and the build tools for the AI music engine.
+**Everything stays in this folder.** Like ComfyUI Portable, Music Suite installs nothing on Windows: its Python, tools, downloads and caches all live in its folder, so deleting the folder removes it completely. The only things kept elsewhere are the online service keys (Windows Credential Manager), what your browser stores (above), Surge XT if you chose to share it with other music programs, and, with the complete install only, the build tools for the AI music engine.
 
 To back up or move a session, use the editor's **Export → Whole project** (see [Saving, project files and undo](#saving-project-files-and-undo)).
 
@@ -1223,7 +1224,7 @@ Every song you made, with the settings that made it. **Use these settings** fill
 | Card | Settings |
 |---|---|
 | Local music engine | **Install local engine**, **Download high-quality model (4.9 GB)** (better songs, about 25% slower), **Download editing model (2.4 GB)** (needed for Extract, Add a part and Build), **Unload now**, and **Use the high-quality (XL) model for new songs** (on). |
-| Lyrics and style writer | Uses Ollama (from ollama.com) with the model you choose; **Download** gets it (gemma4:12b, about 8 GB). Without Ollama, the music engine's own planner writes a simpler draft. |
+| Lyrics and style writer | Uses Ollama with the model you choose (gemma4:12b by default, about 8 GB). When the computer has no Ollama, **Add Ollama and gemma4:12b** puts Music Suite's own copy in its folder (1.6 GB; nothing is installed on Windows) and then downloads the model. Music Suite starts it when needed and stops it when Music Suite stops; an Ollama already on the computer is used as it is, with its models. On a Mac, get Ollama from ollama.com. Without Ollama, the music engine's own planner writes a simpler draft. |
 | Keeping your computer responsive | **Do not start below** 5–80% free memory (default 25%). **Unload the engine after** 1–240 idle minutes (default 10). |
 | Loudness of new songs | **Level each new song when it is imported** (on), to a **Target loudness** of −30 to −6 LUFS (default −14), with peaks never above −1 dBTP. Not applied to AI edits or MusicGen. |
 | Online services | Paste your API key and **Save key** to switch a service on; **Remove key** switches it off. Keys are kept in Windows Credential Manager. Each has a **Terms and pricing** link. |
@@ -1308,7 +1309,7 @@ Optional engines and AI models. Everything here runs on this computer, and insta
 | Music engine (ACE-Step 1.5) | Full songs with vocals, offline, in the AI Song Studio. Needs a C++ compiler and CMake, which the installer fetches. | About 5.3 GB |
 | Editing model | Extract an instrument, add a part, build a song around a part. | 2.4 GB |
 | High-quality (XL) model | Better songs, a little slower. | 4.9 GB |
-| Lyrics writer | Lyrics and style descriptions with Ollama. Needs Ollama running. | About 8 GB |
+| Lyrics writer | Lyrics and style descriptions with Ollama. When the computer has no Ollama, Music Suite adds its own copy to its folder first (Windows); an Ollama already installed is used as it is. | About 8 GB, plus 1.6 GB for Ollama |
 | Surge XT | A free hybrid synthesizer with thousands of factory sounds, for instrument tracks and the Synth Studio. On Windows it stays inside Music Suite's folder, where your other music programs do not see it, unless you tick **Also make it available to my other music programs (DAW)**. | About 300 MB download |
 
 When a pack finishes, reload any open editor pages to use it. **Install log** shows what the installer did if something fails.

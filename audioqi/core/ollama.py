@@ -6,17 +6,18 @@ from typing import Any
 
 import requests
 
+from audioqi.core import ollama_runtime
 from audioqi.core.metrics import describe_noise_floor
 
 logger = logging.getLogger("audioqi.ollama")
 
-OLLAMA_ENDPOINT = "http://127.0.0.1:11434/api/generate"
+OLLAMA_ENDPOINT = f"{ollama_runtime.base_url()}/api/generate"
 DEFAULT_MODEL = "llama3"
 
 
 def ollama_available() -> bool:
     try:
-        resp = requests.get("http://127.0.0.1:11434/", timeout=2.0)
+        resp = requests.get(f"{ollama_runtime.base_url()}/", timeout=2.0)
         return resp.status_code == 200
     except requests.RequestException:
         return False

@@ -53,6 +53,8 @@
 
 - `audioqi/generation/lyrics_tools.py` + `writer.py`: the lyrics helper (syllables and rhymes by rule, `/generation/lyrics/check`), verified line alternatives (`/generation/lyrics/line`) and the style improver (`/generation/style/improve`).
 
+- `audioqi/core/ollama_runtime.py`: the lyrics writer's Ollama. Finds Music Suite's own copy (`.tools/ollama`) or one on the computer, starts it on demand (`OLLAMA_MODELS` in `data/ollama/models` unless models already exist in the Ollama app's folder or `~/.ollama/models`; its key in `data/ollama`), stops what it started with the API, and installs the pinned Windows release (0.40.16, SHA-256 checked) from Models & engines or the complete install. Loopback only.
+
 - `audioqi/portable.py`: points library caches (PyTorch, Hugging Face, matplotlib) into `data/cache` unless they already hold models in the default place; `Set-MusicSuitePortableEnvironment` (scripts/install-state.ps1) does the same for pip, npm, pnpm and corepack (`.cache`). Instruments install into `data/plugins/VST3` on Windows (Surge XT with its own `SurgeXTUserData`) unless the user asks to share them with other music programs.
 
 - `apps/web-next/lib/handoff.ts`: moving songs between the analyser, the AI Song Studio and the editor (always added, never replacing).

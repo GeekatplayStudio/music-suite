@@ -55,7 +55,13 @@ export const studioTabs = {
       ready: "Ready, using {model}.",
       noModel: "Ollama is running, but the model “{model}” is not downloaded yet (about 8 GB).",
       noOllama:
-        "Ollama is not running. Without it, the music engine's own planner writes a simpler draft. Get Ollama from ollama.com, start it, then come back here.",
+        "Ollama is not installed. Without it, the music engine's own planner writes a simpler draft. Get Ollama from ollama.com, then come back here.",
+      canInstall:
+        "Ollama is not installed yet. Music Suite can add its own copy ({gb} GB) inside its folder, with nothing installed on Windows, and then the model (about 8 GB). Until then, the music engine's own planner writes a simpler draft.",
+      stopped:
+        "Ollama is installed but did not start. Another program may be using its port (11434); see logs/ollama.log in the Music Suite folder.",
+      own: "Music Suite's own Ollama {version}, kept in its folder. It runs only while Music Suite runs.",
+      install: "Add Ollama and {model}",
       model: "Model",
       notDownloaded: "{model} (not downloaded)",
       download: "Download {model}",
