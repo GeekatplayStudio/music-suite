@@ -6,10 +6,12 @@ the engine needs no CMake, compiler or Git.
 
   cuda DEST                       CUDA compiler and libraries from NVIDIA's redistributable
                                   archives, each checked against NVIDIA's published SHA-256.
-  pack-windows BUILD SRC CUDA VCREDIST OUT NAME
-                                  NAME-windows-x64.zip (engine, CPU variants, Vulkan, the
-                                  Visual C++ runtime) and NAME-windows-x64-cuda.zip (the NVIDIA
-                                  backend and its CUDA libraries).
+  pack-windows-engine BUILD SRC VCREDIST OUT NAME
+                                  NAME-windows-x64.zip: engine, CPU variants, Vulkan and the
+                                  Visual C++ runtime.
+  pack-windows-cuda BUILD CUDA OUT NAME
+                                  NAME-windows-x64-cuda.zip: the NVIDIA backend and its CUDA
+                                  libraries.
   pack-macos BUILD SRC OUT NAME   NAME-macos-arm64.tar.gz (one program, Metal built in).
   sums DIR                        SHA256SUMS and packages.json (name, bytes, sha256).
 """
@@ -107,22 +109,20 @@ def _zip(stage: Path, out: Path) -> None:
     print(f"{out.name}: {out.stat().st_size / 1024**2:.1f} MB", flush=True)
 
 
-def pack_windows(build: Path, src: Path, cuda_root: Path, vcredist: Path, out: Path, name: str) -> None:
+def pack_windows_engine(build: Path, src: Path, vcredist: Path, out: Path, name: str) -> None:
+    """The engine, its CPU variants, Vulkan and the Visual C++ runtime (built without CUDA)."""
     out.mkdir(parents=True, exist_ok=True)
-    libraries = [p for p in build.glob("*.dll")]
-    if not (build / f"{ENGINE_PROGRAM}.exe").is_file() or not libraries:
-        raise SystemExit(f"{build} holds no {ENGINE_PROGRAM}.exe or no libraries")
-    gpu = build / "ggml-cuda.dll"
-    if not gpu.is_file() or not (build / "ggml-vulkan.dll").is_file():
-        raise SystemExit("The CUDA or Vulkan backend was not built")
-
+    libraries = list(build.glob("*.dll"))
+    if not (build / f"{ENGINE_PROGRAM}.exe").is_file() or not (build / "ggml-vulkan.dll").is_file():
+        raise SystemExit(f"{build} holds no {ENGINE_PROGRAM}.exe or no Vulkan backend")
+    if not any(p.name.startswith("ggml-cpu-") for p in libraries):
+        raise SystemExit("The CPU variants were not built")
     with tempfile.TemporaryDirectory() as temp:
         stage = Path(temp) / "engine"
         stage.mkdir()
         shutil.copy2(build / f"{ENGINE_PROGRAM}.exe", stage)
         for library in libraries:
-            if library != gpu:
-                shutil.copy2(library, stage)
+            shutil.copy2(library, stage)
         # The Visual C++ runtime and OpenMP beside the program (Microsoft's app-local
         # deployment), so it starts on a Windows without the Visual C++ Redistributable.
         runtime = [
@@ -136,6 +136,14 @@ def pack_windows(build: Path, src: Path, cuda_root: Path, vcredist: Path, out: P
         _licenses(src, stage)
         _zip(stage, out / f"{name}-windows-x64.zip")
 
+
+def pack_windows_cuda(build: Path, cuda_root: Path, out: Path, name: str) -> None:
+    """The NVIDIA backend and the CUDA libraries it loads, unpacked beside the engine."""
+    out.mkdir(parents=True, exist_ok=True)
+    gpu = build / "ggml-cuda.dll"
+    if not gpu.is_file():
+        raise SystemExit("The CUDA backend was not built")
+    with tempfile.TemporaryDirectory() as temp:
         extra = Path(temp) / "cuda"
         extra.mkdir()
         shutil.copy2(gpu, extra)
@@ -182,8 +190,10 @@ def main(argv: list[str]) -> None:
     paths = [Path(arg) for arg in args]
     if command == "cuda" and len(args) == 1:
         cuda(paths[0])
-    elif command == "pack-windows" and len(args) == 6:
-        pack_windows(*paths[:5], args[5])
+    elif command == "pack-windows-engine" and len(args) == 5:
+        pack_windows_engine(*paths[:4], args[4])
+    elif command == "pack-windows-cuda" and len(args) == 4:
+        pack_windows_cuda(*paths[:3], args[3])
     elif command == "pack-macos" and len(args) == 4:
         pack_macos(*paths[:3], args[3])
     elif command == "sums" and len(args) == 1:

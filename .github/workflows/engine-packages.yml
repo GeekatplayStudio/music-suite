@@ -26,9 +26,12 @@ env:
   ENGINE_REPO: https://github.com/ServeurpersoCom/acestep.cpp.git
 
 jobs:
+  # The engine (CPU variants and Vulkan) and the NVIDIA backend build on separate machines at
+  # the same time; the CUDA one is much the slower. Same commit and options, so the CUDA backend
+  # loads into the engine's ggml like one built together with it.
   windows:
     runs-on: windows-2022
-    timeout-minutes: 300
+    timeout-minutes: 180
     env:
       VULKAN_VERSION: 1.4.313.0
     steps:
@@ -53,13 +56,6 @@ jobs:
           Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\$env:VULKAN_VERSION"
           Add-Content $env:GITHUB_PATH "C:\VulkanSDK\$env:VULKAN_VERSION\Bin"
 
-      - name: CUDA toolkit (compiler and libraries only)
-        shell: pwsh
-        run: |
-          python scripts/engine_packages.py cuda "$env:RUNNER_TEMP\cuda"
-          Add-Content $env:GITHUB_ENV "CUDA_PATH=$env:RUNNER_TEMP\cuda"
-          Add-Content $env:GITHUB_PATH "$env:RUNNER_TEMP\cuda\bin"
-
       - name: Build
         shell: cmd
         run: |
@@ -68,11 +64,72 @@ jobs:
           where ninja >nul 2>nul || python -m pip install --quiet ninja || exit /b 1
           cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release ^
             -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=ON -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON ^
-            -DGGML_VULKAN=ON -DGGML_CUDA=ON "-DCMAKE_CUDA_COMPILER=%CUDA_PATH%\bin\nvcc.exe" || exit /b 1
+            -DGGML_VULKAN=ON -DGGML_CUDA=OFF || exit /b 1
           cmake --build build --config Release -j 4 || exit /b 1
-          python scripts/engine_packages.py pack-windows build engine "%CUDA_PATH%" "%VCToolsRedistDir%." dist acestep-%COMMIT:~0,7% || exit /b 1
+          python scripts/engine_packages.py pack-windows-engine build engine "%VCToolsRedistDir%." dist acestep-%COMMIT:~0,7% || exit /b 1
           for %%f in (build\ace-server.exe build\*.dll) do (echo == %%~nxf & dumpbin /nologo /dependents "%%f" | findstr /i "\.dll")
           exit /b 0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: dist/*
+          if-no-files-found: error
+
+  windows-cuda:
+    runs-on: windows-2022
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fetch acestep.cpp
+        shell: bash
+        run: |
+          git init -q engine && cd engine
+          git remote add origin "$ENGINE_REPO"
+          git fetch -q --depth 1 origin "$COMMIT"
+          git checkout -q --detach FETCH_HEAD
+          git submodule update -q --init --recursive --depth 1
+          git log -1 --format='%H %cs %s'
+
+      - name: CUDA toolkit (compiler and libraries only)
+        shell: pwsh
+        run: |
+          python scripts/engine_packages.py cuda "$env:RUNNER_TEMP\cuda"
+          Add-Content $env:GITHUB_ENV "CUDA_PATH=$env:RUNNER_TEMP\cuda"
+          Add-Content $env:GITHUB_PATH "$env:RUNNER_TEMP\cuda\bin"
+
+      # RTX 30, 40 and 50 as ready machine code; older cards (Turing, RTX 20) from the 75 PTX,
+      # which the driver compiles on first use.
+      - name: Build
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set "VSROOT=%%i"
+          call "%VSROOT%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          where ninja >nul 2>nul || python -m pip install --quiet ninja || exit /b 1
+          cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=ON -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON ^
+            -DGGML_VULKAN=OFF -DGGML_CUDA=ON "-DCMAKE_CUDA_COMPILER=%CUDA_PATH%\bin\nvcc.exe" ^
+            "-DCMAKE_CUDA_ARCHITECTURES=75-virtual;86-real;89-real;120a-real" || exit /b 1
+          cmake --build build --config Release -j 4 --target ggml-cuda || exit /b 1
+          python scripts/engine_packages.py pack-windows-cuda build "%CUDA_PATH%" dist acestep-%COMMIT:~0,7% || exit /b 1
+          dumpbin /nologo /dependents build\ggml-cuda.dll | findstr /i "\.dll"
+          exit /b 0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-cuda
+          path: dist/*
+          if-no-files-found: error
+
+  windows-check:
+    needs: [windows, windows-cuda]
+    runs-on: windows-2022
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Check the package starts
         shell: pwsh
@@ -86,14 +143,8 @@ jobs:
           if ($output -notmatch "Available:.*CPU") { throw "The engine did not load its backends" }
           $global:LASTEXITCODE = 0
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-x64
-          path: dist/*
-          if-no-files-found: error
-
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
@@ -130,7 +181,7 @@ jobs:
 
   publish:
     if: ${{ inputs.publish }}
-    needs: [windows, macos]
+    needs: [windows-check, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
