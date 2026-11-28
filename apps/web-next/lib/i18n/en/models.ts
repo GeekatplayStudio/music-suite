@@ -54,7 +54,8 @@ export const models = {
     label: "AI music",
     progress: "Music engine install progress",
     engine: "Music engine (ACE-Step 1.5)",
-    engineNote: "Makes full songs with vocals, offline. About {gb} GB; needs CMake and a C++ compiler.",
+    engineNote: "Makes full songs with vocals, offline. About {gb} GB, downloaded ready to run.",
+    useGpu: "Use the graphics card",
     editing: "Editing model",
     editingNote: "Extract an instrument, add a part, build a song around a part. {gb} GB.",
     xl: "High-quality (XL) model",
@@ -73,6 +74,7 @@ export const models = {
     cuda: " Runs on the graphics card (CUDA).",
     metal: " Runs on the Apple GPU (Metal).",
     cpu: " Runs on the processor.",
+    cpuSwitch: " Runs on the processor. “Use the graphics card” swaps in the ready-built engine, which finds the card by itself (several times faster).",
     cpuWithGpu:
       " Runs on the processor, although this computer has a graphics card: in AI Song Studio ▸ Settings ▸ Local model downloads, tick “Rebuild runtime” for ACE-Step to build it for the card (several times faster)."
   },

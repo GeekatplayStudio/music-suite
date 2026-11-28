@@ -272,15 +272,17 @@ def test_windows_launchers_never_vanish_without_an_explanation() -> None:
 
 def test_windows_core_install_never_installs_anything_on_windows() -> None:
     """Portable, like ComfyUI Portable: the core tools are private copies in .tools, caches
-    live in .cache, and nothing is installed system-wide (winget is only for optional AI tools
-    of the complete install, which says so)."""
+    live in .cache, the AI music engine comes ready-built, and nothing is installed
+    system-wide (winget is left only for building the engine from source, which a normal
+    install never does)."""
     windows = Path("install.ps1").read_text(encoding="utf-8")
     for package in ("Gyan.FFmpeg", "OpenJS.NodeJS", "Git.Git", "Python.Python", "Ollama.Ollama"):
         assert package not in windows
-    assert "winget install" not in windows  # Only setup.py uses it, for CMake and build tools.
+    assert "winget install" not in windows  # Only setup.py uses it, for a source build.
     assert "Install-PythonDirect" not in windows
     assert "corepack enable" not in windows.replace('"corepack enable" is not used', "")
-    assert "complete install adds" in windows
+    assert "nothing is installed on Windows" in windows
+    assert "build tools" not in windows
     shared = Path("scripts/install-state.ps1").read_text(encoding="utf-8")
     assert "function Set-MusicSuitePortableEnvironment" in shared
     for variable in ("PIP_CACHE_DIR", "npm_config_store_dir", "COREPACK_HOME", "NEXT_TELEMETRY_DISABLED"):

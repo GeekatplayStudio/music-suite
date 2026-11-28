@@ -466,8 +466,8 @@ try {
         Write-Host "This enables AI songs, AI editing, XL quality, lyrics, all stem models,"
         Write-Host "and Surge XT. Allow about 30 GB of downloads and at least 45 GB free."
         Write-Host "You can also add these later from Models & engines inside the app."
-        Write-Host "Everything stays inside this folder (the lyrics writer, Ollama, too), except that the"
-        Write-Host "complete install adds CMake and C++ build tools to Windows for the AI music engine."
+        Write-Host "Everything stays inside this folder, the AI music engine and the lyrics writer (Ollama)"
+        Write-Host "too: nothing is installed on Windows."
         Write-Host ""
         $completeInstall = Test-Yes (Read-Host "Complete install? [y/N]")
     }

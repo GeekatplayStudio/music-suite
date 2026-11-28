@@ -121,7 +121,7 @@ In-app updates need Music Suite to have been installed with Git (a clone), not f
 | Download caches (libraries, models) | `.cache\` and `data\cache\` |
 | Your synth sounds, plugin favourites, MIDI choices, mapper presets | Your browser's storage: not in the Music Suite folder, and not included in project files |
 
-**Everything stays in this folder.** Like ComfyUI Portable, Music Suite installs nothing on Windows: its Python, tools, downloads and caches all live in its folder, so deleting the folder removes it completely. The only things kept elsewhere are the online service keys (Windows Credential Manager), what your browser stores (above), Surge XT if you chose to share it with other music programs, and, with the complete install only, the build tools for the AI music engine.
+**Everything stays in this folder.** Like ComfyUI Portable, Music Suite installs nothing on Windows: its Python, tools, downloads and caches all live in its folder, so deleting the folder removes it completely. The only things kept elsewhere are the online service keys (Windows Credential Manager), what your browser stores (above), and Surge XT if you chose to share it with other music programs.
 
 To back up or move a session, use the editor's **Export → Whole project** (see [Saving, project files and undo](#saving-project-files-and-undo)).
 
@@ -1306,7 +1306,7 @@ Optional engines and AI models. Everything here runs on this computer, and insta
 | AI stem separation | Better 2- and 4-stem splits, 6 stems (adds guitar and piano), drum kit pieces (kick, snare, toms, hi-hat, ride, crash), lead and backing vocals, AI beat tracking. Choose which models to download; any not downloaded are fetched the first time they are needed. **Delete downloaded models** frees the space. | About 3 GB with NVIDIA support (1 GB without), plus models |
 | AI note transcription | Whole song to MIDI, piano by a piano-only model (Transkun), chords in Convert to MIDI notes (basic-pitch). Works best with stem separation installed too. | About 120 MB |
 | MuScriptor (optional, manual) | A whole-mix transcriber that names up to 35 instruments. Non-commercial use only. The page lists the install steps (a pip install, accepting its terms on Hugging Face, signing in). | Depends on the size chosen |
-| Music engine (ACE-Step 1.5) | Full songs with vocals, offline, in the AI Song Studio. Needs a C++ compiler and CMake, which the installer fetches. | About 5.3 GB |
+| Music engine (ACE-Step 1.5) | Full songs with vocals, offline, in the AI Song Studio. Downloaded ready-built; it finds the graphics card by itself (NVIDIA, AMD, Intel or Apple). | About 5.3 GB |
 | Editing model | Extract an instrument, add a part, build a song around a part. | 2.4 GB |
 | High-quality (XL) model | Better songs, a little slower. | 4.9 GB |
 | Lyrics writer | Lyrics and style descriptions with Ollama. When the computer has no Ollama, Music Suite adds its own copy to its folder first (Windows); an Ollama already installed is used as it is. | About 8 GB, plus 1.6 GB for Ollama |

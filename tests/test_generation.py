@@ -6,9 +6,13 @@ No real engine, Ollama or network is used: the provider and HTTP calls are faked
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import os
+import re
 import stat
+import subprocess
+import zipfile
 from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
@@ -259,6 +263,8 @@ def test_overview_reports_missing_engine_without_starting_anything(client: TestC
         "running": False,
         "editing_ready": False,
         "quality_ready": False,
+        "prebuilt": False,
+        "prebuilt_available": setup.prebuilt_available(),
     }
     assert {item["id"] for item in body["planned"]} == {"suno"}
     online = {p["id"]: p for p in body["providers"] if p["kind"] == "external"}
@@ -1473,6 +1479,7 @@ def installed_engine(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> lis
     monkeypatch.setattr(setup, "_git", lambda *_a: setup.ENGINE_COMMIT)
     monkeypatch.setattr(setup, "editing_ready", lambda: False)
     monkeypatch.setattr(setup, "install_editing", lambda _report: calls.append("editing"))
+    monkeypatch.setattr(setup, "prebuilt_packages", lambda *_a: None)
     return calls
 
 
@@ -1497,6 +1504,218 @@ def test_windows_build_targets_windows_10(tmp_path: Path, monkeypatch) -> None:
     include = [arg for arg in commands[0] if arg.startswith("-DCMAKE_PROJECT_INCLUDE=")]
     assert include and Path(include[0].split("=", 1)[1]) == setup.WINDOWS_TARGET_CMAKE
     assert "_WIN32_WINNT=0x0A00" in setup.WINDOWS_TARGET_CMAKE.read_text()
+
+
+def test_prebuilt_engine_is_pinned_to_the_engine_commit() -> None:
+    assert setup.PREBUILT_BASE.endswith(f"/releases/download/engine-{setup.ENGINE_COMMIT[:7]}/")
+    assert set(setup.PREBUILT) == {"windows-x64", "macos-arm64"}
+    assert set(setup.PREBUILT["windows-x64"]) == {"engine", "cuda"}
+    assert set(setup.PREBUILT["macos-arm64"]) == {"engine"}
+    for packages in setup.PREBUILT.values():
+        for filename, size, digest in packages.values():
+            assert filename.startswith(f"acestep-{setup.ENGINE_COMMIT[:7]}-")
+            assert size > 1_000_000 and re.fullmatch("[0-9a-f]{64}", digest)
+
+
+@pytest.fixture
+def prebuilt(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """A pretend release: one engine zip and one CUDA zip, served by a fake download."""
+    from audioqi import addons
+
+    def archive(files: dict[str, bytes]) -> bytes:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as bundle:
+            for name, data in files.items():
+                bundle.writestr(name, data)
+        return buffer.getvalue()
+
+    served = {
+        "acestep-x-windows-x64.zip": archive({"ace-server.exe": b"program", "ggml.dll": b"lib"}),
+        "acestep-x-windows-x64-cuda.zip": archive({"ggml-cuda.dll": b"cuda"}),
+    }
+    monkeypatch.setattr(
+        setup,
+        "PREBUILT",
+        {
+            "windows-x64": {
+                kind: (name, len(served[name]), hashlib.sha256(served[name]).hexdigest())
+                for kind, name in (
+                    ("engine", "acestep-x-windows-x64.zip"),
+                    ("cuda", "acestep-x-windows-x64-cuda.zip"),
+                )
+            }
+        },
+    )
+    monkeypatch.setattr(setup, "_prebuilt_platform", lambda: "windows-x64")
+    monkeypatch.setattr(setup.sys, "platform", "win32")
+    monkeypatch.setattr(addons, "gpu", lambda: {"vendor": "nvidia", "driver": "610.88"})
+    fetched: list[str] = []
+
+    class Stream:
+        status_code = 200
+
+        def __init__(self, data: bytes) -> None:
+            self.data = data
+
+        def __enter__(self) -> Stream:
+            return self
+
+        def __exit__(self, *_: Any) -> None:
+            return None
+
+        def iter_content(self, _size: int) -> Iterator[bytes]:
+            yield self.data
+
+    def fake_get(url: str, **_: Any) -> Stream:
+        name = url.rsplit("/", 1)[1]
+        fetched.append(name)
+        return Stream(served[name])
+
+    monkeypatch.setattr(setup.requests, "get", fake_get)
+    probes: list[Path] = []
+    monkeypatch.setattr(setup, "_probe_backend", lambda folder: probes.append(folder) or "cuda")
+    return {"served": served, "fetched": fetched, "probes": probes}
+
+
+def test_prebuilt_engine_adds_cuda_only_for_a_recent_nvidia_driver(prebuilt, monkeypatch) -> None:
+    from audioqi import addons
+
+    assert setup.prebuilt_packages() == ["engine", "cuda"]
+    monkeypatch.setattr(addons, "gpu", lambda: {"vendor": "nvidia", "driver": "471.11"})
+    assert setup.prebuilt_packages() == ["engine"]
+    monkeypatch.setattr(addons, "gpu", lambda: None)
+    assert setup.prebuilt_packages() == ["engine"]
+    # Building from source stays possible, and is used where there is no package.
+    monkeypatch.setenv("MUSIC_SUITE_ACESTEP_BACKEND", "vulkan")
+    assert setup.prebuilt_packages() is None
+    monkeypatch.delenv("MUSIC_SUITE_ACESTEP_BACKEND")
+    monkeypatch.setenv("MUSIC_SUITE_ACESTEP_BUILD", "source")
+    assert setup.prebuilt_packages() is None
+    monkeypatch.delenv("MUSIC_SUITE_ACESTEP_BUILD")
+    assert setup.prebuilt_packages(settings.default_engine_dir().parent / "mine") is None
+    monkeypatch.setattr(setup, "_prebuilt_platform", lambda: None)
+    assert setup.prebuilt_packages() is None
+
+
+def test_prebuilt_engine_installs_without_build_tools(prebuilt, monkeypatch) -> None:
+    target = settings.default_engine_dir()
+    monkeypatch.setattr(setup, "_ensure_tools", lambda _r: pytest.fail("build tools checked"))
+    monkeypatch.setattr(setup, "_download_models", lambda *_a, **_k: None)
+    setup.install(lambda *_a: None)
+    assert (target / "bin" / "ace-server.exe").read_bytes() == b"program"
+    assert (target / "bin" / "ggml-cuda.dll").is_file()
+    assert engine.binary_path(target) == target / "bin" / "ace-server.exe"
+    assert setup._prebuilt_manifest(target) == {
+        "commit": setup.ENGINE_COMMIT,
+        "packages": ["engine", "cuda"],
+        "backend": "cuda",
+    }
+    assert engine.install_status()["backend"] == "cuda"
+    assert not (target / "downloads").exists() and not (target / "bin.new").exists()
+    # Checked in its staging folder, before it replaced anything.
+    assert prebuilt["probes"] == [target / "bin.new"]
+    # Already there: nothing is downloaded again.
+    setup.install(lambda *_a: None)
+    assert len(prebuilt["fetched"]) == 2
+
+
+def test_prebuilt_engine_that_fails_its_checksum_replaces_nothing(prebuilt, monkeypatch) -> None:
+    target = settings.default_engine_dir()
+    (target / "bin").mkdir(parents=True)
+    (target / "bin" / "ace-server.exe").write_bytes(b"older")
+    name = "acestep-x-windows-x64.zip"
+    monkeypatch.setitem(prebuilt["served"], name, b"X" * len(prebuilt["served"][name]))
+    monkeypatch.setattr(setup.time, "sleep", lambda _s: None)
+    with pytest.raises(setup.SetupError, match="Could not download"):
+        setup._install_prebuilt(target, ["engine"], lambda *_a: None)
+    assert (target / "bin" / "ace-server.exe").read_bytes() == b"older"
+    assert prebuilt["probes"] == []
+
+
+def test_engine_folder_rename_waits_out_a_short_windows_lock(tmp_path: Path, monkeypatch) -> None:
+    """Right after the check run, antivirus can hold the new files: "access is denied"."""
+    source, target = tmp_path / "bin.new", tmp_path / "bin"
+    source.mkdir()
+    real = Path.replace
+    refusals = iter([True, True, False])
+
+    def replace(self: Path, other: Path) -> Path:
+        if next(refusals):
+            raise PermissionError(5, "Access is denied")
+        return real(self, other)
+
+    monkeypatch.setattr(Path, "replace", replace)
+    monkeypatch.setattr(setup.time, "sleep", lambda _s: None)
+    setup._rename(source, target)
+    assert target.is_dir() and not source.exists()
+    monkeypatch.setattr(Path, "replace", lambda *_a: (_ for _ in ()).throw(PermissionError(5, "x")))
+    with pytest.raises(setup.SetupError, match="Another program is using"):
+        setup._rename(target, source)
+
+
+def test_engine_gets_paths_it_can_open_from_a_cyrillic_folder(tmp_path: Path, monkeypatch) -> None:
+    """The engine reads its command line in the legacy code page: "Музыка" arrives as "??????"."""
+    monkeypatch.setattr(engine.sys, "platform", "win32")
+    base = tmp_path / "Музыка Suite" / "engines" / "acestep.cpp"
+    assert engine.engine_path(base / "models", base) == "models"
+    assert engine.engine_path(tmp_path / "plain", base) == str(tmp_path / "plain")
+    monkeypatch.setattr(engine.os.path, "relpath", lambda *_a: (_ for _ in ()).throw(ValueError()))
+    monkeypatch.setattr(engine, "_short_path", lambda _p: "C:\\MUZYKA~1\\models")
+    assert engine.engine_path(base / "models", base) == "C:\\MUZYKA~1\\models"
+    monkeypatch.setattr(engine.sys, "platform", "darwin")
+    assert engine.engine_path(base / "models", base) == str(base / "models")
+
+
+def test_prebuilt_package_cannot_write_outside_its_folder(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.zip"
+    with zipfile.ZipFile(bad, "w") as bundle:
+        bundle.writestr("../outside.txt", b"x")
+    with pytest.raises(setup.SetupError, match="damaged"):
+        setup._unpack(bad, tmp_path / "into")
+    assert not (tmp_path / "outside.txt").exists()
+
+
+def test_probe_names_the_best_device_the_engine_found(tmp_path: Path, monkeypatch) -> None:
+    def answer(text: str) -> None:
+        result = subprocess.CompletedProcess([], 1, stdout="", stderr=text)
+        monkeypatch.setattr(setup.subprocess, "run", lambda *_a, **_k: result)
+
+    answer("--device none not found. Available: CUDA0 Vulkan0 CPU\n")
+    assert setup._probe_backend(tmp_path) == "cuda"
+    answer("--device none not found. Available: Vulkan0 CPU\n")
+    assert setup._probe_backend(tmp_path) == "vulkan"
+    answer("--device none not found. Available: MTL0 BLAS CPU\n")
+    assert setup._probe_backend(tmp_path) == "metal"
+    answer("--device none not found. Available: CPU\n")
+    assert setup._probe_backend(tmp_path) == "cpu"
+    answer("The code execution cannot proceed because VCRUNTIME140.dll was not found.\n")
+    with pytest.raises(setup.SetupError, match="did not start on this computer"):
+        setup._probe_backend(tmp_path)
+
+
+def test_source_build_on_request_removes_the_prebuilt_engine(prebuilt, monkeypatch) -> None:
+    target = settings.default_engine_dir()
+    setup._install_prebuilt(target, ["engine"], lambda *_a: None)
+    monkeypatch.setenv("MUSIC_SUITE_ACESTEP_BUILD", "source")
+    steps: list[str] = []
+    monkeypatch.setattr(setup, "_ensure_tools", lambda _r: steps.append("tools"))
+    monkeypatch.setattr(setup, "_fetch_source", lambda *_a: steps.append("source") or True)
+    monkeypatch.setattr(setup, "_build", lambda *_a, **_k: steps.append("build"))
+    monkeypatch.setattr(setup, "_download_models", lambda *_a, **_k: None)
+    setup.install(lambda *_a: None)
+    assert steps == ["tools", "source", "build"] and not (target / "bin").exists()
+
+
+def test_complete_install_moves_a_source_build_to_the_prebuilt_engine(
+    installed_engine, monkeypatch
+) -> None:
+    moved: list[list[str]] = []
+    monkeypatch.setattr(setup, "prebuilt_packages", lambda *_a: ["engine"])
+    monkeypatch.setattr(setup, "prebuilt_current", lambda *_a: False)
+    monkeypatch.setattr(setup, "_install_prebuilt", lambda _t, wanted, _r: moved.append(wanted))
+    monkeypatch.setattr(setup, "editing_ready", lambda: True)
+    assert setup.main(["--ask"]) == 0 and moved == []  # Only a complete install moves it.
+    assert setup.main(["--yes"]) == 0 and moved == [["engine"]]
 
 
 def test_installer_offers_the_editing_model_once(installed_engine, monkeypatch, capsys) -> None:

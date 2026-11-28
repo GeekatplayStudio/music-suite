@@ -57,7 +57,7 @@ You do not need Python on the computer, and an existing one is left alone. Like 
 
 ## Nothing outside the Music Suite folder
 
-Like ComfyUI Portable, Music Suite keeps what it adds in its own folder: its Python and tools in `.tools`, download caches (pip, pnpm, npm) in `.cache`, model caches in `data\cache`, and Surge XT, when you install it from **Models & engines**, in `data\plugins\VST3`, where your DAW does not see it (tick **Also make it available to my other music programs** if you want it there). Deleting the folder removes Music Suite completely. The lyrics writer's Ollama is a private copy too: when the computer has no Ollama, Music Suite adds version 0.40.16 from Ollama's GitHub releases (1.6 GB, checked against its SHA-256) to `.tools\ollama`, with its models in `data\ollama`, and runs it only while Music Suite runs. An Ollama already on the computer is used as it is, with its models. Only the optional complete install adds programs to Windows: CMake and the C++ build tools for the AI music engine; the installer says so before you choose it.
+Like ComfyUI Portable, Music Suite keeps what it adds in its own folder: its Python and tools in `.tools`, download caches (pip, pnpm, npm) in `.cache`, model caches in `data\cache`, and Surge XT, when you install it from **Models & engines**, in `data\plugins\VST3`, where your DAW does not see it (tick **Also make it available to my other music programs** if you want it there). Deleting the folder removes Music Suite completely. The lyrics writer's Ollama is a private copy too: when the computer has no Ollama, Music Suite adds version 0.40.16 from Ollama's GitHub releases (1.6 GB, checked against its SHA-256) to `.tools\ollama`, with its models in `data\ollama`, and runs it only while Music Suite runs. An Ollama already on the computer is used as it is, with its models. The AI music engine is downloaded ready-built into `data\engines\acestep.cpp\bin` (built by this project's GitHub Actions from a pinned acestep.cpp commit, checked against its SHA-256), so even the complete install adds no programs to Windows. Only Windows on ARM, which has no ready-built engine, still builds it from source with CMake and the C++ build tools from `winget`.
 
 If you move or rename the Music Suite folder, run `install.bat` once more (or just `start.bat`): it notices that the app's Python environment points to the old place and rebuilds it.
 
@@ -67,9 +67,9 @@ Double-click `install.bat` in the **extracted** folder. Opened straight from the
 
 ## If `winget` reports certificate error `0x8a15005e`
 
-That error belongs to Windows Package Manager's repository connection, not Music Suite or your internet speed. The standard Music Suite installation does not use `winget` at all; only the optional complete install does, for CMake and the build tools.
+That error belongs to Windows Package Manager's repository connection, not Music Suite or your internet speed. Music Suite does not use `winget` on a regular (x64) Windows PC, not even for the complete install: the AI music engine is downloaded ready-built. Only on Windows on ARM, or with `MUSIC_SUITE_ACESTEP_BUILD=source`, is the engine built from source, with CMake and the C++ build tools from `winget`.
 
-The optional AI music engine also explicitly selects the `winget` community source for CMake, avoiding the older “several packages were found; specify a source” failure. If Windows still cannot install optional CMake or Build Tools:
+That source build explicitly selects the `winget` community source for CMake, avoiding the older “several packages were found; specify a source” failure. If Windows still cannot install CMake or Build Tools there:
 
 1. Finish or use the standard app first; analysis, editing, mastering, visualization, MIDI, and basic stems do not require the local music generator.
 2. Open **Microsoft Store**, find **App Installer**, and update it.
@@ -88,7 +88,7 @@ Do not disable certificate validation. A certificate mismatch can also be caused
 
 1. Keep the extracted folder in a normal writable location such as `Documents\Music Suite`; do not use the ZIP preview, `Program Files`, or a read-only network folder.
 2. Check that the Windows clock, date, and time zone are correct.
-3. Temporarily disconnect a VPN or ask the network administrator whether HTTPS downloads from these official services are allowed: `github.com`, `api.github.com`, `api.nuget.org`, `python.org`, `nodejs.org`, `gyan.dev`, `pypi.org`, `files.pythonhosted.org`, `registry.npmjs.org`, `huggingface.co`, and `registry.ollama.ai` (lyrics model).
+3. Temporarily disconnect a VPN or ask the network administrator whether HTTPS downloads from these official services are allowed: `github.com`, `api.github.com`, `api.nuget.org`, `python.org`, `nodejs.org`, `gyan.dev`, `pypi.org`, `files.pythonhosted.org`, `registry.npmjs.org`, `release-assets.githubusercontent.com` (GitHub downloads, including the AI music engine), `huggingface.co`, and `registry.ollama.ai` (lyrics model).
 4. Make sure at least 10 GB is free for the standard app, or 45 GB for the complete installation.
 5. Run `install.bat` again. It reuses completed work and retries missing parts.
 

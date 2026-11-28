@@ -63,14 +63,24 @@ function Status({ ok, children }: { ok: boolean; children: React.ReactNode }) {
 /**
  * What the installed music engine runs on, for its row. A processor-only build on a computer
  * with a graphics card is several times slower (measured: a 30 s song in 49 s on the processor,
- * 7.8 s on an RTX 3090 with Vulkan), so it says how to rebuild it for the card.
+ * 7.8 s on an RTX 3090 with Vulkan), so it says how to move it to the card.
  */
-function engineHardware(engine: { installed: boolean; backend?: string }, hasGpu: boolean, t: I18n["t"]): string {
+function engineHardware(engine: Overview["engine"], hasGpu: boolean, t: I18n["t"]): string {
   if (!engine.installed || !engine.backend) return "";
   if (engine.backend === "vulkan") return t("models.hardware.vulkan");
   if (engine.backend === "cuda") return t("models.hardware.cuda");
   if (engine.backend === "metal") return t("models.hardware.metal");
+  if (canSwitchToPrebuilt(engine)) return t("models.hardware.cpuSwitch");
   return hasGpu ? t("models.hardware.cpuWithGpu") : t("models.hardware.cpu");
+}
+
+/**
+ * An engine built on this computer for the processor can be swapped for the prebuilt one,
+ * which finds the graphics card by itself (the regular install replaces it).
+ */
+function canSwitchToPrebuilt(engine: Overview["engine"]): boolean {
+  const onGpu = ["vulkan", "cuda", "metal"].includes(engine.backend ?? "");
+  return engine.installed && !onGpu && !engine.prebuilt && Boolean(engine.prebuilt_available);
 }
 
 /** What the lyrics writer needs, or which Ollama it runs on. */
@@ -458,6 +468,7 @@ export function ModelsPage() {
                 label: t("models.music.engine"),
                 note: `${t("models.music.engineNote", { gb: music.setup.download_gb ?? 5.3 })}${engineHardware(music.engine, Boolean(addons?.gpu), t)}`,
                 ok: music.engine.installed,
+                switchTo: canSwitchToPrebuilt(music.engine),
                 action: () => generationApi.startSetup(false)
               },
               {
@@ -487,7 +498,7 @@ export function ModelsPage() {
                   <p className="text-sm font-semibold text-slate-100">{row.label}</p>
                   <p className="text-xs text-slate-400">{row.note}</p>
                 </div>
-                {row.ok ? (
+                {row.ok && !row.switchTo ? (
                   <Status ok>{t("common.installed")}</Status>
                 ) : (
                   <button
@@ -496,7 +507,8 @@ export function ModelsPage() {
                     disabled={busy || row.disabled || (row.needsEngine && !music.engine.installed)}
                     onClick={() => void run(row.action, t("models.installFailed"))}
                   >
-                    <Download className="h-3.5 w-3.5" aria-hidden /> {t("common.install")}
+                    <Download className="h-3.5 w-3.5" aria-hidden />{" "}
+                    {row.switchTo ? t("models.music.useGpu") : t("common.install")}
                   </button>
                 )}
               </div>

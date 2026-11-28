@@ -1,0 +1,236 @@
+# Prebuilt AI music engine (acestep.cpp) for Music Suite's installer, so installing the engine
+# needs no CMake, compiler or Git on the user's computer. Run by hand (Actions > Engine packages)
+# for the commit pinned in audioqi/generation/setup.py (ENGINE_COMMIT); with "publish" it makes
+# the GitHub release engine-<commit> whose files setup.py pins by size and SHA-256. With
+# "from_run" it publishes the packages of an earlier run (already tested) instead of rebuilding.
+name: Engine packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: acestep.cpp commit (ENGINE_COMMIT in audioqi/generation/setup.py)
+        required: true
+        default: 07abf07da3a9c1c45bd85aabed401644f8eb7c72
+      publish:
+        description: Publish the packages as the release engine-<first 7 characters>
+        type: boolean
+        default: false
+      from_run:
+        description: Publish the packages of this earlier run (its ID) instead of building again
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+env:
+  COMMIT: ${{ inputs.commit || '07abf07da3a9c1c45bd85aabed401644f8eb7c72' }}
+  ENGINE_REPO: https://github.com/ServeurpersoCom/acestep.cpp.git
+
+jobs:
+  # The engine (CPU variants and Vulkan) and the NVIDIA backend build on separate machines at
+  # the same time; the CUDA one is much the slower. Same commit and options, so the CUDA backend
+  # loads into the engine's ggml like one built together with it.
+  windows:
+    if: ${{ !inputs.from_run }}
+    runs-on: windows-2022
+    timeout-minutes: 180
+    env:
+      VULKAN_VERSION: 1.4.313.0
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fetch acestep.cpp
+        shell: bash
+        run: |
+          git init -q engine && cd engine
+          git remote add origin "$ENGINE_REPO"
+          git fetch -q --depth 1 origin "$COMMIT"
+          git checkout -q --detach FETCH_HEAD
+          git submodule update -q --init --recursive --depth 1
+          git log -1 --format='%H %cs %s'
+
+      - name: Vulkan SDK
+        shell: pwsh
+        run: |
+          curl.exe -fsSL -o "$env:RUNNER_TEMP\vulkan-sdk.exe" "https://sdk.lunarg.com/sdk/download/$env:VULKAN_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_VERSION.exe"
+          & "$env:RUNNER_TEMP\vulkan-sdk.exe" --accept-licenses --default-answer --confirm-command install
+          if (-not (Test-Path "C:\VulkanSDK\$env:VULKAN_VERSION\Bin\glslc.exe")) { throw "The Vulkan SDK did not install" }
+          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\$env:VULKAN_VERSION"
+          Add-Content $env:GITHUB_PATH "C:\VulkanSDK\$env:VULKAN_VERSION\Bin"
+
+      - name: Build
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set "VSROOT=%%i"
+          call "%VSROOT%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          where ninja >nul 2>nul || python -m pip install --quiet ninja || exit /b 1
+          cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=ON -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON ^
+            -DGGML_VULKAN=ON -DGGML_CUDA=OFF || exit /b 1
+          cmake --build build --config Release -j 4 || exit /b 1
+          python scripts/engine_packages.py pack-windows-engine build engine "%VCToolsRedistDir%." dist acestep-%COMMIT:~0,7% || exit /b 1
+          for %%f in (build\ace-server.exe build\*.dll) do (echo == %%~nxf & dumpbin /nologo /dependents "%%f" | findstr /i "\.dll")
+          exit /b 0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: dist/*
+          if-no-files-found: error
+
+  windows-cuda:
+    if: ${{ !inputs.from_run }}
+    runs-on: windows-2022
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fetch acestep.cpp
+        shell: bash
+        run: |
+          git init -q engine && cd engine
+          git remote add origin "$ENGINE_REPO"
+          git fetch -q --depth 1 origin "$COMMIT"
+          git checkout -q --detach FETCH_HEAD
+          git submodule update -q --init --recursive --depth 1
+          git log -1 --format='%H %cs %s'
+
+      - name: CUDA toolkit (compiler and libraries only)
+        shell: pwsh
+        run: |
+          python scripts/engine_packages.py cuda "$env:RUNNER_TEMP\cuda"
+          Add-Content $env:GITHUB_ENV "CUDA_PATH=$env:RUNNER_TEMP\cuda"
+          Add-Content $env:GITHUB_PATH "$env:RUNNER_TEMP\cuda\bin"
+
+      # RTX 30, 40 and 50 as ready machine code; older cards (Turing, RTX 20) from the 75 PTX,
+      # which the driver compiles on first use.
+      - name: Build
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set "VSROOT=%%i"
+          call "%VSROOT%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          where ninja >nul 2>nul || python -m pip install --quiet ninja || exit /b 1
+          cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=ON -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON ^
+            -DGGML_VULKAN=OFF -DGGML_CUDA=ON "-DCMAKE_CUDA_COMPILER=%CUDA_PATH%\bin\nvcc.exe" ^
+            "-DCMAKE_CUDA_ARCHITECTURES=75-virtual;86-real;89-real;120a-real" || exit /b 1
+          cmake --build build --config Release -j 4 --target ggml-cuda || exit /b 1
+          python scripts/engine_packages.py pack-windows-cuda build "%CUDA_PATH%" dist acestep-%COMMIT:~0,7% || exit /b 1
+          dumpbin /nologo /dependents build\ggml-cuda.dll | findstr /i "\.dll"
+          exit /b 0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-cuda
+          path: dist/*
+          if-no-files-found: error
+
+  windows-check:
+    needs: [windows, windows-cuda]
+    runs-on: windows-2022
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Check the package starts
+        shell: pwsh
+        run: |
+          $short = $env:COMMIT.Substring(0, 7)
+          Expand-Archive "dist\acestep-$short-windows-x64.zip" "$env:RUNNER_TEMP\try"
+          Expand-Archive "dist\acestep-$short-windows-x64-cuda.zip" "$env:RUNNER_TEMP\try"
+          # No GPU here: the CUDA and Vulkan backends are skipped and the CPU one answers.
+          $output = & "$env:RUNNER_TEMP\try\ace-server.exe" --models . --device none 2>&1 | Out-String
+          Write-Host $output
+          if ($output -notmatch "Available:.*CPU") { throw "The engine did not load its backends" }
+          $global:LASTEXITCODE = 0
+
+  macos:
+    if: ${{ !inputs.from_run }}
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fetch acestep.cpp
+        run: |
+          git init -q engine && cd engine
+          git remote add origin "$ENGINE_REPO"
+          git fetch -q --depth 1 origin "$COMMIT"
+          git checkout -q --detach FETCH_HEAD
+          git submodule update -q --init --recursive --depth 1
+
+      - name: Build
+        run: |
+          cmake -S engine -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3 \
+            -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=OFF -DGGML_METAL=ON -DGGML_BLAS=ON
+          cmake --build build --config Release --target ace-server -j 3
+          otool -L build/ace-server
+          python3 scripts/engine_packages.py pack-macos build engine dist "acestep-${COMMIT:0:7}"
+
+      - name: Check the package starts
+        run: |
+          mkdir "$RUNNER_TEMP/try"
+          tar -xzf "dist/acestep-${COMMIT:0:7}-macos-arm64.tar.gz" -C "$RUNNER_TEMP/try"
+          output=$("$RUNNER_TEMP/try/ace-server" --models . --device none 2>&1 || true)
+          echo "$output"
+          echo "$output" | grep -q "Available:.*CPU"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    if: >-
+      ${{ !cancelled() && inputs.publish && (inputs.from_run != '' ||
+      (needs.windows-check.result == 'success' && needs.macos.result == 'success')) }}
+    needs: [windows-check, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      BUILD_RUN: ${{ inputs.from_run || github.run_id }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+          run-id: ${{ env.BUILD_RUN }}
+          github-token: ${{ github.token }}
+
+      - uses: actions/checkout@v5
+        with:
+          path: suite
+
+      - name: Checksums
+        run: python3 suite/scripts/engine_packages.py sums dist
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*.*z*
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          short="${COMMIT:0:7}"
+          cat > notes.md <<EOF
+          The AI music engine [acestep.cpp](https://github.com/ServeurpersoCom/acestep.cpp) at commit \`$COMMIT\`, built for Music Suite by [this workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/$BUILD_RUN). Music Suite's installer downloads these files itself and checks each one's size and SHA-256 (\`audioqi/generation/setup.py\`); there is nothing to download by hand.
+
+          - \`acestep-$short-windows-x64.zip\`: the engine, CPU variants, Vulkan (any graphics card) and the Visual C++ runtime.
+          - \`acestep-$short-windows-x64-cuda.zip\`: the NVIDIA (CUDA 12.9) backend and its CUDA libraries, added on computers with an NVIDIA card.
+          - \`acestep-$short-macos-arm64.tar.gz\`: the engine for Apple silicon Macs, with Metal.
+          EOF
+          # The tag marks the commit whose workflow built the packages.
+          built=$(gh api "repos/${{ github.repository }}/actions/runs/$BUILD_RUN" --jq .head_sha)
+          gh release create "engine-$short" dist/*.zip dist/*.tar.gz dist/SHA256SUMS dist/packages.json \
+            --repo "${{ github.repository }}" --target "$built" \
+            --title "AI music engine $short" --notes-file notes.md

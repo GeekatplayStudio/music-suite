@@ -170,6 +170,9 @@ export interface Overview {
     missing_models: string[];
     editing_ready?: boolean;
     quality_ready?: boolean;
+    /** The installed engine is the prebuilt one; a source build can be swapped for it. */
+    prebuilt?: boolean;
+    prebuilt_available?: boolean;
     /** What the engine was built to run on: "vulkan", "cuda", "metal", "cpu", or "unknown" for older builds. */
     backend?: string;
   };

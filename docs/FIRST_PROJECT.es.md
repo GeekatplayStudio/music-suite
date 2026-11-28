@@ -26,7 +26,7 @@ No necesitas saber teoría musical. Necesitas:
 
 1. Abre **Estudio de canciones IA** (botón de la página principal).
 2. Si una tarjeta dice **Un paso antes de tu primera canción**, pulsa **Instalar motor local**. Se
-   descargan unos 5.3 GB y se compila el motor; tarda varios minutos.
+   descargan el motor ya compilado y sus modelos (unos 5.4 GB, 6 GB con una tarjeta NVIDIA); tarda varios minutos.
 3. Abre **Modelos y motores** (botón en la cabecera de cada área de trabajo) y mira la fila **Motor de música**.
    Dice en qué funciona el motor, por ejemplo *Se ejecuta en la tarjeta gráfica (Vulkan)*. Si dice
    el procesador y tu equipo tiene tarjeta gráfica, sigue la indicación de esa fila.

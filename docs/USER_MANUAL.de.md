@@ -121,7 +121,7 @@ Updates in der App setzen voraus, dass Music Suite mit Git (als Klon) installier
 | Download-Caches (Bibliotheken, Modelle) | `.cache\` und `data\cache\` |
 | Deine Synth-Sounds, Plugin-Favoriten, MIDI-Einstellungen, Mapper-Presets | Der Speicher deines Browsers: nicht im Music-Suite-Ordner und nicht in Projektdateien enthalten |
 
-**Alles bleibt in diesem Ordner.** Wie ComfyUI Portable installiert Music Suite nichts in Windows: Python, Werkzeuge, Downloads und Caches liegen in seinem Ordner, und wer den Ordner löscht, entfernt es vollständig. Außerhalb liegen nur die Schlüssel für Online-Dienste (Windows-Anmeldeinformationsverwaltung), was dein Browser speichert (siehe oben), Surge XT, wenn du es mit anderen Musikprogrammen teilen wolltest, und – nur bei der vollständigen Installation – die Build-Werkzeuge für die KI-Musik-Engine.
+**Alles bleibt in diesem Ordner.** Wie ComfyUI Portable installiert Music Suite nichts in Windows: Python, Werkzeuge, Downloads und Caches liegen in seinem Ordner, und wer den Ordner löscht, entfernt es vollständig. Außerhalb liegen nur die Schlüssel für Online-Dienste (Windows-Anmeldeinformationsverwaltung), was dein Browser speichert (siehe oben), und Surge XT, wenn du es mit anderen Musikprogrammen teilen wolltest.
 
 Um eine Session zu sichern oder umzuziehen, nutze im Editor **Exportieren → Ganzes Projekt** (siehe [Speichern, Projektdateien und Rückgängig](#saving-project-files-and-undo)).
 
@@ -1306,7 +1306,7 @@ Optionale Engines und KI-Modelle. Alles hier läuft auf diesem Computer, und ein
 | KI-Stem-Trennung | Bessere Trennung in 2 und 4 Stems, 6 Stems (dazu Gitarre und Klavier), einzelne Drum-Teile (Kick, Snare, Toms, Hi-Hat, Ride, Crash), Lead- und Backing-Gesang, KI-Beat-Erkennung. Wähle, welche Modelle heruntergeladen werden; nicht heruntergeladene werden beim ersten Bedarf geholt. **Heruntergeladene Modelle löschen** gibt den Platz frei. | Etwa 3 GB mit NVIDIA-Unterstützung (1 GB ohne), plus Modelle |
 | KI-Notentranskription | Ganzer Song zu MIDI, Klavier durch ein reines Klaviermodell (Transkun), Akkorde in In MIDI-Noten umwandeln (basic-pitch). Funktioniert am besten, wenn auch die Stem-Trennung installiert ist. | Etwa 120 MB |
 | MuScriptor (optional, manuell) | Ein Transkribierer für den ganzen Mix, der bis zu 35 Instrumente benennt. Nur nicht kommerzielle Nutzung. Die Seite listet die Installationsschritte (eine pip-Installation, das Akzeptieren seiner Bedingungen auf Hugging Face, die Anmeldung). | Hängt von der gewählten Größe ab |
-| Musik-Engine (ACE-Step 1.5) | Komplette Songs mit Gesang, offline, im KI-Song-Studio. Braucht einen C++-Compiler und CMake, die der Installer holt. | Etwa 5,3 GB |
+| Musik-Engine (ACE-Step 1.5) | Komplette Songs mit Gesang, offline, im KI-Song-Studio. Wird fertig gebaut heruntergeladen und findet die Grafikkarte selbst (NVIDIA, AMD, Intel oder Apple). | Etwa 5,3 GB |
 | Bearbeitungsmodell | Ein Instrument extrahieren, eine Stimme hinzufügen, einen Song um eine Stimme herum bauen. | 2,4 GB |
 | Hochwertiges Modell (XL) | Bessere Songs, etwas langsamer. | 4,9 GB |
 | Texter | Songtexte und Stilbeschreibungen mit Ollama. Hat der Rechner kein Ollama, legt Music Suite zuerst eine eigene Kopie in seinen Ordner (Windows); ein schon installiertes Ollama wird so verwendet, wie es ist. | Etwa 8 GB, dazu 1,6 GB für Ollama |

@@ -56,7 +56,8 @@ export const models: Dictionary["models"] = {
     label: "KI-Musik",
     progress: "Installationsfortschritt der Musik-Engine",
     engine: "Musik-Engine (ACE-Step 1.5)",
-    engineNote: "Erzeugt komplette Songs mit Gesang, offline. Etwa {gb} GB; braucht CMake und einen C++-Compiler.",
+    engineNote: "Erzeugt komplette Songs mit Gesang, offline. Etwa {gb} GB, wird einsatzbereit heruntergeladen.",
+    useGpu: "Grafikkarte nutzen",
     editing: "Bearbeitungsmodell",
     editingNote: "Ein Instrument herauslösen, eine Stimme hinzufügen, einen Song um eine Stimme bauen. {gb} GB.",
     xl: "Hochwertiges Modell (XL)",
@@ -75,6 +76,7 @@ export const models: Dictionary["models"] = {
     cuda: " Läuft auf der Grafikkarte (CUDA).",
     metal: " Läuft auf der Apple-GPU (Metal).",
     cpu: " Läuft auf dem Prozessor.",
+    cpuSwitch: " Läuft auf dem Prozessor. „Grafikkarte nutzen“ ersetzt sie durch die fertig gebaute Engine, die die Karte selbst findet (um ein Vielfaches schneller).",
     cpuWithGpu:
       " Läuft auf dem Prozessor, obwohl dieser Rechner eine Grafikkarte hat: Setze unter KI-Song-Studio ▸ Einstellungen ▸ Downloads lokaler Modelle bei ACE-Step das Häkchen „Runtime neu bauen“, damit es für die Karte gebaut wird (um ein Vielfaches schneller)."
   },

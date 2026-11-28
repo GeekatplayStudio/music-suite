@@ -444,7 +444,9 @@ Open **Models & engines** from any workspace (or go to `/models`). It shows this
 ### AI Song Studio
 
 - **"The local AI music engine is not installed yet"** — press **Install local engine**. It needs about 6 GB of free disk and an internet connection, once.
-- **The install stops with a message about CMake or command line tools** — on macOS run `xcode-select --install`, then press the button again. The message names anything else that is missing.
+- **The install stops with a message about CMake or command line tools** — this only happens where the engine is built from source (Linux, Windows on ARM, Intel Macs, or `MUSIC_SUITE_ACESTEP_BUILD=source`); everywhere else it is downloaded ready-built. On macOS run `xcode-select --install`, then press the button again. The message names anything else that is missing.
+- **"The AI music engine did not start on this computer"** — the ready-built engine was checked after download and could not run; the lines after the message say why. Nothing was replaced, so an engine that worked before still works.
+- **Models & engines says the engine runs on the processor although there is a graphics card** — press **Use the graphics card** on the Music engine row. It swaps an engine built earlier on this computer for the ready-built one, which finds the card by itself (about 6× faster on an RTX 3090).
 - **"Only N% of memory is free"** — close some apps or browser tabs and press Generate again, or lower the limit in Settings.
 - **Lyrics come out short or ignore the idea** — Ollama is not running or its model is not downloaded, so the simpler built-in planner wrote them. Download the model (on Windows, together with Ollama itself) from Settings or *Models & engines*; Music Suite starts an installed Ollama by itself.
 - **"rejected the API key" / "no credit left"** — the online service refused the request. Check the key and your balance on the provider's site; **Terms and pricing** in Settings links there.

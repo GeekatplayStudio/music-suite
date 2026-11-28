@@ -121,7 +121,7 @@ Las actualizaciones desde la aplicación requieren que Music Suite se haya insta
 | Cachés de descargas (bibliotecas, modelos) | `.cache\` y `data\cache\` |
 | Tus sonidos de sintetizador, plug-ins favoritos, opciones MIDI y presets del mapeador | El almacenamiento de tu navegador: no está en la carpeta de Music Suite y no se incluye en los archivos de proyecto |
 
-**Todo se queda en esta carpeta.** Como ComfyUI Portable, Music Suite no instala nada en Windows: su Python, sus herramientas, descargas y cachés viven en su carpeta, así que borrar la carpeta lo elimina por completo. Lo único que se guarda fuera son las claves de los servicios en línea (Administrador de credenciales de Windows), lo que guarda tu navegador (arriba), Surge XT si elegiste compartirlo con otros programas de música y, solo con la instalación completa, las herramientas de compilación del motor de música con IA.
+**Todo se queda en esta carpeta.** Como ComfyUI Portable, Music Suite no instala nada en Windows: su Python, sus herramientas, descargas y cachés viven en su carpeta, así que borrar la carpeta lo elimina por completo. Lo único que se guarda fuera son las claves de los servicios en línea (Administrador de credenciales de Windows), lo que guarda tu navegador (arriba) y Surge XT si elegiste compartirlo con otros programas de música.
 
 Para hacer una copia de seguridad de una sesión o moverla, usa en el editor **Exportar → Proyecto completo** (consulta [Guardado, archivos de proyecto y deshacer](#saving-project-files-and-undo)).
 
@@ -1306,7 +1306,7 @@ Motores y modelos de IA opcionales. Todo lo de aquí funciona en este equipo, e 
 | Separación de stems con IA | Mejores separaciones en 2 y 4 stems, 6 stems (añade guitarra y piano), piezas del kit de batería (bombo, caja, toms, hi-hat, ride, crash), voz principal y coros, detección de pulso con IA. Elige qué modelos descargar; los que no se descarguen se obtienen la primera vez que se necesiten. **Eliminar modelos descargados** libera el espacio. | Unos 3 GB con soporte NVIDIA (1 GB sin él), más los modelos |
 | Transcripción de notas con IA | Canción completa a MIDI, piano con un modelo solo para piano (Transkun), acordes en Convertir en notas MIDI (basic-pitch). Funciona mejor si también está instalada la separación de stems. | Unos 120 MB |
 | MuScriptor (opcional, manual) | Un transcriptor de la mezcla completa que nombra hasta 35 instrumentos. Solo para uso no comercial. La página enumera los pasos de instalación (un pip install, aceptar sus condiciones en Hugging Face, iniciar sesión). | Depende del tamaño elegido |
-| Motor de música (ACE-Step 1.5) | Canciones completas con voz, sin conexión, en el Estudio de canciones IA. Necesita un compilador de C++ y CMake, que el instalador descarga. | Unos 5.3 GB |
+| Motor de música (ACE-Step 1.5) | Canciones completas con voz, sin conexión, en el Estudio de canciones IA. Se descarga ya compilado y encuentra la tarjeta gráfica por sí solo (NVIDIA, AMD, Intel o Apple). | Unos 5.3 GB |
 | Modelo de edición | Extraer un instrumento, añadir una parte, construir una canción alrededor de una parte. | 2.4 GB |
 | Modelo de alta calidad (XL) | Mejores canciones, algo más lento. | 4.9 GB |
 | Letrista | Letras y descripciones de estilo con Ollama. Si el equipo no tiene Ollama, Music Suite añade primero su propia copia a su carpeta (Windows); un Ollama ya instalado se usa tal cual. | Unos 8 GB, más 1,6 GB de Ollama |

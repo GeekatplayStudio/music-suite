@@ -56,7 +56,8 @@ export const models: Dictionary["models"] = {
     label: "Música con IA",
     progress: "Progreso de la instalación del motor de música",
     engine: "Motor de música (ACE-Step 1.5)",
-    engineNote: "Crea canciones completas con voz, sin conexión. Unos {gb} GB; necesita CMake y un compilador de C++.",
+    engineNote: "Crea canciones completas con voz, sin conexión. Unos {gb} GB; se descarga listo para usar.",
+    useGpu: "Usar la tarjeta gráfica",
     editing: "Modelo de edición",
     editingNote: "Extraer un instrumento, añadir una parte, construir una canción alrededor de una parte. {gb} GB.",
     xl: "Modelo de alta calidad (XL)",
@@ -75,6 +76,7 @@ export const models: Dictionary["models"] = {
     cuda: " Se ejecuta en la tarjeta gráfica (CUDA).",
     metal: " Se ejecuta en la GPU de Apple (Metal).",
     cpu: " Se ejecuta en el procesador.",
+    cpuSwitch: " Se ejecuta en el procesador. «Usar la tarjeta gráfica» lo cambia por el motor ya compilado, que encuentra la tarjeta por sí solo (varias veces más rápido).",
     cpuWithGpu:
       " Se ejecuta en el procesador, aunque este equipo tiene tarjeta gráfica: en Estudio de canciones IA ▸ Ajustes ▸ Descargas de modelos locales, marca “Recompilar el entorno” para ACE-Step y así compilarlo para la tarjeta (varias veces más rápido)."
   },

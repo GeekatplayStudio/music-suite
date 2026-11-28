@@ -57,11 +57,14 @@ def providers() -> dict[str, Any]:
             "running": engine.SUPERVISOR.running(),
             "editing_ready": setup.editing_ready(),
             "quality_ready": setup.quality_ready(),
+            # A source build can be swapped for the prebuilt engine (which finds the GPU itself).
+            "prebuilt": setup.is_prebuilt(),
+            "prebuilt_available": setup.prebuilt_available(),
         },
         "setup": {
             **setup.state(),
             "quality_download_gb": round(setup.QUALITY_DOWNLOAD_BYTES / 1024**3, 1),
-            "download_gb": round(setup.DOWNLOAD_BYTES / 1024**3, 1),
+            "download_gb": round(setup.engine_download_bytes() / 1024**3, 1),
             "editing_download_gb": round(setup.EDIT_DOWNLOAD_BYTES / 1024**3, 1),
         },
         "memory_free_percent": resources.free_memory_percent(),
@@ -144,6 +147,11 @@ def start_setup(payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
     keys = ("writer", "editing", "quality", "writer_only")
     if set(payload) - set(keys) or any(not isinstance(payload.get(k, False), bool) for k in keys):
         raise HTTPException(status_code=422, detail="Unknown field(s) in the setup request.")
+    engine_install = not any(payload.get(k) for k in ("editing", "quality", "writer_only"))
+    busy = resources.GENERATION_LOCK.locked()
+    if engine_install and busy and engine.install_status()["installed"]:
+        # Installing over the engine stops it, which would cut a song off mid-way.
+        raise HTTPException(status_code=409, detail="A song is being generated. Cancel it first.")
     return setup.start_background(**{k: bool(payload.get(k, False)) for k in keys})
 
 

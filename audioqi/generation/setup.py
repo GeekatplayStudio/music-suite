@@ -11,12 +11,15 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import threading
 import time
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -69,6 +72,38 @@ QUALITY_MODELS: dict[str, tuple[int, str]] = {
     ),
 }
 QUALITY_DOWNLOAD_BYTES = sum(size for size, _ in QUALITY_MODELS.values())
+#: The engine ready-built from ENGINE_COMMIT by .github/workflows/engine-packages.yml, so the
+#: usual install needs no CMake, compiler or Git: platform -> package -> (file, bytes, sha256).
+#: "engine" is always installed; "cuda" (the NVIDIA backend and its CUDA libraries) only with
+#: an NVIDIA card. Other computers, and MUSIC_SUITE_ACESTEP_BUILD=source, build from source.
+PREBUILT_BASE = (
+    f"https://github.com/GeekatplayStudio/music-suite/releases/download/engine-{ENGINE_COMMIT[:7]}/"
+)
+PREBUILT: dict[str, dict[str, tuple[str, int, str]]] = {
+    "windows-x64": {
+        "engine": (
+            "acestep-07abf07-windows-x64.zip",
+            17275485,
+            "7c432e8c2cab0a201de507bfce6640da10c7455f4f19cf1f0b9e382d3c691a57",
+        ),
+        "cuda": (
+            "acestep-07abf07-windows-x64-cuda.zip",
+            632922061,
+            "82ade45893038a65d6fcdf607a7a17401053096bf5f0f7b2a6478a43ea2d50e4",
+        ),
+    },
+    "macos-arm64": {
+        "engine": (
+            "acestep-07abf07-macos-arm64.tar.gz",
+            2669020,
+            "804a81bcd3abb59591170e36580230c73dcdfcda7fd431d3fe4f2c5ddf81385e",
+        ),
+    },
+}
+#: Oldest NVIDIA driver the CUDA 12 backend runs on (Windows, CUDA minor version compatibility).
+CUDA_MIN_DRIVER = 528
+PREBUILT_FOLDER = "bin"
+PREBUILT_MANIFEST = "music-suite-engine.json"
 BUILD_TIMEOUT_SECONDS = 3600
 WINDOWS_TARGET_CMAKE = Path(__file__).with_name("windows_target.cmake")
 
@@ -364,43 +399,264 @@ def _download_models(
         )
     done = total - need
     for name, (size, digest) in pending.items():
-        part = folder / f"{name}.part"
-        for _attempt in range(3):
-            have = part.stat().st_size if part.is_file() else 0
-            if have > size:
-                part.unlink()
-                have = 0
-            try:
-                if have < size:
-                    headers = {"Range": f"bytes={have}-"} if have else {}
-                    with requests.get(
-                        MODEL_BASE + name, headers=headers, stream=True, timeout=60
-                    ) as res:
-                        if res.status_code not in (200, 206):
-                            raise SetupError(f"Model download failed ({res.status_code}).")
-                        if res.status_code == 200:
-                            have = 0
-                        with part.open("ab" if have else "wb") as handle:
-                            for chunk in res.iter_content(1024 * 1024):
-                                handle.write(chunk)
-                                have += len(chunk)
-                                report(
-                                    "models",
-                                    low + (high - low) * (done + have) / total,
-                                    f"Downloading models: {(done + have) / 1024**3:.1f} of "
-                                    f"{total / 1024**3:.1f} GB.",
-                                )
-                if part.stat().st_size == size and _sha256(part) == digest:
-                    break
-                part.unlink(missing_ok=True)  # Corrupt or truncated: start this file again.
-            except requests.RequestException:
-                time.sleep(3.0)
-        else:
-            raise SetupError(
-                f"Could not download {name}. Check the internet connection and try again."
+
+        def show(have: int, done: int = done) -> None:
+            report(
+                "models",
+                low + (high - low) * (done + have) / total,
+                f"Downloading models: {(done + have) / 1024**3:.1f} of {total / 1024**3:.1f} GB.",
             )
-        part.replace(folder / name)
+
+        _fetch_verified(MODEL_BASE + name, folder / name, size, digest, show, "Model download")
         done += size
+
+
+def _fetch_verified(
+    url: str,
+    final: Path,
+    size: int,
+    digest: str,
+    progress: Callable[[int], None],
+    label: str,
+) -> None:
+    """Download ``url`` to ``final`` through ``final.part``: resumed, tried three times, and
+    checked by size and SHA-256. A corrupt or truncated download never becomes ``final``."""
+    part = final.with_name(final.name + ".part")
+    for _attempt in range(3):
+        have = part.stat().st_size if part.is_file() else 0
+        if have > size:
+            part.unlink()
+            have = 0
+        try:
+            if have < size:
+                headers = {"Range": f"bytes={have}-"} if have else {}
+                with requests.get(url, headers=headers, stream=True, timeout=60) as res:
+                    if res.status_code not in (200, 206):
+                        raise SetupError(f"{label} failed ({res.status_code}).")
+                    if res.status_code == 200:
+                        have = 0
+                    with part.open("ab" if have else "wb") as handle:
+                        for chunk in res.iter_content(1024 * 1024):
+                            handle.write(chunk)
+                            have += len(chunk)
+                            progress(have)
+            if part.stat().st_size == size and _sha256(part) == digest:
+                part.replace(final)
+                return
+            part.unlink(missing_ok=True)  # Corrupt or truncated: start this file again.
+        except requests.RequestException:
+            time.sleep(3.0)
+    raise SetupError(
+        f"Could not download {final.name}. Check the internet connection and try again."
+    )
+
+
+# --------------------------------------------------------------------------- prebuilt engine
+
+
+def _prebuilt_platform() -> str | None:
+    machine = platform.machine().lower()
+    if sys.platform == "win32" and machine in ("amd64", "x86_64"):
+        return "windows-x64"
+    if sys.platform == "darwin" and machine == "arm64":
+        return "macos-arm64"
+    return None
+
+
+def prebuilt_packages(target: Path | None = None) -> list[str] | None:
+    """The prebuilt packages this computer gets, or None when the engine is built from source.
+
+    Source builds stay for other computers (Linux, Windows on ARM, Intel Macs), for a chosen
+    backend (MUSIC_SUITE_ACESTEP_BACKEND), for MUSIC_SUITE_ACESTEP_BUILD=source, and for an
+    engine folder of one's own (MUSIC_SUITE_ACESTEP_DIR).
+    """
+    from audioqi import addons
+
+    if not prebuilt_available(target):
+        return None
+    packages = PREBUILT[_prebuilt_platform() or ""]
+    wanted = ["engine"]
+    card = addons.gpu() if "cuda" in packages else None
+    driver = re.match(r"(\d+)", str((card or {}).get("driver") or ""))
+    if card and card.get("vendor") == "nvidia" and driver and int(driver[1]) >= CUDA_MIN_DRIVER:
+        wanted.append("cuda")
+    return wanted
+
+
+def prebuilt_available(target: Path | None = None) -> bool:
+    """Whether this computer gets the prebuilt engine. Cheap: it starts no program."""
+    return (
+        bool(PREBUILT.get(_prebuilt_platform() or ""))
+        and os.getenv("MUSIC_SUITE_ACESTEP_BUILD", "").lower() != "source"
+        and os.getenv("MUSIC_SUITE_ACESTEP_BACKEND", "auto").lower() == "auto"
+        and (target or settings.engine_dir()) == settings.default_engine_dir()
+    )
+
+
+def is_prebuilt(target: Path | None = None) -> bool:
+    """Whether the engine in ``target`` is the prebuilt one (not built on this computer)."""
+    return bool(_prebuilt_manifest(target or settings.engine_dir()))
+
+
+def engine_download_bytes() -> int:
+    """The first install's download: the models plus the prebuilt engine, if there is one here
+    (with its CUDA part where an NVIDIA driver is present). Cheap: it starts no program."""
+    files = PREBUILT.get(_prebuilt_platform() or "", {})
+    extra = files["engine"][1] if "engine" in files else 0
+    if "cuda" in files and shutil.which("nvidia-smi"):
+        extra += files["cuda"][1]
+    return DOWNLOAD_BYTES + extra
+
+
+def _prebuilt_manifest(target: Path) -> dict[str, Any]:
+    try:
+        data = json.loads((target / PREBUILT_FOLDER / PREBUILT_MANIFEST).read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def prebuilt_current(target: Path, wanted: list[str]) -> bool:
+    """Whether ``target`` already holds these prebuilt packages of ENGINE_COMMIT."""
+    found = _prebuilt_manifest(target)
+    return (
+        found.get("commit") == ENGINE_COMMIT
+        and set(wanted) <= set(found.get("packages") or [])
+        and (target / PREBUILT_FOLDER / _program_name()).is_file()
+    )
+
+
+def _program_name() -> str:
+    return "ace-server.exe" if sys.platform == "win32" else "ace-server"
+
+
+def _unpack(archive: Path, into: Path) -> None:
+    """Unpack a package, refusing any path that would land outside ``into``."""
+    root = into.resolve()
+    if archive.name.endswith(".zip"):
+        with zipfile.ZipFile(archive) as bundle:
+            for member in bundle.infolist():
+                target = (into / member.filename).resolve()
+                if not target.is_relative_to(root):
+                    raise SetupError("The engine package is damaged. Try again.")
+            bundle.extractall(into)
+    else:
+        with tarfile.open(archive, "r:gz") as bundle:
+            for member in bundle.getmembers():
+                target = (into / member.name).resolve()
+                if not target.is_relative_to(root) or not (member.isfile() or member.isdir()):
+                    raise SetupError("The engine package is damaged. Try again.")
+            bundle.extractall(into, filter="data")
+
+
+def _probe_backend(folder: Path) -> str:
+    """Start the unpacked engine once and name the best device it found on this computer."""
+    try:
+        result = subprocess.run(
+            [str(folder / _program_name()), "--models", ".", "--device", "none"],
+            cwd=str(folder),
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=120,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        output = result.stdout + result.stderr
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise SetupError("The AI music engine did not start on this computer.") from exc
+    devices = re.search(r"Available:([^\n]*)", output)
+    if not devices:
+        tail = "\n".join(output.strip().splitlines()[-8:])
+        raise SetupError(f"The AI music engine did not start on this computer:\n{tail}")
+    names = devices[1].split()
+    for prefix, backend in (("CUDA", "cuda"), ("Vulkan", "vulkan"), ("MTL", "metal")):
+        if any(name.startswith(prefix) for name in names):
+            return backend
+    return "cpu"
+
+
+def _rename(source: Path, target: Path) -> None:
+    """Rename a folder, waiting out Windows' short hold on files a program just used (or that
+    antivirus is scanning), which refuses the rename with "access is denied" for a moment."""
+    for attempt in range(40):
+        try:
+            source.replace(target)
+            return
+        except PermissionError:
+            if attempt == 39:
+                raise SetupError(
+                    "Another program is using the AI music engine's files. Close it and try again."
+                ) from None
+            time.sleep(0.5)
+
+
+def _install_prebuilt(target: Path, wanted: list[str], report: Report) -> None:
+    """Put the prebuilt engine in ``target/bin``, replacing an older one only once it works."""
+    if prebuilt_current(target, wanted):
+        return
+    files = PREBUILT[_prebuilt_platform() or ""]
+    total = sum(files[name][1] for name in wanted)
+    target.mkdir(parents=True, exist_ok=True)
+    if shutil.disk_usage(target).free < 3 * total + 1024**3:
+        raise SetupError(
+            "Not enough free disk space: the AI music engine needs about "
+            f"{(3 * total + 1024**3) / 1024**3:.1f} GB."
+        )
+    downloads = target / "downloads"
+    downloads.mkdir(exist_ok=True)
+    staging = target / f"{PREBUILT_FOLDER}.new"
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir()
+    done = 0
+    for name in wanted:
+        filename, size, digest = files[name]
+
+        def show(have: int, done: int = done) -> None:
+            report(
+                "engine",
+                3 + 22 * (done + have) / total,
+                f"Downloading the AI music engine: {(done + have) / 1024**2:.0f} of "
+                f"{total / 1024**2:.0f} MB.",
+            )
+
+        archive = downloads / filename
+        kept = archive.is_file() and archive.stat().st_size == size and _sha256(archive) == digest
+        if not kept:
+            archive.unlink(missing_ok=True)
+            url = PREBUILT_BASE + filename
+            _fetch_verified(url, archive, size, digest, show, "Engine download")
+        _unpack(archive, staging)
+        done += size
+    program = staging / _program_name()
+    if not program.is_file():
+        raise SetupError("The engine package is damaged. Try again.")
+    if sys.platform != "win32":
+        program.chmod(0o755)
+    report("engine", 26, "Checking the AI music engine on this computer.")
+    backend = _probe_backend(staging)
+    (staging / PREBUILT_MANIFEST).write_text(
+        json.dumps({"commit": ENGINE_COMMIT, "packages": wanted, "backend": backend}),
+        encoding="utf-8",
+    )
+    # A running engine holds its files open (Windows will not replace them): stop it first.
+    engine.SUPERVISOR.stop()
+    current, old = target / PREBUILT_FOLDER, target / f"{PREBUILT_FOLDER}.old"
+    shutil.rmtree(old, ignore_errors=True)
+    if current.exists():
+        _rename(current, old)
+    try:
+        _rename(staging, current)
+    except SetupError:
+        if old.exists() and not current.exists():
+            _rename(old, current)  # Put the working engine back.
+        raise
+    shutil.rmtree(old, ignore_errors=True)
+    shutil.rmtree(downloads, ignore_errors=True)
+    (target / "music-suite-backend.json").write_text(
+        json.dumps({"backend": backend}), encoding="utf-8"
+    )
+    report("engine", 28, f"The AI music engine is ready ({backend.upper()}).")
 
 
 def pull_writer_model(report: Report, span: tuple[float, float] = (96.0, 99.0)) -> bool:
@@ -481,9 +737,17 @@ def install_editing(report: Report) -> None:
 
 def install(report: Report, *, writer: bool = False) -> None:
     target = settings.engine_dir()
-    _ensure_tools(report)
-    changed = _fetch_source(target, report)
-    _build(target, report, force=changed)
+    packages = prebuilt_packages(target)
+    if packages is not None:
+        _install_prebuilt(target, packages, report)
+    else:
+        if _prebuilt_manifest(target):
+            # Built from source on purpose: the prebuilt engine would otherwise run instead.
+            engine.SUPERVISOR.stop()
+            shutil.rmtree(target / PREBUILT_FOLDER)
+        _ensure_tools(report)
+        changed = _fetch_source(target, report)
+        _build(target, report, force=changed)
     _download_models(target, report)
     if writer:
         try:
@@ -601,6 +865,16 @@ def _main(argv: list[str] | None = None) -> int:
     if engine.install_status()["installed"] and _git(
         ["rev-parse", "HEAD"], settings.engine_dir()
     ) in (ENGINE_COMMIT, ""):
+        packages = prebuilt_packages()
+        upgrade = packages is not None and not prebuilt_current(settings.engine_dir(), packages)
+        if args.yes and packages is not None and upgrade:
+            # A complete install moves an engine built from source to the prebuilt one, which
+            # finds the graphics card by itself and needs no build tools.
+            try:
+                _install_prebuilt(settings.engine_dir(), packages, _console_report())
+            except SetupError as exc:
+                print(f"The prebuilt engine was not installed: {exc}", file=sys.stderr)
+                print("The engine that was already installed is kept.", file=sys.stderr)
         print("The local AI music engine is already installed.")
         if args.writer:
             try:
@@ -624,10 +898,14 @@ def _main(argv: list[str] | None = None) -> int:
         print(
             "Optional: local AI music generation (write and generate full songs on this computer)."
         )
-        print(
-            "This builds the ACE-Step engine and downloads about "
-            f"{DOWNLOAD_BYTES / 1024**3:.1f} GB of models."
-        )
+        if prebuilt_packages() is not None:
+            gb = engine_download_bytes() / 1024**3
+            print(f"This downloads the ACE-Step engine and its models (about {gb:.1f} GB).")
+        else:
+            print(
+                "This builds the ACE-Step engine and downloads about "
+                f"{DOWNLOAD_BYTES / 1024**3:.1f} GB of models."
+            )
         answer = input("Install it now? [Y/n] ").strip().lower()
         if answer not in ("", "y", "yes"):
             settings.update({"setup_declined": True})
@@ -692,11 +970,12 @@ def _console_report() -> Report:
         if step == "build" and not sys.stdout.isatty():
             percent = float(int(percent / 5) * 5)  # Keep log files short.
         line = f"[{percent:5.1f}%] {detail}"
-        if step == "models" and sys.stdout.isatty():
+        counting = detail.startswith("Downloading") and sys.stdout.isatty()
+        if counting:
             print("\r" + line.ljust(70), end="", flush=True)
         elif line != last["line"]:
             print(("\n" if last["line"].startswith("\r") else "") + line, flush=True)
-        last["line"] = "\r" if step == "models" and sys.stdout.isatty() else line
+        last["line"] = "\r" if counting else line
 
     return report
 

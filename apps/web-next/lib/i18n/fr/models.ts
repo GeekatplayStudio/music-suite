@@ -56,7 +56,8 @@ export const models: Dictionary["models"] = {
     label: "Musique par IA",
     progress: "Progression de l'installation du moteur musical",
     engine: "Moteur musical (ACE-Step 1.5)",
-    engineNote: "Crée des chansons complètes avec voix, hors ligne. Environ {gb} Go ; nécessite CMake et un compilateur C++.",
+    engineNote: "Crée des chansons complètes avec voix, hors ligne. Environ {gb} Go, téléchargé prêt à l'emploi.",
+    useGpu: "Utiliser la carte graphique",
     editing: "Modèle d'édition",
     editingNote: "Extraire un instrument, ajouter une partie, construire un morceau autour d'une partie. {gb} Go.",
     xl: "Modèle haute qualité (XL)",
@@ -75,6 +76,7 @@ export const models: Dictionary["models"] = {
     cuda: " Tourne sur la carte graphique (CUDA).",
     metal: " Tourne sur le GPU Apple (Metal).",
     cpu: " Tourne sur le processeur.",
+    cpuSwitch: " Tourne sur le processeur. « Utiliser la carte graphique » le remplace par le moteur prêt à l'emploi, qui trouve la carte tout seul (plusieurs fois plus rapide).",
     cpuWithGpu:
       " Tourne sur le processeur, alors que cet ordinateur a une carte graphique : dans Studio de chansons IA ▸ Réglages ▸ Téléchargements de modèles locaux, cochez « Reconstruire l'environnement » pour ACE-Step afin de le compiler pour la carte (plusieurs fois plus rapide)."
   },

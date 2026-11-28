@@ -26,7 +26,7 @@ You do not need to know music theory. You need:
 
 1. Open **AI Song Studio** (button on the main page).
 2. If a card says **One step before your first song**, press **Install local engine**. It
-   downloads about 5.3 GB and builds the engine; this takes several minutes.
+   downloads the ready-built engine and its models (about 5.4 GB, 6 GB with an NVIDIA card); this takes several minutes.
 3. Open **Models & engines** (button in every workspace header) and check the **Music engine**
    row. It says what the engine runs on, for example *Runs on the graphics card (Vulkan)*. If it
    says the processor while your computer has a graphics card, follow the hint on that row.

@@ -36,7 +36,8 @@ NOT_INSTALLED = (
 def binary_path(engine_dir: Path | None = None) -> Path | None:
     base = engine_dir or settings.engine_dir()
     names = ("ace-server.exe",) if sys.platform == "win32" else ("ace-server",)
-    for folder in ("build", "build/Release", "build/bin", "build/bin/Release"):
+    # bin: the prebuilt engine (setup.py); build: one built from source.
+    for folder in ("bin", "build", "build/Release", "build/bin", "build/bin/Release"):
         for name in names:
             candidate = base / folder / name
             if candidate.is_file():
@@ -99,6 +100,35 @@ def install_status() -> dict[str, Any]:
         "installed": built and not missing,
         "backend": backend,
     }
+
+
+def engine_path(path: Path, cwd: Path) -> str:
+    """``path`` written so the engine can open it when it runs in ``cwd``.
+
+    On Windows the engine reads its command line in the legacy code page, and ggml then opens
+    files as UTF-8, so any letter outside ASCII (a Cyrillic folder or user name) arrives as "?".
+    Such a path is given relative to the engine's working folder, or in its short 8.3 form.
+    """
+    text = str(path)
+    if sys.platform != "win32" or text.isascii():
+        return text
+    try:
+        relative = os.path.relpath(path, cwd)
+    except ValueError:  # Another drive.
+        relative = ""
+    if relative and relative.isascii():
+        return relative
+    short = _short_path(path)
+    return short if short and short.isascii() else text
+
+
+def _short_path(path: Path) -> str:
+    """Windows' 8.3 name for ``path`` ("" where the volume keeps none)."""
+    import ctypes
+
+    buffer = ctypes.create_unicode_buffer(32768)
+    length = ctypes.windll.kernel32.GetShortPathNameW(str(path), buffer, len(buffer))
+    return buffer.value if 0 < length < len(buffer) else ""
 
 
 def _safe_binary(path: Path) -> None:
@@ -170,10 +200,10 @@ class EngineSupervisor:
             "--port",
             str(self._port),
             "--models",
-            str(self._models),
+            engine_path(self._models, base),
         ]
         if (base / "adapters").is_dir():
-            command += ["--adapters", str(base / "adapters")]
+            command += ["--adapters", engine_path(base / "adapters", base)]
         log = (settings.root() / "engine.log").open("ab")
         try:
             self._process = subprocess.Popen(
